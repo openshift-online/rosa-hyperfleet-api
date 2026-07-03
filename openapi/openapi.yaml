@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: ROSA Regional Platform API
+  title: ROSA HyperFleet API
   description: Platform API for ROSA HCP regional cluster management
   version: 0.0.1
   license:

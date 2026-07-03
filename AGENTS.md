@@ -4,7 +4,7 @@ This file provides guidance to AI coding assistants when working with this repos
 
 ## Project Overview
 
-ROSA Regional Platform API — a stateless gateway API for ROSA HCP regional cluster management. Provides REST and gRPC interfaces for managing clusters within a specific cloud region.
+ROSA HyperFleet API — a stateless gateway API for ROSA HCP regional cluster management. Provides REST and gRPC interfaces for managing clusters within a specific cloud region.
 
 ## Build & Test Commands
 
@@ -19,6 +19,7 @@ make clean           # Remove build artifacts
 ```
 
 ### Integration & E2E Tests
+
 ```bash
 make e2e-init-db         # Initialize test database
 make e2e-authz-infra-up  # Start authorization test infrastructure
