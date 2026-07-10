@@ -114,10 +114,10 @@ Principal linking grants administrative access when the linked Red Hat user hold
 
 Each AWS account maps to exactly one Red Hat organization (many-to-one: one RH org can have many AWS accounts).
 
-| Scope | What |
-| --- | --- |
-| **Global** | AWS IAM identity, AWS account → RH org mapping, IAM principal → RH user mapping, RH Org Admin status, RBAC role assignments, ROSA policies, global attachments |
-| **Regional (per AWS account, per region)** | Regional attachments, policy evaluation (AVP policy stores), ROSA resources (clusters, node pools, access entries) |
+| Scope                                      | What                                                                                                                                                           |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Global**                                 | AWS IAM identity, AWS account → RH org mapping, IAM principal → RH user mapping, RH Org Admin status, RBAC role assignments, ROSA policies, global attachments |
+| **Regional (per AWS account, per region)** | Regional attachments, policy evaluation (AVP policy stores), ROSA resources (clusters, node pools, access entries)                                             |
 
 ROSA policies are defined globally — a ROSA policy created from any region is available everywhere. Attachments can be global (replicated to all regions) or regional (stored only in the target region). To restrict a policy to specific regions, use `context.region` conditions in Cedar (see [Policy Examples](#policy-examples)), or use regional attachments to limit where a ROSA policy is applied.
 
@@ -141,14 +141,14 @@ Organization Administrators can attach managed ROSA policies to any IAM principa
 
 ## Data Storage
 
-| Entity | Storage | Scope |
-| --- | --- | --- |
-| AWS account → RH org mapping | DynamoDB Global Tables | Global |
-| IAM principal → RH user mapping | DynamoDB Global Tables | Global |
-| ROSA policy templates | DynamoDB Global Tables | Global |
-| Global attachments | DynamoDB Global Tables | Global |
-| Regional attachments | DynamoDB (regional, non-global) | Regional |
-| Policy evaluation | AVP IsAuthorized API | Regional (per AWS account, per region) |
+| Entity                          | Storage                         | Scope                                  |
+| ------------------------------- | ------------------------------- | -------------------------------------- |
+| AWS account → RH org mapping    | DynamoDB Global Tables          | Global                                 |
+| IAM principal → RH user mapping | DynamoDB Global Tables          | Global                                 |
+| ROSA policy templates           | DynamoDB Global Tables          | Global                                 |
+| Global attachments              | DynamoDB Global Tables          | Global                                 |
+| Regional attachments            | DynamoDB (regional, non-global) | Regional                               |
+| Policy evaluation               | AVP IsAuthorized API            | Regional (per AWS account, per region) |
 
 DynamoDB Global Tables are the source of truth for ROSA policies and global attachments. Regional attachments are stored in a standard (non-global) DynamoDB table in each region. AVP is used only for evaluation — it is not the source of truth.
 
@@ -156,30 +156,30 @@ DynamoDB Global Tables are the source of truth for ROSA policies and global atta
 
 ### Account Management (Org Admin Only)
 
-| Method | Path | Description |
-| --- | --- | --- |
-| POST | `/api/v0/accounts` | Link an AWS account (creates policy store) |
-| GET | `/api/v0/accounts` | List linked accounts |
-| GET | `/api/v0/accounts/{id}` | Get AWS account details |
-| DELETE | `/api/v0/accounts/{id}` | Unlink AWS account (deletes policy store) |
+| Method | Path                    | Description                                |
+| ------ | ----------------------- | ------------------------------------------ |
+| POST   | `/api/v0/accounts`      | Link an AWS account (creates policy store) |
+| GET    | `/api/v0/accounts`      | List linked accounts                       |
+| GET    | `/api/v0/accounts/{id}` | Get AWS account details                    |
+| DELETE | `/api/v0/accounts/{id}` | Unlink AWS account (deletes policy store)  |
 
 ### Policy Management (Org Admin or Authorized Principal)
 
-| Method | Path | Description |
-| --- | --- | --- |
-| POST | `/api/v0/authz/policies` | Create policy |
-| GET | `/api/v0/authz/policies` | List policies |
-| GET | `/api/v0/authz/policies/{id}` | Get policy |
-| PUT | `/api/v0/authz/policies/{id}` | Update policy |
+| Method | Path                          | Description   |
+| ------ | ----------------------------- | ------------- |
+| POST   | `/api/v0/authz/policies`      | Create policy |
+| GET    | `/api/v0/authz/policies`      | List policies |
+| GET    | `/api/v0/authz/policies/{id}` | Get policy    |
+| PUT    | `/api/v0/authz/policies/{id}` | Update policy |
 | DELETE | `/api/v0/authz/policies/{id}` | Delete policy |
 
 ### Attachment Management (Org Admin or Authorized Principal)
 
-| Method | Path | Description |
-| --- | --- | --- |
-| POST | `/api/v0/authz/attachments` | Attach policy to a principal (global or regional) |
-| GET | `/api/v0/authz/attachments` | List attachments (global + current region's regional) |
-| DELETE | `/api/v0/authz/attachments/{id}` | Detach policy |
+| Method | Path                             | Description                                           |
+| ------ | -------------------------------- | ----------------------------------------------------- |
+| POST   | `/api/v0/authz/attachments`      | Attach policy to a principal (global or regional)     |
+| GET    | `/api/v0/authz/attachments`      | List attachments (global + current region's regional) |
+| DELETE | `/api/v0/authz/attachments/{id}` | Detach policy                                         |
 
 Attachments bind a ROSA policy to an IAM principal ARN (user or role). Attachments are **global** by default. Pass `--regional` to create a regional attachment that applies only in the current region.
 
@@ -189,9 +189,9 @@ Attachments bind a ROSA policy to an IAM principal ARN (user or role). Attachmen
 
 ### Authorization Check
 
-| Method | Path | Description |
-| --- | --- | --- |
-| POST | `/api/v0/authz/check` | Test whether a principal is authorized for a given action/resource |
+| Method | Path                  | Description                                                        |
+| ------ | --------------------- | ------------------------------------------------------------------ |
+| POST   | `/api/v0/authz/check` | Test whether a principal is authorized for a given action/resource |
 
 > **Note:** Policy and attachment management endpoints are accessible to Organization Administrators (via RH token) and to any IAM principal that has been granted a Cedar policy authorizing policy management. The `/api/v0/authz/check` endpoint allows a principal to check their own permissions. Checking another principal's permissions requires administrative access or a Cedar policy granting the `CheckAuthorization` action.
 
@@ -374,6 +374,7 @@ when { context.requestTime.hour >= 9 && context.requestTime.hour < 17 };
 permit(?principal, action, resource)
 when { context.region in ["us-east-1", "us-west-2"] };
 ```
+
 > **Note:** In order for this policy to take effect, the IAM principal must have a corresponding attachment in the specified regions, either globally or regionally.
 
 ```cedar
@@ -430,15 +431,15 @@ This means a single policy scoped to a cluster covers all current and future chi
 
 Context attributes are passed alongside each AVP authorization request and can be referenced in Cedar policies via `context.<attribute>`. The available attributes are derived from the SigV4 request as it flows through API Gateway (IAM auth mode):
 
-| Attribute | Type | Description |
-| --- | --- | --- |
-| `region` | String | AWS region where the request is being evaluated (e.g., `us-east-1`) |
-| `principalArn` | String | Full ARN of the calling IAM principal |
-| `accountId` | String | AWS account ID of the caller |
-| `sourceIp` | String | Source IP address of the request |
-| `userAgent` | String | User-Agent header from the request |
-| `requestTime` | Record | Request timestamp with `hour`, `dayOfWeek`, and `timezone` fields for time-based policies. The `timezone` field (IANA tz name, e.g., `America/New_York`) is mandatory in time-based conditions |
-| `requestLabels` | Map\<String, String\> | Labels provided in the request body (e.g., when creating a cluster) |
+| Attribute       | Type                  | Description                                                                                                                                                                                    |
+| --------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `region`        | String                | AWS region where the request is being evaluated (e.g., `us-east-1`)                                                                                                                            |
+| `principalArn`  | String                | Full ARN of the calling IAM principal                                                                                                                                                          |
+| `accountId`     | String                | AWS account ID of the caller                                                                                                                                                                   |
+| `sourceIp`      | String                | Source IP address of the request                                                                                                                                                               |
+| `userAgent`     | String                | User-Agent header from the request                                                                                                                                                             |
+| `requestTime`   | Record                | Request timestamp with `hour`, `dayOfWeek`, and `timezone` fields for time-based policies. The `timezone` field (IANA tz name, e.g., `America/New_York`) is mandatory in time-based conditions |
+| `requestLabels` | Map\<String, String\> | Labels provided in the request body (e.g., when creating a cluster)                                                                                                                            |
 
 > **Note:** IAM-internal condition keys such as `aws:MultiFactorAuthPresent` and session tags (`aws:PrincipalTag/*`) are not available — API Gateway does not forward them to the backend.
 

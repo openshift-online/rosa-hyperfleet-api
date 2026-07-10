@@ -22,24 +22,24 @@ Every mutating and read API call (except catalog and describe) is recorded in th
 
 ## Key Types
 
-| Type | Values | Description |
-|------|--------|-------------|
-| `ExecutionStatus` | `pending`, `running`, `succeeded`, `failed`, `timed_out` | Lifecycle state of a TA execution |
-| `OutputStatus` | `pending`, `uploaded`, `failed` | State of S3 artifact upload |
-| `ApprovalState` | `not_required`, `pending`, `approved`, `rejected` | Approval lifecycle for an execution |
-| `Scope` | `kube-api`, `aws-api` | Where the TA executes (Kubernetes API or AWS API) |
-| `Type` | `read`, `write` | Whether the TA is read-only or mutating |
+| Type              | Values                                                   | Description                                       |
+| ----------------- | -------------------------------------------------------- | ------------------------------------------------- |
+| `ExecutionStatus` | `pending`, `running`, `succeeded`, `failed`, `timed_out` | Lifecycle state of a TA execution                 |
+| `OutputStatus`    | `pending`, `uploaded`, `failed`                          | State of S3 artifact upload                       |
+| `ApprovalState`   | `not_required`, `pending`, `approved`, `rejected`        | Approval lifecycle for an execution               |
+| `Scope`           | `kube-api`, `aws-api`                                    | Where the TA executes (Kubernetes API or AWS API) |
+| `Type`            | `read`, `write`                                          | Whether the TA is read-only or mutating           |
 
 ## Endpoints Overview
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `POST` | `/{action}/run` | `Create` | Execute a Trusted Action |
-| `GET` | `/runs/{id}` | `Get` | Retrieve execution details |
-| `GET` | `/runs` | `List` | List executions (filtered, paginated) |
-| `GET` | `/audit` | `AuditList` | List API call audit log entries |
-| `GET` | `/` | `Catalog` | List all available Trusted Actions |
-| `GET` | `/{action}` | `Describe` | Describe a specific Trusted Action |
+| Method | Path            | Handler     | Description                           |
+| ------ | --------------- | ----------- | ------------------------------------- |
+| `POST` | `/{action}/run` | `Create`    | Execute a Trusted Action              |
+| `GET`  | `/runs/{id}`    | `Get`       | Retrieve execution details            |
+| `GET`  | `/runs`         | `List`      | List executions (filtered, paginated) |
+| `GET`  | `/audit`        | `AuditList` | List API call audit log entries       |
+| `GET`  | `/`             | `Catalog`   | List all available Trusted Actions    |
+| `GET`  | `/{action}`     | `Describe`  | Describe a specific Trusted Action    |
 
 ---
 
@@ -49,9 +49,9 @@ Execute a Trusted Action on a target cluster.
 
 ### Path Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `action` | string | Yes | TA name (e.g., `get_pods`, `rollout_restart`) |
+| Parameter | Type   | Required | Description                                   |
+| --------- | ------ | -------- | --------------------------------------------- |
+| `action`  | string | Yes      | TA name (e.g., `get_pods`, `rollout_restart`) |
 
 ### Request Body
 
@@ -70,13 +70,13 @@ Execute a Trusted Action on a target cluster.
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `target_cluster` | string | Yes | Target management cluster identifier |
-| `jira` | string | Yes | Jira ticket reference; must match `PROJECT-NUMBER` format (e.g. `ROSAENG-1234`) |
-| `params` | object | No | Key-value pairs of TA parameters (all values are strings) |
-| `force` | boolean | No | Bypass write cooldown for write TAs (default: `false`) |
-| `dry_run` | boolean | No | Execute the TA's `dry_run_action` instead (preview; default: `false`) |
+| Field            | Type    | Required | Description                                                                     |
+| ---------------- | ------- | -------- | ------------------------------------------------------------------------------- |
+| `target_cluster` | string  | Yes      | Target management cluster identifier                                            |
+| `jira`           | string  | Yes      | Jira ticket reference; must match `PROJECT-NUMBER` format (e.g. `ROSAENG-1234`) |
+| `params`         | object  | No       | Key-value pairs of TA parameters (all values are strings)                       |
+| `force`          | boolean | No       | Bypass write cooldown for write TAs (default: `false`)                          |
+| `dry_run`        | boolean | No       | Execute the TA's `dry_run_action` instead (preview; default: `false`)           |
 
 ### Parameter Validation
 
@@ -90,10 +90,10 @@ Parameters are validated against the TA template definition:
 
 **Unknown parameter error messages:**
 
-| Condition | Message |
-|-----------|---------|
-| TA accepts no parameters | `unknown parameter 'foo'; this action accepts no parameters` |
-| TA has defined parameters | `unknown parameter 'foo'; allowed parameters: namespace, name, ...` |
+| Condition                      | Message                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| TA accepts no parameters       | `unknown parameter 'foo'; this action accepts no parameters`                   |
+| TA has defined parameters      | `unknown parameter 'foo'; allowed parameters: namespace, name, ...`            |
 | Name matches a top-level field | Same as above, plus hint: `('jira' is a top-level request field, not a param)` |
 
 Top-level request fields (`target_cluster`, `jira`, `force`, `dry_run`) must not be placed inside `params`.
@@ -128,12 +128,12 @@ Execution created and dispatched to Maestro.
 
 **Approval state values:**
 
-| Value | Meaning |
-|-------|---------|
+| Value          | Meaning                                                          |
+| -------------- | ---------------------------------------------------------------- |
 | `not_required` | TA policy is `authorization.approval: none` — no approval needed |
-| `pending` | Approval required but not yet obtained (execution blocked) |
-| `approved` | Required approvals received — execution authorized |
-| `rejected` | Approval explicitly denied — execution will not proceed |
+| `pending`      | Approval required but not yet obtained (execution blocked)       |
+| `approved`     | Required approvals received — execution authorized               |
+| `rejected`     | Approval explicitly denied — execution will not proceed          |
 
 #### 400 Bad Request
 
@@ -161,13 +161,13 @@ Execution created and dispatched to Maestro.
 }
 ```
 
-| Error Code | Condition |
-|-----------|-----------|
-| `invalid-request` | Request body is not valid JSON |
-| `missing-target-cluster` | `target_cluster` field is empty |
-| `missing-jira` | `jira` field is empty |
-| `invalid-params` | Required parameter missing, unknown parameter, or namespace scoping violated |
-| `invalid-jira` | `jira` does not match `PROJECT-NUMBER` format |
+| Error Code               | Condition                                                                    |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| `invalid-request`        | Request body is not valid JSON                                               |
+| `missing-target-cluster` | `target_cluster` field is empty                                              |
+| `missing-jira`           | `jira` field is empty                                                        |
+| `invalid-params`         | Required parameter missing, unknown parameter, or namespace scoping violated |
+| `invalid-jira`           | `jira` does not match `PROJECT-NUMBER` format                                |
 
 #### 404 Not Found
 
@@ -221,9 +221,9 @@ Write cooldown active or max concurrent limit reached.
 }
 ```
 
-| Error Code | Condition |
-|-----------|-----------|
-| `write-cooldown` | Write TA executed on same target within cooldown window; use `force: true` to bypass |
+| Error Code       | Condition                                                                                             |
+| ---------------- | ----------------------------------------------------------------------------------------------------- |
+| `write-cooldown` | Write TA executed on same target within cooldown window; use `force: true` to bypass                  |
 | `max-concurrent` | Target cluster has reached max concurrent executions (running + pending); use `force: true` to bypass |
 
 ---
@@ -234,24 +234,24 @@ Retrieve an execution's metadata and optionally its output/logs.
 
 ### Path Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `id` | string (UUID) | Yes | Execution ID |
+| Parameter | Type          | Required | Description  |
+| --------- | ------------- | -------- | ------------ |
+| `id`      | string (UUID) | Yes      | Execution ID |
 
 ### Query Parameters
 
-| Parameter | Values | Default | Description |
-|-----------|--------|---------|-------------|
-| `include` | `output`, `logs`, or comma-separated combination | (none) | Opt-in: which S3 content to include alongside metadata |
+| Parameter | Values                                           | Default | Description                                            |
+| --------- | ------------------------------------------------ | ------- | ------------------------------------------------------ |
+| `include` | `output`, `logs`, or comma-separated combination | (none)  | Opt-in: which S3 content to include alongside metadata |
 
 **Content selection behavior:**
 
 | `include` Value | Metadata | Output | Logs |
-|-----------------|----------|--------|------|
-| (empty/omitted) | Yes | No | No |
-| `output` | Yes | Yes | No |
-| `logs` | Yes | No | Yes |
-| `output,logs` | Yes | Yes | Yes |
+| --------------- | -------- | ------ | ---- |
+| (empty/omitted) | Yes      | No     | No   |
+| `output`        | Yes      | Yes    | No   |
+| `logs`          | Yes      | No     | Yes  |
+| `output,logs`   | Yes      | Yes    | Yes  |
 
 S3 content (output/logs) is only fetched for terminal executions (`succeeded`, `failed`, `timed_out`). For `pending` or `running` executions, only metadata is returned regardless of `include`.
 
@@ -274,7 +274,7 @@ S3 content (output/logs) is only fetched for terminal executions (`succeeded`, `
   "status": "succeeded",
   "output_status": "uploaded",
   "revision": "a1b2c3d",
-  "params": {"namespace": "maestro", "name": "maestro-abc-123"},
+  "params": { "namespace": "maestro", "name": "maestro-abc-123" },
   "created_at": "2026-06-10T12:00:00Z",
   "updated_at": "2026-06-10T12:00:29Z",
   "completed_at": "2026-06-10T12:00:29Z",
@@ -283,7 +283,13 @@ S3 content (output/logs) is only fetched for terminal executions (`succeeded`, `
   "duration_seconds": 29,
 
   "output": [
-    {"name": "maestro-abc-123", "namespace": "maestro", "status": "Running", "restarts": 0, "age": "3d"}
+    {
+      "name": "maestro-abc-123",
+      "namespace": "maestro",
+      "status": "Running",
+      "restarts": 0,
+      "age": "3d"
+    }
   ],
 
   "logs": "[11:00:01] runner starting\n[zoa] execution_id=fa65418c-... action=get_pods target=mc-useast1-1\n...\n--- upload ---\n[11:00:06] upload starting\n[11:00:09] runner waited (3s)\n[11:00:10] configmap read (1s)\n[11:00:10] decoded (0s), uploading to s3\n"
@@ -319,20 +325,20 @@ List executions for the authenticated account, with filtering and pagination.
 
 ### Query Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `limit` | integer (1-100) | 20 | Max results per page |
-| `status` | string | — | Filter: `pending`, `running`, `succeeded`, `failed`, `timed_out` |
-| `action` | string | — | Filter by TA name (exact match) |
-| `target` | string | — | Filter by target cluster (exact match) |
-| `operator` | string | — | Filter by operator name (exact match) |
-| `scope` | string | — | Filter by scope: `kube-api`, `aws-api` |
-| `type` | string | — | Filter by type: `read`, `write` |
-| `output_status` | string | — | Filter by output status: `pending`, `uploaded`, `failed` |
-| `approval_state` | string | — | Filter by approval state: `not_required`, `pending`, `approved`, `rejected` |
-| `dry_run` | string | — | Filter by dry-run flag: `true` or `false` |
-| `force` | string | — | Filter by force flag: `true` or `false` |
-| `since` | string | — | Time filter (see below) |
+| Parameter        | Type            | Default | Description                                                                 |
+| ---------------- | --------------- | ------- | --------------------------------------------------------------------------- |
+| `limit`          | integer (1-100) | 20      | Max results per page                                                        |
+| `status`         | string          | —       | Filter: `pending`, `running`, `succeeded`, `failed`, `timed_out`            |
+| `action`         | string          | —       | Filter by TA name (exact match)                                             |
+| `target`         | string          | —       | Filter by target cluster (exact match)                                      |
+| `operator`       | string          | —       | Filter by operator name (exact match)                                       |
+| `scope`          | string          | —       | Filter by scope: `kube-api`, `aws-api`                                      |
+| `type`           | string          | —       | Filter by type: `read`, `write`                                             |
+| `output_status`  | string          | —       | Filter by output status: `pending`, `uploaded`, `failed`                    |
+| `approval_state` | string          | —       | Filter by approval state: `not_required`, `pending`, `approved`, `rejected` |
+| `dry_run`        | string          | —       | Filter by dry-run flag: `true` or `false`                                   |
+| `force`          | string          | —       | Filter by force flag: `true` or `false`                                     |
+| `since`          | string          | —       | Time filter (see below)                                                     |
 
 **`since` format:**
 
@@ -368,7 +374,7 @@ Filters are applied at DynamoDB level:
       "approval_state": "not_required",
       "status": "succeeded",
       "output_status": "uploaded",
-      "params": {"namespace": "maestro"},
+      "params": { "namespace": "maestro" },
       "created_at": "2026-06-10T12:00:00Z",
       "updated_at": "2026-06-10T12:00:29Z",
       "completed_at": "2026-06-10T12:00:29Z",
@@ -405,15 +411,15 @@ Audit logging requires `ZOA_AUDIT_TABLE_NAME` to be configured. If not enabled, 
 
 ### Query Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `limit` | integer (1-200) | 50 | Max results per page |
-| `action` | string | — | Filter by TA name |
-| `target` | string | — | Filter by target cluster |
-| `operator` | string | — | Filter by operator name |
-| `method` | string | — | Filter by HTTP method: `GET`, `POST` |
-| `approval_state` | string | — | Filter by approval state: `not_required`, `pending`, `approved`, `rejected` |
-| `since` | string | — | Time filter (duration shorthand or RFC3339) |
+| Parameter        | Type            | Default | Description                                                                 |
+| ---------------- | --------------- | ------- | --------------------------------------------------------------------------- |
+| `limit`          | integer (1-200) | 50      | Max results per page                                                        |
+| `action`         | string          | —       | Filter by TA name                                                           |
+| `target`         | string          | —       | Filter by target cluster                                                    |
+| `operator`       | string          | —       | Filter by operator name                                                     |
+| `method`         | string          | —       | Filter by HTTP method: `GET`, `POST`                                        |
+| `approval_state` | string          | —       | Filter by approval state: `not_required`, `pending`, `approved`, `rejected` |
+| `since`          | string          | —       | Time filter (duration shorthand or RFC3339)                                 |
 
 ### Responses
 
@@ -557,9 +563,9 @@ Describe a specific Trusted Action — includes full parameter definitions.
 
 ### Path Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `action` | string | Yes | TA name |
+| Parameter | Type   | Required | Description |
+| --------- | ------ | -------- | ----------- |
+| `action`  | string | Yes      | TA name     |
 
 ### Responses
 
@@ -613,11 +619,11 @@ Describe a specific Trusted Action — includes full parameter definitions.
 
 **Template metadata fields:**
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `authorization` | object | `{"approval": "none"}` | Authorization policy for this TA. `approval` is `"none"` (no approval needed) or a structured object defining approval requirements (min_count, ttl, approver rules). See authorization design. |
-| `write_cooldown_seconds` | integer | `0` (uses global default) | Per-TA write cooldown override in seconds |
-| `dry_run_action` | string | `""` | Name of a read TA to execute when `dry_run: true` is set in the request |
+| Field                    | Type    | Default                   | Description                                                                                                                                                                                     |
+| ------------------------ | ------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `authorization`          | object  | `{"approval": "none"}`    | Authorization policy for this TA. `approval` is `"none"` (no approval needed) or a structured object defining approval requirements (min_count, ttl, approver rules). See authorization design. |
+| `write_cooldown_seconds` | integer | `0` (uses global default) | Per-TA write cooldown override in seconds                                                                                                                                                       |
+| `dry_run_action`         | string  | `""`                      | Name of a read TA to execute when `dry_run: true` is set in the request                                                                                                                         |
 
 #### 404 Not Found
 
@@ -645,22 +651,22 @@ All errors follow a consistent structure:
 
 ### Error Codes Reference
 
-| HTTP Status | Code | When |
-|-------------|------|------|
-| 400 | `invalid-request` | Request body is not valid JSON |
-| 400 | `missing-target-cluster` | `target_cluster` not provided |
-| 400 | `missing-jira` | `jira` not provided |
-| 400 | `invalid-jira` | `jira` format invalid (expected `PROJECT-NUMBER`, e.g. `ROSAENG-1234`) |
-| 400 | `invalid-params` | Parameter validation failed |
-| 404 | `unknown-action` | TA name not found in registry |
-| 404 | `not-found` | Execution ID not found in DynamoDB |
-| 429 | `write-cooldown` | Write TA cooldown active on target (use `force: true` to bypass) |
-| 429 | `max-concurrent` | Target cluster at max concurrent executions (use `force: true` to bypass) |
-| 500 | `store-error` | DynamoDB operation failed |
-| 500 | `render-error` | ManifestWork generation failed |
-| 500 | `dry-run-error` | `dry_run_action` references unknown TA |
-| 502 | `maestro-error` | Maestro gRPC call failed |
-| 404 | `audit-disabled` | Audit logging not configured (GET /audit only) |
+| HTTP Status | Code                     | When                                                                      |
+| ----------- | ------------------------ | ------------------------------------------------------------------------- |
+| 400         | `invalid-request`        | Request body is not valid JSON                                            |
+| 400         | `missing-target-cluster` | `target_cluster` not provided                                             |
+| 400         | `missing-jira`           | `jira` not provided                                                       |
+| 400         | `invalid-jira`           | `jira` format invalid (expected `PROJECT-NUMBER`, e.g. `ROSAENG-1234`)    |
+| 400         | `invalid-params`         | Parameter validation failed                                               |
+| 404         | `unknown-action`         | TA name not found in registry                                             |
+| 404         | `not-found`              | Execution ID not found in DynamoDB                                        |
+| 429         | `write-cooldown`         | Write TA cooldown active on target (use `force: true` to bypass)          |
+| 429         | `max-concurrent`         | Target cluster at max concurrent executions (use `force: true` to bypass) |
+| 500         | `store-error`            | DynamoDB operation failed                                                 |
+| 500         | `render-error`           | ManifestWork generation failed                                            |
+| 500         | `dry-run-error`          | `dry_run_action` references unknown TA                                    |
+| 502         | `maestro-error`          | Maestro gRPC call failed                                                  |
+| 404         | `audit-disabled`         | Audit logging not configured (GET /audit only)                            |
 
 ---
 
@@ -688,20 +694,21 @@ pending → uploaded    (uploader Job succeeded)
 - `timed_out`: Execution exceeded timeout, cleaned up by reconciler
 
 **Output status:**
+
 - `pending`: Uploader Job not yet completed
 - `uploaded`: Uploader Job succeeded, artifacts available in S3
 - `failed`: Uploader Job failed (logs still available via execution metadata)
 
 ### Timing Fields
 
-| Field | Set When | Meaning |
-|-------|----------|---------|
-| `created_at` | On POST (submission) | When the execution was requested |
-| `updated_at` | On every status transition | Last time the execution record changed (create, pending→running, completion) |
-| `completed_at` | On overall completion | When the reconciler detected both Jobs done |
-| `runner_seconds` | On overall completion | Runner Job wall-clock time (from K8s `.status.startTime` to `.status.completionTime`) |
-| `upload_seconds` | On overall completion | Time from runner completion to uploader completion (wait + configmap + decode + S3 upload) |
-| `duration_seconds` | On overall completion | Total wall-clock: `completed_at - created_at` (includes Maestro dispatch overhead) |
+| Field              | Set When                   | Meaning                                                                                    |
+| ------------------ | -------------------------- | ------------------------------------------------------------------------------------------ |
+| `created_at`       | On POST (submission)       | When the execution was requested                                                           |
+| `updated_at`       | On every status transition | Last time the execution record changed (create, pending→running, completion)               |
+| `completed_at`     | On overall completion      | When the reconciler detected both Jobs done                                                |
+| `runner_seconds`   | On overall completion      | Runner Job wall-clock time (from K8s `.status.startTime` to `.status.completionTime`)      |
+| `upload_seconds`   | On overall completion      | Time from runner completion to uploader completion (wait + configmap + decode + S3 upload) |
+| `duration_seconds` | On overall completion      | Total wall-clock: `completed_at - created_at` (includes Maestro dispatch overhead)         |
 
 **Derived metric** (not stored): `dispatch_overhead = duration_seconds - runner_seconds - upload_seconds`
 
@@ -756,50 +763,50 @@ The `force: true` flag bypasses both safety controls:
 
 ### Table: `<env>-regional-zoa-executions`
 
-| Attribute | Type | Key | Description |
-|-----------|------|-----|-------------|
-| `executionId` | String | PK | UUID v4 |
-| `accountId` | String | — | AWS account ID of caller |
-| `callerArn` | String | — | Full ARN of STS caller |
-| `operator` | String | — | Extracted operator name |
-| `action` | String | — | TA name |
-| `targetCluster` | String | — | Target MC identifier |
-| `scope` | String | — | `kube-api` or `aws-api` |
-| `type` | String | — | `read` or `write` |
-| `params` | Map | — | Execution parameters (audit trail) |
-| `jira` | String | — | Associated Jira ticket |
-| `approvalState` | String | — | Approval lifecycle state |
-| `status` | String | — | Current status |
-| `outputStatus` | String | — | `pending`, `uploaded`, or `failed` |
-| `revision` | String | — | Git SHA of TA definition |
-| `outputPath` | String | — | S3 URI for output.json |
-| `executedAction` | String | — | Substituted action name (dry-run only) |
-| `dryRun` | Boolean | — | Whether this was a dry-run execution |
-| `force` | Boolean | — | Whether safety checks were bypassed |
-| `manifestWorkName` | String | — | Maestro RB name |
-| `createdAt` | String (RFC3339) | — | Submission timestamp |
-| `updatedAt` | String (RFC3339) | — | Last status transition timestamp |
-| `completedAt` | String (RFC3339) | — | Overall completion timestamp |
-| `runnerSeconds` | Number | — | Runner Job duration (startTime → completionTime) |
-| `uploadSeconds` | Number | — | Upload duration (runner completion → uploader completion) |
-| `durationSeconds` | Number | — | Total wall-clock (created → reconciler detected completion) |
-| `ttl` | Number (epoch seconds) | — | DynamoDB TTL for auto-expiry (configurable via `dynamodb_ttl_days`, default 365 days; not exposed in API responses) |
+| Attribute          | Type                   | Key | Description                                                                                                         |
+| ------------------ | ---------------------- | --- | ------------------------------------------------------------------------------------------------------------------- |
+| `executionId`      | String                 | PK  | UUID v4                                                                                                             |
+| `accountId`        | String                 | —   | AWS account ID of caller                                                                                            |
+| `callerArn`        | String                 | —   | Full ARN of STS caller                                                                                              |
+| `operator`         | String                 | —   | Extracted operator name                                                                                             |
+| `action`           | String                 | —   | TA name                                                                                                             |
+| `targetCluster`    | String                 | —   | Target MC identifier                                                                                                |
+| `scope`            | String                 | —   | `kube-api` or `aws-api`                                                                                             |
+| `type`             | String                 | —   | `read` or `write`                                                                                                   |
+| `params`           | Map                    | —   | Execution parameters (audit trail)                                                                                  |
+| `jira`             | String                 | —   | Associated Jira ticket                                                                                              |
+| `approvalState`    | String                 | —   | Approval lifecycle state                                                                                            |
+| `status`           | String                 | —   | Current status                                                                                                      |
+| `outputStatus`     | String                 | —   | `pending`, `uploaded`, or `failed`                                                                                  |
+| `revision`         | String                 | —   | Git SHA of TA definition                                                                                            |
+| `outputPath`       | String                 | —   | S3 URI for output.json                                                                                              |
+| `executedAction`   | String                 | —   | Substituted action name (dry-run only)                                                                              |
+| `dryRun`           | Boolean                | —   | Whether this was a dry-run execution                                                                                |
+| `force`            | Boolean                | —   | Whether safety checks were bypassed                                                                                 |
+| `manifestWorkName` | String                 | —   | Maestro RB name                                                                                                     |
+| `createdAt`        | String (RFC3339)       | —   | Submission timestamp                                                                                                |
+| `updatedAt`        | String (RFC3339)       | —   | Last status transition timestamp                                                                                    |
+| `completedAt`      | String (RFC3339)       | —   | Overall completion timestamp                                                                                        |
+| `runnerSeconds`    | Number                 | —   | Runner Job duration (startTime → completionTime)                                                                    |
+| `uploadSeconds`    | Number                 | —   | Upload duration (runner completion → uploader completion)                                                           |
+| `durationSeconds`  | Number                 | —   | Total wall-clock (created → reconciler detected completion)                                                         |
+| `ttl`              | Number (epoch seconds) | —   | DynamoDB TTL for auto-expiry (configurable via `dynamodb_ttl_days`, default 365 days; not exposed in API responses) |
 
 ### GSI: `account-index`
 
-| Key | Attribute | Purpose |
-|-----|-----------|---------|
-| PK | `accountId` | Scope queries to caller's account |
-| SK | `createdAt` | Enable time-range queries (`since` filter) |
+| Key | Attribute   | Purpose                                    |
+| --- | ----------- | ------------------------------------------ |
+| PK  | `accountId` | Scope queries to caller's account          |
+| SK  | `createdAt` | Enable time-range queries (`since` filter) |
 
 Projection: ALL
 
 ### GSI: `status-index`
 
-| Key | Attribute | Purpose |
-|-----|-----------|---------|
-| PK | `status` | Reconciler queries pending/running executions |
-| SK | `createdAt` | Order by time |
+| Key | Attribute   | Purpose                                       |
+| --- | ----------- | --------------------------------------------- |
+| PK  | `status`    | Reconciler queries pending/running executions |
+| SK  | `createdAt` | Order by time                                 |
 
 Projection: ALL
 
@@ -807,22 +814,22 @@ Projection: ALL
 
 ### Table: `<env>-regional-zoa-audit-log`
 
-| Attribute | Type | Key | Description |
-|-----------|------|-----|-------------|
-| `accountId` | String | PK | AWS account ID of caller |
-| `timestamp` | String (nanosecond RFC3339) | SK | When the API call was made (`2006-01-02T15:04:05.000000000Z`) |
-| `approvalState` | String | — | Approval state at time of POST (populated for POST /run) |
-| `id` | String (UUID) | — | Unique audit entry ID |
-| `callerArn` | String | — | Full ARN of STS caller |
-| `operator` | String | — | Extracted operator name |
-| `method` | String | — | HTTP method (`GET`, `POST`) |
-| `path` | String | — | Full request URI (path + query string) |
-| `action` | String | — | TA name (populated for POST /run) |
-| `targetCluster` | String | — | Target cluster (populated for POST /run) |
-| `executionId` | String | — | Execution ID (POST /run: created ID; GET /runs/{id}: accessed ID) |
-| `jira` | String | — | Jira ticket (populated for POST /run) |
-| `statusCode` | Number | — | HTTP response status code |
-| `ttl` | Number (epoch seconds) | — | DynamoDB TTL for auto-expiry (configurable, default 365 days) |
+| Attribute       | Type                        | Key | Description                                                       |
+| --------------- | --------------------------- | --- | ----------------------------------------------------------------- |
+| `accountId`     | String                      | PK  | AWS account ID of caller                                          |
+| `timestamp`     | String (nanosecond RFC3339) | SK  | When the API call was made (`2006-01-02T15:04:05.000000000Z`)     |
+| `approvalState` | String                      | —   | Approval state at time of POST (populated for POST /run)          |
+| `id`            | String (UUID)               | —   | Unique audit entry ID                                             |
+| `callerArn`     | String                      | —   | Full ARN of STS caller                                            |
+| `operator`      | String                      | —   | Extracted operator name                                           |
+| `method`        | String                      | —   | HTTP method (`GET`, `POST`)                                       |
+| `path`          | String                      | —   | Full request URI (path + query string)                            |
+| `action`        | String                      | —   | TA name (populated for POST /run)                                 |
+| `targetCluster` | String                      | —   | Target cluster (populated for POST /run)                          |
+| `executionId`   | String                      | —   | Execution ID (POST /run: created ID; GET /runs/{id}: accessed ID) |
+| `jira`          | String                      | —   | Jira ticket (populated for POST /run)                             |
+| `statusCode`    | Number                      | —   | HTTP response status code                                         |
+| `ttl`           | Number (epoch seconds)      | —   | DynamoDB TTL for auto-expiry (configurable, default 365 days)     |
 
 **Key design**: Uses `accountId` as PK and nanosecond-precision `timestamp` as SK, enabling efficient time-range queries per account without a GSI. The `since` filter applies as a key condition on the sort key.
 
@@ -830,12 +837,12 @@ Projection: ALL
 
 **Audited endpoints and field population**:
 
-| Endpoint | `action` | `target_cluster` | `execution_id` | `jira` | `approval_state` |
-|----------|----------|-------------------|-----------------|--------|------------------|
-| `POST /{action}/run` | TA name | target cluster | created exec ID | ticket | approval state |
-| `GET /runs/{id}` | — | — | accessed exec ID | — | — |
-| `GET /runs` | — | — | — | — | — |
-| `GET /audit` | — | — | — | — | — |
+| Endpoint             | `action` | `target_cluster` | `execution_id`   | `jira` | `approval_state` |
+| -------------------- | -------- | ---------------- | ---------------- | ------ | ---------------- |
+| `POST /{action}/run` | TA name  | target cluster   | created exec ID  | ticket | approval state   |
+| `GET /runs/{id}`     | —        | —                | accessed exec ID | —      | —                |
+| `GET /runs`          | —        | —                | —                | —      | —                |
+| `GET /audit`         | —        | —                | —                | —      | —                |
 
 **Rejected requests**: POST requests rejected by validation (400) or rate limits (429) are also audited with whatever context is available at the point of rejection.
 
