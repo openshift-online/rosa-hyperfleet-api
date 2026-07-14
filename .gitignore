@@ -1,5 +1,5 @@
 # Binary (only in root)
-/rosa-regional-platform-api*
+/rosa-hyperfleet-api*
 
 # Test coverage
 coverage.out
@@ -24,8 +24,8 @@ vendor/
 
 .claude/settings.local.json
 
-rosa-regional-platform-api
-rosa-regional-platform-api.log
+rosa-hyperfleet-api
+rosa-hyperfleet-api.log
 
 # === Additional patterns for agent-readiness ===
 # Binaries

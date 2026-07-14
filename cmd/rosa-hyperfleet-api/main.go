@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/openshift/rosa-regional-platform-api/pkg/config"
-	"github.com/openshift/rosa-regional-platform-api/pkg/server"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/config"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/server"
 )
 
 var (

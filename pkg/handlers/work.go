@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/openshift/rosa-regional-platform-api/pkg/clients/maestro"
-	"github.com/openshift/rosa-regional-platform-api/pkg/middleware"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/clients/maestro"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/middleware"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	workv1 "open-cluster-management.io/api/work/v1"

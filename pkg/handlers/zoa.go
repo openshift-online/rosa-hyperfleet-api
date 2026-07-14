@@ -16,9 +16,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 
-	"github.com/openshift/rosa-regional-platform-api/pkg/clients/maestro"
-	"github.com/openshift/rosa-regional-platform-api/pkg/middleware"
-	"github.com/openshift/rosa-regional-platform-api/pkg/zoa"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/clients/maestro"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/middleware"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/zoa"
 )
 
 var jiraTicketRegex = regexp.MustCompile(`^[A-Z][A-Z0-9]+-\d+$`)

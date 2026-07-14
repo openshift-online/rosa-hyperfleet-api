@@ -1,4 +1,4 @@
-# CI build-root image for rosa-regional-platform-api PR checks.
+# CI build-root image for rosa-hyperfleet-api PR checks.
 # Used by ci-operator via build_root.project_image.dockerfile_path.
 
 FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.26-openshift-4.23

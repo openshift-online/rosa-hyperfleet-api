@@ -932,6 +932,6 @@ curl "$ZOA_API/api/v0/trusted-actions/runs?dry_run=true&since=24h" \
 
 ## Related Documentation
 
-- [ZOA Architecture](https://github.com/openshift-online/rosa-regional-platform/blob/main/docs/design/zoa-architecture.md) — System architecture and network flows
-- [ZOA Security Model](https://github.com/openshift-online/rosa-regional-platform/blob/main/docs/design/zoa-security-model.md) — SA isolation and RBAC
-- [ZOA Trusted Actions](https://github.com/openshift-online/rosa-regional-platform/blob/main/docs/design/zoa-trusted-actions.md) — TA template format and CLI design
+- [ZOA Architecture](https://github.com/openshift-online/rosa-hyperfleet/blob/main/docs/design/zoa-architecture.md) — System architecture and network flows
+- [ZOA Security Model](https://github.com/openshift-online/rosa-hyperfleet/blob/main/docs/design/zoa-security-model.md) — SA isolation and RBAC
+- [ZOA Trusted Actions](https://github.com/openshift-online/rosa-hyperfleet/blob/main/docs/design/zoa-trusted-actions.md) — TA template format and CLI design

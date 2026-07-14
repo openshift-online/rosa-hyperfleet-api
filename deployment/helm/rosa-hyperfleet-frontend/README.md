@@ -1,6 +1,6 @@
-# rosa-regional-platform Helm Chart
+# rosa-hyperfleet Helm Chart
 
-Helm chart for rosa-regional-platform API with Envoy sidecar and optional **ArgoCD PostSync hook** that patches TargetGroupBinding.spec.targetGroupARN from a cluster ConfigMap (e.g. `kube-system/bootstrap-output`).
+Helm chart for rosa-hyperfleet API with Envoy sidecar and optional **ArgoCD PostSync hook** that patches TargetGroupBinding.spec.targetGroupARN from a cluster ConfigMap (e.g. `kube-system/bootstrap-output`).
 
 ## Prerequisites
 
@@ -24,8 +24,8 @@ postSyncHook:
 ## Installation
 
 ```bash
-helm install rosa-regional-platform ./deployment/helm/rosa-regional-platform \
-  --namespace rosa-regional-platform \
+helm install rosa-hyperfleet ./deployment/helm/rosa-hyperfleet \
+  --namespace rosa-hyperfleet \
   --create-namespace
 ```
 

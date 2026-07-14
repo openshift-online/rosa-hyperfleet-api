@@ -1,14 +1,14 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: rosa-regional-platform
+  name: rosa-hyperfleet
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: https://github.com/cdoan1/rosa-regional-platform-api
+    repoURL: https://github.com/cdoan1/rosa-hyperfleet-api
     targetRevision: define-application-deployment
-    path: deployment/helm/rosa-regional-platform
+    path: deployment/helm/rosa-hyperfleet
     helm:
       parameters:
         - name: app.args.maestroUrl
@@ -17,7 +17,7 @@ spec:
           value: info
   destination:
     server: https://kubernetes.default.svc
-    namespace: rosa-regional-platform
+    namespace: rosa-hyperfleet
   ignoreDifferences:
     - group: eks.amazonaws.com
       kind: TargetGroupBinding

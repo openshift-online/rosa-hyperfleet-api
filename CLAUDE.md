@@ -6,7 +6,7 @@ This file provides guidance to AI coding assistants when working with this repos
 
 ## Project Overview
 
-ROSA Regional Platform API — a stateless gateway API for ROSA HCP regional cluster management. Provides REST and gRPC interfaces for managing clusters within a specific cloud region.
+ROSA Hyperfleet API — a stateless gateway API for ROSA HCP regional cluster management. Provides REST and gRPC interfaces for managing clusters within a specific cloud region.
 
 ## Build & Test Commands
 
@@ -43,7 +43,7 @@ make e2e-authz-infra-down # Stop authorization test infrastructure
 
 ## Key Conventions
 
-- Module path: `github.com/openshift/rosa-regional-platform-api`
+- Module path: `github.com/openshift/rosa-hyperfleet-api`
 - Uses Ginkgo/Gomega for testing
 - OpenAPI-first API design
 - DynamoDB for data persistence

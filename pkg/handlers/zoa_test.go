@@ -17,9 +17,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openshift/rosa-regional-platform-api/pkg/clients/maestro"
-	"github.com/openshift/rosa-regional-platform-api/pkg/middleware"
-	"github.com/openshift/rosa-regional-platform-api/pkg/zoa"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/clients/maestro"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/middleware"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/zoa"
 	workv1 "open-cluster-management.io/api/work/v1"
 )
 

@@ -1,4 +1,4 @@
-# ROSA Regional Platform API
+# ROSA Hyperfleet API
 
 Stateless gateway API for ROSA HCP regional cluster management.
 
@@ -35,7 +35,7 @@ flowchart LR
 
 ## API Documentation
 
-- [View the full API spec (Swagger UI)](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/openshift-online/rosa-regional-platform-api/main/openapi/openapi.yaml)
+- [View the full API spec (Swagger UI)](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/openshift-online/rosa-hyperfleet-api/main/openapi/openapi.yaml)
 - [ZOA Trusted Actions API Reference](docs/api/zoa-endpoints.md)
 
 ## Configuration
@@ -400,11 +400,11 @@ make test-e2e-authz-clean
 
 ### Prow CI E2E Tests (`ci/prow/rosa-regionality-compatibility-e2e`)
 
-Tests compatibility by spinning up an ephemeral [rosa-regional-platform](https://github.com/openshift-online/rosa-regional-platform) environment with the platform-api image from the PR, then running the rosa-regional-platform test suite against it using the commit hash of the PR.
+Tests compatibility by spinning up an ephemeral [rosa-hyperfleet](https://github.com/openshift-online/rosa-hyperfleet) environment with the platform-api image from the PR, then running the rosa-hyperfleet test suite against it using the commit hash of the PR.
 
 **Trigger:** `/test rosa-regionality-compatibility-e2e` (does not run automatically).
 
-**Configuration:** Defined in [openshift/release](https://github.com/openshift/release) under `ci-operator/config/openshift-online/rosa-regional-platform-api/`.
+**Configuration:** Defined in [openshift/release](https://github.com/openshift/release) under `ci-operator/config/openshift-online/rosa-hyperfleet-api/`.
 
 ### Test Structure
 

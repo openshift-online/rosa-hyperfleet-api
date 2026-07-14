@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	"github.com/openshift/rosa-regional-platform-api/pkg/authz/client"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/authz/client"
 )
 
 // ListFilter defines optional filters for listing executions.

@@ -8,10 +8,10 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
-	"github.com/openshift/rosa-regional-platform-api/pkg/clients/hyperfleet"
-	"github.com/openshift/rosa-regional-platform-api/pkg/clients/maestro"
-	"github.com/openshift/rosa-regional-platform-api/pkg/middleware"
-	"github.com/openshift/rosa-regional-platform-api/pkg/types"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/clients/hyperfleet"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/clients/maestro"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/middleware"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/types"
 )
 
 // ClusterHandler handles cluster-related HTTP requests

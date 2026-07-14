@@ -1,5 +1,5 @@
 # =============================================================================
-# Envoy Sidecar Configuration for rosa-regional-platform
+# Envoy Sidecar Configuration for rosa-hyperfleet
 #
 # This deploys an Envoy proxy as a sidecar to consolidate all traffic through
 # port 8080, routing internally to the app's different ports based on path.
@@ -20,7 +20,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: envoy-config
-  namespace: rosa-regional-platform
+  namespace: rosa-hyperfleet
 data:
   envoy.yaml: |
     static_resources:
@@ -128,25 +128,25 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: rosa-regional-platform
-  namespace: rosa-regional-platform
+  name: rosa-hyperfleet
+  namespace: rosa-hyperfleet
   labels:
-    app: rosa-regional-platform
+    app: rosa-hyperfleet
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: rosa-regional-platform
+      app: rosa-hyperfleet
   template:
     metadata:
       labels:
-        app: rosa-regional-platform
+        app: rosa-hyperfleet
     spec:
       containers:
         # =================================================================
         # Main application container
         # =================================================================
-        - name: rosa-regional-platform
+        - name: rosa-hyperfleet
           image: quay.io/cdoan0/rosa-regional-platform-api:latest
           imagePullPolicy: Always
           args:
@@ -241,14 +241,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: rosa-regional-platform
-  namespace: rosa-regional-platform
+  name: rosa-hyperfleet
+  namespace: rosa-hyperfleet
   labels:
-    app: rosa-regional-platform
+    app: rosa-hyperfleet
 spec:
   type: ClusterIP
   selector:
-    app: rosa-regional-platform
+    app: rosa-hyperfleet
   ports:
     - name: http
       port: 8080
@@ -270,11 +270,11 @@ spec:
 apiVersion: eks.amazonaws.com/v1
 kind: TargetGroupBinding
 metadata:
-  name: rosa-regional-platform
-  namespace: rosa-regional-platform
+  name: rosa-hyperfleet
+  namespace: rosa-hyperfleet
 spec:
   serviceRef:
-    name: rosa-regional-platform
+    name: rosa-hyperfleet
     port: 8080
   targetGroupARN: TARGET_GROUP_ARN  # Replace with actual ARN or use Helm chart with ConfigMap lookup
   targetType: ip

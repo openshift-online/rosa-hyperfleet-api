@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	awstest "github.com/openshift/rosa-regional-platform-api/internal/test/aws"
+	awstest "github.com/openshift/rosa-hyperfleet-api/internal/test/aws"
 )
 
 var (

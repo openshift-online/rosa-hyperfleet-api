@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/openshift/rosa-regional-platform-api/pkg/clients/maestro"
-	"github.com/openshift/rosa-regional-platform-api/pkg/middleware"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/clients/maestro"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/middleware"
 	workv1 "open-cluster-management.io/api/work/v1"
 )
 

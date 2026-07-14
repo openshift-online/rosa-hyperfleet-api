@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/openshift/rosa-regional-platform-api/pkg/authz"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/authz"
 )
 
 // AdminCheck provides middleware for checking admin status

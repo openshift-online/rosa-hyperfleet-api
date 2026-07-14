@@ -3,7 +3,7 @@ package config
 import (
 	"time"
 
-	"github.com/openshift/rosa-regional-platform-api/pkg/authz"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/authz"
 )
 
 type Config struct {

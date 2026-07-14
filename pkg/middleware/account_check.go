@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/openshift/rosa-regional-platform-api/pkg/authz"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/authz"
 )
 
 // AccountCheck provides middleware for checking account provisioning status

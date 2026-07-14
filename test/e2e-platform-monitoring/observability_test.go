@@ -4,7 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/openshift/rosa-regional-platform-api/internal/test/thanos"
+	"github.com/openshift/rosa-hyperfleet-api/internal/test/thanos"
 )
 
 var _ = Describe("Observability", FlakeAttempts(2), func() {

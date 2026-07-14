@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openshift/rosa-regional-platform-api/pkg/config"
-	"github.com/openshift/rosa-regional-platform-api/pkg/middleware"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/config"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/middleware"
 )
 
 func TestNew(t *testing.T) {

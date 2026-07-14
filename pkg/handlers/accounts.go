@@ -7,8 +7,8 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/openshift/rosa-regional-platform-api/pkg/authz"
-	"github.com/openshift/rosa-regional-platform-api/pkg/middleware"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/authz"
+	"github.com/openshift/rosa-hyperfleet-api/pkg/middleware"
 )
 
 // AccountsHandler handles account management endpoints

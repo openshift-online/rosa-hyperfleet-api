@@ -1,17 +1,17 @@
-# Default values for rosa-regional-platform
+# Default values for rosa-hyperfleet
 
 # Namespace to deploy into
-namespace: rosa-regional-platform
+namespace: rosa-hyperfleet
 
 # Service Account configuration
 serviceAccount:
   create: true
-  name: rosa-regional-platform-sa
+  name: rosa-hyperfleet-sa
   annotations: {}
 
 # Application configuration
 app:
-  name: rosa-regional-platform
+  name: rosa-hyperfleet
   image:
     repository: quay.io/cdoan0/rosa-regional-platform-api
     tag: latest

@@ -1,6 +1,6 @@
 .PHONY: build test test-unit test-authz test-coverage test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-zoa lint clean image image-push run generate generate-swagger help fmt vet
 
-BINARY_NAME := rosa-regional-platform-api
+BINARY_NAME := rosa-hyperfleet-api
 IMAGE_REPO ?= quay.io/openshift-online/rosa-regional-platform-api
 IMAGE_TAG ?= latest
 GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -21,7 +21,7 @@ SKIP ?= Authz
 # CI container settings - for reproducing Prow CI environment locally
 CI_IMAGE_REPO ?= quay.io/openshift-online/rosa-regional-platform-api-ci
 CI_IMAGE_TAG ?= latest
-REPO_URL ?= https://github.com/openshift-online/rosa-regional-platform-api
+REPO_URL ?= https://github.com/openshift-online/rosa-hyperfleet-api
 GIT_REF ?= main
 
 # Detect host platform for native builds
@@ -288,7 +288,7 @@ generate-swagger:
 		echo '<html lang="en">'; \
 		echo '<head>'; \
 		echo '  <meta charset="UTF-8">'; \
-		echo '  <title>ROSA Regional Platform API - Swagger UI</title>'; \
+		echo '  <title>ROSA Hyperfleet API - Swagger UI</title>'; \
 		echo '  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui.css">'; \
 		echo '  <style>'; \
 		echo '    html {'; \

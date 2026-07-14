@@ -1,4 +1,4 @@
-# Security Audit — rosa-regional-platform-api
+# Security Audit — rosa-hyperfleet-api
 
 **Audit Date:** 2026-05-15  
 **Auditor:** security-audit-agent  
@@ -35,7 +35,7 @@ The entire authentication model trusts HTTP headers (`X-Amz-Account-Id`, `X-Amz-
 If the API server is reachable by any path that bypasses API Gateway (e.g., direct pod IP, internal service name, misconfigured Kubernetes NetworkPolicy, VPC peering, or load balancer), any caller can forge any identity, including privileged accounts.
 
 **Attack Vectors:**
-1. **Direct pod access:** From within the EKS cluster (another pod, compromised node), call the API directly at `http://rosa-regional-platform-api:8000` with `X-Amz-Account-Id: 000000000000` (a hardcoded privileged account in test data) and `X-Amz-Caller-Arn: arn:aws:iam::000000000000:root` to gain full privileged access.
+1. **Direct pod access:** From within the EKS cluster (another pod, compromised node), call the API directly at `http://rosa-hyperfleet-api:8000` with `X-Amz-Account-Id: 000000000000` (a hardcoded privileged account in test data) and `X-Amz-Caller-Arn: arn:aws:iam::000000000000:root` to gain full privileged access.
 2. **Network policy gap:** If Kubernetes NetworkPolicy is not configured (or uses default-allow), any pod in the cluster can forge headers and call the API.
 3. **API Gateway bypass:** If the ALB target group binding (`targetgroupbinding.yaml`) is misconfigured to also expose the pod directly, the API Gateway IAM auth layer is bypassed.
 4. **Internal AWS service access:** VPC peering, Transit Gateway, or AWS PrivateLink configurations that allow other accounts/services to reach the pod's VPC could be used to forge headers.
@@ -158,7 +158,7 @@ The Prometheus metrics endpoint is bound to `0.0.0.0:9090` with no authenticatio
 - Custom metrics that may include account IDs, cluster IDs, or other business-sensitive data if added in the future
 
 **Attack Vector:**  
-Any pod in the cluster can scrape `http://rosa-regional-platform-api:9090/metrics` and gain operational visibility into the API service. From within a compromised pod, this data can help an attacker understand traffic patterns and time attacks.
+Any pod in the cluster can scrape `http://rosa-hyperfleet-api:9090/metrics` and gain operational visibility into the API service. From within a compromised pod, this data can help an attacker understand traffic patterns and time attacks.
 
 **What to Mitigate:**
 - Bind the metrics server to `127.0.0.1` (localhost) only, and use Prometheus' in-cluster scraping (which uses the pod's localhost address, not a network service).
