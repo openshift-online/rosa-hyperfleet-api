@@ -8,7 +8,7 @@
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 
-FROM --platform=${TARGETOS}/${TARGETARCH} golang:1.25-alpine
+FROM --platform=${TARGETOS}/${TARGETARCH} golang:1.26-alpine
 
 WORKDIR /app
 
