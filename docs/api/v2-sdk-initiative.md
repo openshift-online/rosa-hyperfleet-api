@@ -1,0 +1,362 @@
+# V2 SDK Initiative: HyperFleet Platform API Client SDK
+
+**Last Updated Date**: 2026-07-17
+
+## Summary
+
+Build a **v2 Go SDK** (`hyperfleet-sdk-go`) that exposes the same HCP cluster lifecycle operations currently served by `ocm-sdk-go` (v1), but backed by the new HyperFleet Platform API instead of the OCM API.
+
+The v2 SDK will be validated by running existing FVT/e2e tests against both the v1 and v2 SDK, proving that consumers (rosa CLI, terraform provider) can switch backends without functional regression.
+
+**Out of scope for this initiative**: CI/prow integration. Manual test execution is sufficient, but all identified tests must pass.
+
+## Motivation
+
+The HyperFleet Platform API (see [api-management.md](api-management.md)) introduces a new REST API surface generated from HyperFleet CRD types. Today, consumers like `rosa` CLI and `terraform-provider-rhcs` interact with cluster management through `ocm-sdk-go` against the OCM API (`api.openshift.com`). To complete the HyperFleet story, these consumers need a client SDK that talks to the new regional Platform API endpoints.
+
+## V1 SDK Architecture (ocm-sdk-go)
+
+Understanding the v1 SDK is necessary to design the v2 interface. The v1 SDK has six layers:
+
+### Layer Model
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Consumer (rosa CLI, terraform, CAPA)                    │
+│  connection.ClustersMgmt().V1().Clusters().Add().Send()  │
+├──────────────────────────────────────────────────────────┤
+│  Connection (connection.go)                              │
+│  Builder pattern, auth config, URL routing               │
+│  Provides service accessors: .ClustersMgmt(), etc.       │
+├──────────────────────────────────────────────────────────┤
+│  Generated Resource Clients (clustersmgmt/v1/)           │
+│  ClustersClient → .Add(), .List(), .Cluster(id)          │
+│  ClusterClient  → .Get(), .Update(), .Delete(),          │
+│                    .NodePools(), .Ingresses(), ...        │
+├──────────────────────────────────────────────────────────┤
+│  Generated Request/Response types                        │
+│  ClustersAddRequest → .Body(cluster).SendContext(ctx)    │
+│  Marshals to HTTP, sends, unmarshals response            │
+├──────────────────────────────────────────────────────────┤
+│  Transport Wrapper Stack                                 │
+│  Auth → Retry → Metrics → Logging → Base HTTP            │
+├──────────────────────────────────────────────────────────┤
+│  Types & Builders (aliased from ocm-api-model/clientapi) │
+│  cmv1.NewCluster().Name("x").Region(...).Build()         │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Generation Pipeline (v1)
+
+The entire SDK (except `connection.go` and the transport wrappers) is **generated** from the OCM API model using a proprietary DSL:
+
+```
+ocm-api-model/model (proprietary metamodel DSL)
+    ↓ ocm-api-metamodel binary
+    ↓ `metamodel generate go --generators=builders-alias,clients,...`
+    ↓
+Generated output: clients, builders, types, JSON serialization, OpenAPI specs
+```
+
+Key facts:
+- **Model source**: `github.com/openshift-online/ocm-api-model/model` (proprietary DSL, not OpenAPI)
+- **Generator**: `github.com/openshift-online/ocm-api-metamodel/cmd/metamodel`
+- **Output**: ~1600 generated files in `clustersmgmt/v1/` alone
+- **Precedent**: The `arohcp/` package follows the exact same generated pattern at `v1alpha1`
+
+The v2 SDK intentionally drops this proprietary DSL. Instead, it generates directly from the OpenAPI spec that the HyperFleet codegen pipeline already produces (see [V2 SDK Design](#v2-sdk-design)).
+
+### Consumer Usage Pattern
+
+```go
+// 1. Build connection (configures auth, retries, metrics)
+connection, _ := sdk.NewConnectionBuilder().
+    Tokens(token).
+    URL("https://api.openshift.com").
+    Build()
+
+// 2. Navigate to resource via fluent chain
+collection := connection.ClustersMgmt().V1().Clusters()
+
+// 3. Build typed payload
+cluster, _ := cmv1.NewCluster().
+    Name("my-cluster").
+    Region(cmv1.NewCloudRegion().ID("us-east-1")).
+    AWS(cmv1.NewAWS().AccountID("123456")).
+    Build()
+
+// 4. Create and send request
+response, _ := collection.Add().Body(cluster).SendContext(ctx)
+created := response.Body()  // typed *Cluster
+```
+
+### HCP Cluster Lifecycle Operations in V1
+
+The minimum surface the v2 SDK must cover:
+
+| Operation | V1 SDK call | HTTP |
+|-----------|-------------|------|
+| Create cluster | `Clusters().Add().Body(c)` | `POST /api/clusters_mgmt/v1/clusters` |
+| Get cluster | `Clusters().Cluster(id).Get()` | `GET /api/clusters_mgmt/v1/clusters/{id}` |
+| List clusters | `Clusters().List()` | `GET /api/clusters_mgmt/v1/clusters` |
+| Update cluster | `Clusters().Cluster(id).Update().Body(c)` | `PATCH /api/clusters_mgmt/v1/clusters/{id}` |
+| Delete cluster | `Clusters().Cluster(id).Delete()` | `DELETE /api/clusters_mgmt/v1/clusters/{id}` |
+| Create node pool | `Cluster(id).NodePools().Add().Body(np)` | `POST .../clusters/{id}/node_pools` |
+| Get node pool | `Cluster(id).NodePools().NodePool(npId).Get()` | `GET .../node_pools/{id}` |
+| List node pools | `Cluster(id).NodePools().List()` | `GET .../clusters/{id}/node_pools` |
+| Update node pool | `Cluster(id).NodePools().NodePool(npId).Update().Body(np)` | `PATCH .../node_pools/{id}` |
+| Delete node pool | `Cluster(id).NodePools().NodePool(npId).Delete()` | `DELETE .../node_pools/{id}` |
+| Delete protection | `Cluster(id).DeleteProtection()` | `POST .../delete_protection` |
+| Hibernate | `Cluster(id).Hibernate()` | `POST .../hibernate` |
+| Resume | `Cluster(id).Resume()` | `POST .../resume` |
+
+## HyperFleet Platform API Surface
+
+The v1 SDK exposes 12 service areas through the OCM API. The HyperFleet Platform API replaces a subset of these with a smaller, focused surface. The v2 SDK only needs to cover the HyperFleet equivalents.
+
+| V1 OCM Service | V1 Path | HyperFleet Equivalent | Phase |
+|---|---|---|---|
+| ClustersMgmt (clusters) | `/api/clusters_mgmt` | **Cluster** CRD | Immediate |
+| ClustersMgmt (node pools) | `/api/clusters_mgmt` | **NodePool** CRD | Immediate |
+| AccountsMgmt | `/api/accounts_mgmt` | Authz: accounts, policies, attachments (see [authz.md](../authz.md)) | Near-term |
+| Authorizations | `/api/authorizations` | Authz: check endpoint (see [authz.md](../authz.md)) | Near-term |
+| AccessTransparency | `/api/access_transparency` | TBD — likely needed | Future |
+| ServiceLogs | `/api/service_logs` | Per-cluster logs — mechanism TBD | Future |
+| ServiceMgmt | `/api/service_mgmt` | TBD | TBD |
+| AddonsMgmt | `/api/addons_mgmt` | No equivalent | N/A |
+| AroHCP | `/api/aro_hcp` | No equivalent | N/A |
+| OSDFleetMgmt | `/api/osd_fleet_mgmt` | No equivalent | N/A |
+| JobQueue | `/api/job_queue` | No equivalent | N/A |
+| StatusBoard | `/api/status-board` | No equivalent | N/A |
+| WebRCA | `/api/web-rca` | No equivalent | N/A |
+
+The v2 SDK architecture must accommodate adding new resource types (authz, logs, etc.) as the Platform API grows, but the initial implementation covers only Cluster and NodePool.
+
+## V2 SDK Design
+
+### Approach: OpenAPI-Generated SDK with Shim Layer
+
+The v1 SDK is generated from a proprietary metamodel DSL (`ocm-api-model`). The v2 SDK drops this DSL entirely and generates directly from the OpenAPI spec that the HyperFleet codegen pipeline already produces.
+
+The v2 SDK has two layers:
+
+1. **Generated core**: Auto-generated from the HyperFleet Platform API OpenAPI spec (produced by the codegen pipeline described in [api-management.md](api-management.md)). This gives us typed client, request, response, and model types that match the Platform API exactly.
+
+2. **Shim layer**: A thin adapter that presents the same fluent interface consumers expect from v1 (`connection.ClustersMgmt().V1().Clusters().Add().Body(c).Send()`), delegating to the generated core underneath.
+
+```
+┌────────────────────────────────────────────┐
+│  Consumer (rosa CLI, terraform)            │
+│  Same fluent API as v1                     │
+├────────────────────────────────────────────┤
+│  Shim Layer (hand-written, thin)           │
+│  Adapts v1 fluent interface → v2 core      │
+│  Maps v1 types ↔ v2 types where needed     │
+├────────────────────────────────────────────┤
+│  Generated Core (from OpenAPI)             │
+│  Typed clients, models, serialization      │
+│  Generated by oapi-codegen or similar      │
+├────────────────────────────────────────────┤
+│  Connection / Auth / Transport             │
+│  AWS SigV4 auth, retry, logging            │
+└────────────────────────────────────────────┘
+```
+
+### Generation from OpenAPI
+
+The HyperFleet codegen pipeline (api-management.md) already produces an OpenAPI spec:
+
+```
+Go types (api/v1alpha1/*.go) → kube-openapi → OpenAPI spec → oapi-codegen → REST types + handlers
+                                                            ↘ oapi-codegen → Client SDK (v2)
+```
+
+The same OpenAPI spec feeds both the server-side handlers and the client SDK. One source of truth, no proprietary DSL.
+
+Candidate generators for the client SDK:
+
+| Generator | Pros | Cons |
+|-----------|------|------|
+| **oapi-codegen** | Already in our pipeline, well-maintained, Go-native | Different interface style than v1 |
+| **openapi-generator** | Many customization options, template-based | Heavier, Java dependency |
+
+**Decision**: Use **oapi-codegen** for the generated core. This keeps the generation pipeline unified and avoids introducing a new toolchain.
+
+### Dynamic Generation
+
+Goal: the v2 SDK generation is fully automated as part of the same `make generate` pipeline that produces CRDs and OpenAPI specs. When a developer adds or modifies a field in the Go types, runs `make generate`, and gets updated CRDs, OpenAPI spec, **and** v2 SDK client code in one pass. This is achievable because the entire chain is OpenAPI-driven — no manual model definitions to maintain.
+
+### Interface Decision: Same vs. Different
+
+Two sub-options within the shim approach:
+
+**Option A: V1-compatible shim** — consumers use identical import paths and method signatures. A build tag or connection config switches between v1 and v2 backend. Lowest migration cost for rosa/terraform, but constraining long-term.
+
+**Option B: New interface with migration helpers** — the v2 SDK has its own idiomatic interface (likely simpler than v1's deeply nested fluent chain, since HyperFleet has fewer resources). A migration guide + helper functions assist rosa/terraform in switching. More work upfront, cleaner long-term.
+
+**This decision needs team input before implementation.**
+
+## Scope
+
+### Target Clients
+
+| Client | Priority | Rationale |
+|--------|----------|-----------|
+| **rosa CLI** (`rosa-hyperfleet-cli` / `rosactl`) | P0 | Primary user-facing tool, exercises full lifecycle |
+| **terraform-provider-rhcs** | P1 | Key IaC consumer, many enterprise customers depend on it |
+| **CAPA** (Cluster API Provider AWS) | P2 | Lower priority for initial initiative; evaluate after rosa + terraform |
+
+### In Scope
+
+1. V2 SDK generated from OpenAPI with authentication (AWS SigV4) and basic HCP cluster + node pool lifecycle
+2. Authz surface: account linking, policy CRUD, attachment CRUD, authorization check (see [authz.md](../authz.md))
+3. Identify and catalog specific FVT/e2e tests that exercise cluster lifecycle through v1 SDK
+4. Design the v2 SDK interface (shim vs. new interface decision)
+5. Hook v2 SDK into rosa CLI and terraform provider
+6. Run identified tests against v2 SDK and verify they pass
+7. Evaluate and prototype dynamic generation from OpenAPI (integrated into `make generate`)
+
+### Out of Scope
+
+- CI/prow integration (manual testing is sufficient)
+- Non-HCP cluster types (classic ROSA)
+- Full OCM API surface coverage (only cluster + node pool lifecycle and authz)
+- Add-ons, ingresses, identity providers, and other sub-resources beyond cluster/nodepool (future iterations)
+- Access transparency, service logs, service management (future phases)
+
+## Test Identification
+
+### Rosa CLI E2E Tests (rosa repo)
+
+These tests in `rosa/tests/e2e/` exercise HCP cluster lifecycle through the CLI, which uses `ocm-sdk-go` under the hood:
+
+| Test file | What it exercises | Labels |
+|-----------|-------------------|--------|
+| `hcp_cluster_test.go` | HCP cluster create/describe/edit/delete, log forwarders | `Feature.Cluster`, `Runtime.Day2` |
+| `hcp_machine_pool_test.go` | HCP node pool (machine pool) CRUD | `Feature.MachinePool` |
+| `hcp_external_auth_test.go` | External auth configuration | `Feature.ExternalAuth` |
+| `hcp_tuning_config_test.go` | Tuning configs on HCP clusters | `Feature.TuningConfig` |
+| `e2e_setup_test.go` | Cluster provisioning (precondition) | setup |
+| `e2e_tear_down_test.go` | Cluster deletion (cleanup) | cleanup |
+
+### HyperFleet CLI E2E Tests (this repo)
+
+These tests in `test/e2e-cli/` exercise the full lifecycle through `rosactl`:
+
+| Test area | Labels | What it exercises |
+|-----------|--------|-------------------|
+| VPC setup | `vpc-create`, `vpc-list` | AWS VPC creation for cluster |
+| IAM setup | `iam-create`, `iam-list` | IAM roles and OIDC |
+| Cluster create | `hcp-create` | `rosactl cluster create` |
+| Cluster status | `cluster-status` | Poll until cluster is ready |
+| Node pools | `nodepools-wait` | Node pool readiness |
+| Cluster update | `hcp-patch` | `rosactl cluster patch` |
+| Cleanup | `bundles-delete`, `oidc-delete`, `iam-delete`, `vpc-delete` | Full teardown |
+
+### HyperFleet Platform API E2E Tests (this repo)
+
+The `test/e2e-api/` tests exercise the Platform API directly:
+
+| Test file | What it exercises |
+|-----------|-------------------|
+| `e2e_test.go` | Basic API connectivity |
+| `authz_e2e_test.go` | Authorization policies |
+
+### Acceptance Criteria for V2 SDK
+
+The following tests must pass against the v2 SDK to consider the initiative complete:
+
+1. **Rosa CLI HCP tests** (`hcp_cluster_test.go`, `hcp_machine_pool_test.go`): create HCP cluster, CRUD node pools, delete cluster — using rosa CLI backed by v2 SDK
+2. **HyperFleet CLI lifecycle** (`test/e2e-cli/cluster_test.go` labels: `setup`, `create`, `monitor`, `cleanup`): full VPC → IAM → cluster → node pool → teardown cycle through rosactl
+3. **Terraform basic lifecycle**: `terraform apply` + `terraform destroy` of an HCP cluster with node pools using provider backed by v2 SDK
+
+## Work Breakdown
+
+### Epic: V2 SDK — HyperFleet Platform API Client
+
+#### Story 1: V2 SDK Skeleton and Authentication
+
+Set up the `hyperfleet-sdk-go` module with:
+- Connection builder with AWS SigV4 authentication (the HyperFleet API uses IAM auth, not OCM SSO tokens)
+- Regional endpoint configuration (each region has its own Platform API endpoint)
+- Transport wrapper stack (SigV4 signing, retry, logging)
+- Basic HTTP round-tripper that talks to the HyperFleet Platform API
+
+**Acceptance**: Can authenticate via AWS credentials and make raw HTTP calls to the Platform API.
+
+#### Story 2: Generated Core from OpenAPI
+
+Set up the generation pipeline:
+- Take the OpenAPI spec produced by the HyperFleet codegen pipeline
+- Feed it to oapi-codegen to produce typed client, models, and request/response types
+- Wire the generated client into the SDK's transport layer
+
+**Acceptance**: Generated types exist for Cluster and NodePool resources. Can create a cluster via the generated client.
+
+#### Story 3: Authz Surface
+
+Implement SDK support for the authorization endpoints defined in [authz.md](../authz.md):
+- Account management: link/unlink AWS accounts, list/get accounts
+- Policy management: create/get/list/update/delete ROSA policies
+- Attachment management: attach/detach policies to principals (global and regional)
+- Authorization check: test whether a principal is authorized for a given action/resource
+
+**Acceptance**: Can perform the full authz bootstrap flow (link account → create policy → attach to principal → check authorization) via the SDK.
+
+#### Story 4: Shim Layer Design and Implementation
+
+Design and implement the compatibility layer:
+- Decide on interface approach (v1-compatible vs. new interface)
+- Implement the shim for cluster CRUD operations
+- Implement the shim for node pool CRUD operations
+- Implement the shim for authz operations
+- Map v1 type shapes to v2 types where they differ
+
+**Acceptance**: A consumer can use the v2 SDK with a fluent interface to perform cluster, node pool, and authz operations.
+
+#### Story 5: Integrate V2 SDK into Rosa CLI
+
+- Fork or branch the rosa CLI (or rosactl)
+- Replace `ocm-sdk-go` cluster/node pool calls with v2 SDK calls
+- Preserve all CLI flags and output formats
+
+**Acceptance**: `rosa create cluster --hosted-cp` (or `rosactl cluster create`) works against the HyperFleet Platform API via v2 SDK.
+
+#### Story 6: Integrate V2 SDK into Terraform Provider
+
+- Fork or branch `terraform-provider-rhcs`
+- Replace cluster/node pool resource implementations to use v2 SDK
+- Preserve terraform state compatibility
+
+**Acceptance**: `terraform apply` of an HCP cluster + node pool plan works against HyperFleet Platform API.
+
+#### Story 7: FVT Test Execution and Validation
+
+- Run identified rosa CLI HCP e2e tests against v2 SDK-backed CLI
+- Run HyperFleet CLI lifecycle tests
+- Run terraform lifecycle test
+- Document results and any behavior differences
+
+**Acceptance**: All tests in the "Acceptance Criteria" section pass.
+
+#### Story 8: Evaluate Dynamic SDK Generation Pipeline
+
+- Prototype end-to-end flow: Go types → markers → OpenAPI spec → SDK client code
+- Evaluate whether `make generate` can produce the v2 SDK alongside CRDs and OpenAPI
+- Document gaps and requirements for full automation
+
+**Acceptance**: Document with feasibility assessment, prototype code, and recommendation for full automation.
+
+## Decisions Made
+
+1. **Generation approach**: OpenAPI-first. Drop the proprietary OCM metamodel DSL. Generate the v2 SDK directly from the OpenAPI spec using oapi-codegen.
+2. **Auth model**: AWS SigV4 (IAM auth), not OCM SSO tokens. The HyperFleet API authenticates all requests via AWS IAM credentials.
+3. **Initial surface**: Cluster + NodePool (immediate), Authz (near-term). Future phases add access transparency, service logs, etc.
+
+## Open Questions
+
+1. **Interface style**: Should the v2 SDK mirror the v1 fluent interface exactly, or adopt a simpler interface with migration helpers?
+2. **Module location**: Separate repo (`hyperfleet-sdk-go`) or a package within `rosa-hyperfleet-api`?
+3. **CAPA timing**: Should CAPA integration be part of this initiative or deferred?
+4. **Type compatibility**: How much do the HyperFleet CRD types (Cluster, NodePool) diverge from the OCM API model types? The shim complexity depends on this.
+5. **Service logs**: Logs appear to be per-cluster in HyperFleet. How will the SDK expose them — as a sub-resource of Cluster, or as a separate top-level surface?
