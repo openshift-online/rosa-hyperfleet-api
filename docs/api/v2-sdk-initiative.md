@@ -181,9 +181,42 @@ Goal: the v2 SDK generation is fully automated as part of the same `make generat
 
 ### Interface Decision
 
-The v2 SDK exposes its own idiomatic interface generated from OpenAPI (likely simpler than v1's deeply nested fluent chain, since HyperFleet has fewer resources). Consumers (rosa CLI, terraform provider) migrate to it directly; a migration guide + helper functions assist rosa/terraform in switching. This is more work upfront than a drop-in v1-compatible layer, but cleaner long-term.
+The v2 SDK adopts a **Kubernetes-style interface**, modeled on `client-go`. Consumers (rosa CLI, terraform provider) migrate to it directly; a migration guide + helper functions assist in switching. This is more work upfront than a drop-in v1-compatible layer, but cleaner long-term.
 
-The remaining open question is the exact shape of the generated interface (fluent chain vs. flatter idiomatic Go). **This decision needs team input before implementation.**
+This shape is a natural fit: the HyperFleet resources are already CRD-backed types (`ObjectMeta` / `Spec` / `Status`), so the SDK simply exposes them the same way you'd work with them in Kubernetes. There are no fluent builders to generate or maintain — callers construct a typed struct literal and pass it to a verb method on a typed client.
+
+**Resource construction** — a plain struct literal, not a builder chain:
+
+```go
+cluster := &v1alpha1.Cluster{
+    ObjectMeta: metav1.ObjectMeta{
+        Name:   "my-cluster",
+        Labels: map[string]string{"env": "dev"},
+    },
+    Spec: v1alpha1.ClusterSpec{
+        Region:  "us-east-1",
+        Version: "4.19.0",
+        AWS:     v1alpha1.AWSSpec{AccountID: "123456789012"},
+    },
+}
+```
+
+**Client verbs** — resource-scoped accessors exposing `Create` / `Get` / `List` / `Update` / `Patch` / `Delete`, each taking a `context.Context` and typed options, exactly like a `client-go` clientset:
+
+```go
+created, err := client.Clusters().Create(ctx, cluster, metav1.CreateOptions{})
+
+got, err := client.Clusters().Get(ctx, "my-cluster", metav1.GetOptions{})
+
+list, err := client.Clusters().List(ctx, metav1.ListOptions{})
+
+np := &v1alpha1.NodePool{ /* ObjectMeta + Spec */ }
+_, err = client.Clusters().NodePools("my-cluster").Create(ctx, np, metav1.CreateOptions{})
+```
+
+Contrast with the v1 fluent chain (`cmv1.NewCluster().Name("x").Region(...).Build()` then `Clusters().Add().Body(c).SendContext(ctx)`): v2 replaces the builder + send pattern with typed struct literals and verb methods.
+
+Because the generated core already produces the typed `Spec`/`Status` models from OpenAPI, this interface is a thin, mechanical layer over them rather than a hand-maintained adapter.
 
 ## Scope
 
@@ -320,11 +353,11 @@ Set up the generation pipeline:
 1. **Generation approach**: OpenAPI-first. Drop the proprietary OCM metamodel DSL. Generate the v2 SDK directly from the OpenAPI spec using oapi-codegen.
 2. **Auth model**: AWS SigV4 (IAM auth), not OCM SSO tokens. The HyperFleet API authenticates all requests via AWS IAM credentials.
 3. **Initial surface**: Cluster + NodePool only. Tenancy and authz (account linking, policies, attachments, authorization check) are deferred to a future iteration, along with access transparency, service logs, etc.
+4. **Interface style**: Kubernetes-style, modeled on `client-go` — typed resource structs (`ObjectMeta`/`Spec`/`Status`) constructed as struct literals, and a typed client exposing `Create`/`Get`/`List`/`Update`/`Patch`/`Delete` verbs. No fluent builders.
 
 ## Open Questions
 
-1. **Interface style**: What shape should the v2 SDK interface take — a fluent chain like v1, or a flatter idiomatic Go interface with migration helpers?
-2. **Module location**: Separate repo (`hyperfleet-sdk-go`) or a package within `rosa-hyperfleet-api`?
-3. **CAPA timing**: Should CAPA integration be part of this initiative or deferred?
-4. **Type compatibility**: How much do the HyperFleet CRD types (Cluster, NodePool) diverge from the OCM API model types? The migration effort for consumers depends on this.
-5. **Service logs**: Logs appear to be per-cluster in HyperFleet. How will the SDK expose them — as a sub-resource of Cluster, or as a separate top-level surface?
+1. **Module location**: Separate repo (`hyperfleet-sdk-go`) or a package within `rosa-hyperfleet-api`?
+2. **CAPA timing**: Should CAPA integration be part of this initiative or deferred?
+3. **Type compatibility**: How much do the HyperFleet CRD types (Cluster, NodePool) diverge from the OCM API model types? The migration effort for consumers depends on this.
+4. **Service logs**: Logs appear to be per-cluster in HyperFleet. How will the SDK expose them — as a sub-resource of Cluster, or as a separate top-level surface?
