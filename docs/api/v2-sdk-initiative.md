@@ -317,11 +317,14 @@ Set up the generation pipeline:
 
 #### Story 3: Integrate V2 SDK into Rosa CLI
 
-- Fork or branch the rosa CLI (or rosactl)
-- Replace `ocm-sdk-go` cluster/node pool calls with v2 SDK calls
-- Preserve all CLI flags and output formats
+The rosa CLI supports **both** SDKs side by side — v1 (`ocm-sdk-go`) remains the default; the v2 SDK is selected per-invocation via a flag (e.g. `--hyperfleet` or `--v2`; exact name TBD).
 
-**Acceptance**: `rosa create cluster --hosted-cp` (or `rosactl cluster create`) works against the HyperFleet Platform API via v2 SDK.
+- Fork or branch the rosa CLI (or rosactl)
+- Add the v2 SDK as an additional backend for cluster/node pool operations, alongside the existing `ocm-sdk-go` path (do not remove v1)
+- Route to v1 or v2 based on the backend-selection flag
+- Preserve all CLI flags and output formats identically across both backends
+
+**Acceptance**: `rosa create cluster --hosted-cp --hyperfleet` (or `rosactl cluster create --hyperfleet`) works against the HyperFleet Platform API via the v2 SDK, while the same command without the flag continues to use the v1 SDK unchanged.
 
 #### Story 4: Integrate V2 SDK into Terraform Provider
 
