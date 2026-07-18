@@ -41,7 +41,7 @@ app:
 envoy:
   image:
     repository: envoyproxy/envoy
-    tag: v1.31-latest
+    tag: v1.39-latest
 
   # Resources for the Envoy sidecar
   resources:
