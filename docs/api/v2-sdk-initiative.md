@@ -358,6 +358,30 @@ The rosa CLI supports **both** SDKs side by side — v1 (`ocm-sdk-go`) remains t
 3. **Initial surface**: Cluster + NodePool only. Tenancy and authz (account linking, policies, attachments, authorization check) are deferred to a future iteration, along with access transparency, service logs, etc.
 4. **Interface style**: Kubernetes-style, modeled on `client-go` — typed resource structs (`ObjectMeta`/`Spec`/`Status`) constructed as struct literals, and a typed client exposing `Create`/`Get`/`List`/`Update`/`Patch`/`Delete` verbs. No fluent builders.
 
+## Typed vs. Dynamic Client
+
+This initiative deliberately builds a **typed** SDK (generated Go structs, verb
+methods — see [Interface Decision](#interface-decision)), not a **dynamic** one
+(a generic client that fetches the schema at runtime and operates on
+`unstructured` / `map[string]any`, the way `kubectl` does).
+
+The rationale: a typed client suits consumers whose *own code names individual
+fields*. `rosa` CLI (each flag maps to a field), terraform-provider-rhcs (each
+HCL attribute maps to a field), and CAPA (reconcile logic maps field to field)
+are all in this category — they hand-write field names in source, so compile-time
+type safety is a direct benefit and the "new field ⇒ regenerate" cost is
+negligible (they must add a flag/attribute/mapping to use the field anyway).
+
+A dynamic client only pays off for pass-through consumers that forward a whole
+user-supplied resource without naming its fields (e.g. a future
+`rosactl apply -f cluster.yaml`), where new fields flow through with no client
+release. If/when `rosactl` grows such a surface, a dynamic client may be picked
+for it (TBD). It is out of scope here.
+
+(Note: distinct from the build-time [Dynamic Generation](#dynamic-generation)
+above, which is about automating codegen in `make generate` — not a runtime
+dynamic client.)
+
 ## Open Questions
 
 1. **Module location**: Separate repo (`hyperfleet-sdk-go`) or a package within `rosa-hyperfleet-api`?
