@@ -52,8 +52,8 @@ func main() {
 	var probeAddr string
 	var awsRegion string
 	var baseDomain string
-	var sqsStatusQueueURL string
 	var maxConcurrentReconciles int
+	var sqsStatusQueueURL string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -109,18 +109,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Discover the AWS account ID so we can construct deterministic SNS topic
-	// ARNs (arn:aws:sns:<region>:<accountID>:mc-<mcName>-specs) without
-	// requiring an explicit CLI flag.
-	stsClient := sts.NewFromConfig(awsCfg)
-	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-	if err != nil {
-		setupLog.Error(err, "Failed to get AWS caller identity for SNS ARN construction")
-		os.Exit(1)
-	}
-	awsAccountID := *identity.Account
-	setupLog.Info("Resolved AWS account ID for SNS topic ARNs", "accountID", awsAccountID)
-
 	scheme := runtime.NewScheme()
 	if err := v1alpha1.AddToScheme(scheme); err != nil {
 		setupLog.Error(err, "Failed to add v1alpha1 to scheme")
@@ -129,10 +117,10 @@ func main() {
 
 	log := ctrl.Log.WithName("pgruntime")
 
-	mgr, err := pgruntime.NewManager(pgruntime.Options{
+	mgr, err := hyperfleetdb.NewManager(hyperfleetdb.Options{
 		Scheme: scheme,
 		DSN:    dsn,
-		Shard: &pgruntime.ShardConfig{
+		Shard: &hyperfleetdb.ShardConfig{
 			Mod:   replicaCount,
 			Owned: []int{ordinal},
 			UnshardedGVKs: []schema.GroupVersionKind{
@@ -148,6 +136,18 @@ func main() {
 	}
 
 	dynamoDBClient := dynamodb.NewFromConfig(awsCfg)
+
+	// Discover the AWS account ID to construct SNS topic ARNs without an
+	// explicit CLI flag.
+	stsClient := sts.NewFromConfig(awsCfg)
+	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		setupLog.Error(err, "Failed to get AWS caller identity for SNS ARN construction")
+		os.Exit(1)
+	}
+	awsAccountID := *identity.Account
+	setupLog.Info("Resolved AWS account ID for SNS topic ARNs", "accountID", awsAccountID)
+
 	snsClient := sns.NewFromConfig(awsCfg)
 	sqsClient := sqs.NewFromConfig(awsCfg)
 	publisher := snspublisher.New(snsClient, awsRegion, awsAccountID)
