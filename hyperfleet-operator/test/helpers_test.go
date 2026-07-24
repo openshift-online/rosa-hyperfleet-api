@@ -33,32 +33,35 @@ var _ = BeforeEach(func() {
 func purgeResources() {
 	c := mgr.GetClient()
 
-	var clusters hyperfleetv1alpha1.ClusterList
-	if err := c.List(ctx, &clusters); err == nil {
-		for i := range clusters.Items {
-			clusters.Items[i].SetFinalizers(nil)
-			_ = c.Update(ctx, &clusters.Items[i])
-			_ = c.Delete(ctx, &clusters.Items[i])
-		}
-	}
-	var nodepools hyperfleetv1alpha1.NodePoolList
-	if err := c.List(ctx, &nodepools); err == nil {
-		for i := range nodepools.Items {
-			nodepools.Items[i].SetFinalizers(nil)
-			_ = c.Update(ctx, &nodepools.Items[i])
-			_ = c.Delete(ctx, &nodepools.Items[i])
-		}
-	}
-	var manifests hyperfleetv1alpha1.ManifestList
-	if err := c.List(ctx, &manifests); err == nil {
-		for i := range manifests.Items {
-			manifests.Items[i].SetFinalizers(nil)
-			_ = c.Update(ctx, &manifests.Items[i])
-			_ = c.Delete(ctx, &manifests.Items[i])
-		}
-	}
-
+	// Repeatedly strip finalizers and issue deletes inside the Eventually loop.
+	// A concurrent reconcile may re-add finalizers between our Update and Delete
+	// calls, so we must keep retrying until all objects are gone.
 	Eventually(func() int {
+		var clusters hyperfleetv1alpha1.ClusterList
+		if err := c.List(ctx, &clusters); err == nil {
+			for i := range clusters.Items {
+				clusters.Items[i].SetFinalizers(nil)
+				_ = c.Update(ctx, &clusters.Items[i])
+				_ = c.Delete(ctx, &clusters.Items[i])
+			}
+		}
+		var nodepools hyperfleetv1alpha1.NodePoolList
+		if err := c.List(ctx, &nodepools); err == nil {
+			for i := range nodepools.Items {
+				nodepools.Items[i].SetFinalizers(nil)
+				_ = c.Update(ctx, &nodepools.Items[i])
+				_ = c.Delete(ctx, &nodepools.Items[i])
+			}
+		}
+		var manifests hyperfleetv1alpha1.ManifestList
+		if err := c.List(ctx, &manifests); err == nil {
+			for i := range manifests.Items {
+				manifests.Items[i].SetFinalizers(nil)
+				_ = c.Update(ctx, &manifests.Items[i])
+				_ = c.Delete(ctx, &manifests.Items[i])
+			}
+		}
+
 		total := 0
 		var cl hyperfleetv1alpha1.ClusterList
 		if c.List(ctx, &cl) == nil {
@@ -73,7 +76,7 @@ func purgeResources() {
 			total += len(ml.Items)
 		}
 		return total
-	}, 5*time.Second, 50*time.Millisecond).Should(Equal(0))
+	}, 30*time.Second, 200*time.Millisecond).Should(Equal(0))
 }
 
 func scanTable(tableName string) []map[string]dynamodbtypes.AttributeValue {
