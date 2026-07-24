@@ -66,7 +66,6 @@ var _ = BeforeSuite(func() {
 		containerTool = "podman"
 	}
 	// ── Postgres ──
-
 	By("starting Postgres container")
 	pgPort = freePort()
 	cmd := exec.Command(containerTool, "run", "-d", "--rm",
@@ -88,7 +87,7 @@ var _ = BeforeSuite(func() {
 		if err != nil {
 			return err
 		}
-		conn.Close()
+		_ = conn.Close()
 		return nil
 	}, 30*time.Second, 200*time.Millisecond).Should(Succeed(), "Postgres did not become ready")
 
@@ -126,7 +125,7 @@ var _ = BeforeSuite(func() {
 	Expect(hyperfleetv1alpha1.AddToScheme(scheme)).To(Succeed())
 
 	var mgrErr error
-	mgr, mgrErr = pgruntime.NewManager(pgruntime.Options{
+	mgr, mgrErr = hyperfleetdb.NewManager(hyperfleetdb.Options{
 		Scheme: scheme,
 		DSN:    dsn,
 		Logger: logf.Log.WithName("pgruntime"),
@@ -279,7 +278,12 @@ var _ = BeforeSuite(func() {
 		defer GinkgoRecover()
 		specsTable := mc + "-specs-readdesires"
 		statusTable := mc + "-status-readdesires"
-		completedJob := []byte(`{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"e2e-job-abc123","namespace":"e2e-actions"},"status":{"succeeded":1,"startTime":"2026-06-25T10:00:00Z","completionTime":"2026-06-25T10:00:05Z"}}`)
+		completedJob := []byte(
+			`{"apiVersion":"batch/v1","kind":"Job",` +
+				`"metadata":{"name":"e2e-job-abc123","namespace":"e2e-actions"},` +
+				`"status":{"succeeded":1,"startTime":"2026-06-25T10:00:00Z",` +
+				`"completionTime":"2026-06-25T10:00:05Z"}}`,
+		)
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 		for {
@@ -294,7 +298,7 @@ var _ = BeforeSuite(func() {
 					continue
 				}
 				for _, item := range out.Items {
-					docID, ok := item["documentID"]
+				docID, ok := item["documentID"]
 					if !ok {
 						continue
 					}
@@ -336,7 +340,7 @@ func freePort() string {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	Expect(err).NotTo(HaveOccurred())
 	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
+	_ = l.Close()
 	return fmt.Sprintf("%d", port)
 }
 

@@ -161,10 +161,22 @@ func newTestCluster(name string) *hyperfleetv1alpha1.Cluster {
 					},
 				},
 				Services: []hypershiftv1beta1.ServicePublishingStrategyMapping{
-					{Service: hypershiftv1beta1.APIServer, ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route}},
-					{Service: hypershiftv1beta1.OAuthServer, ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route}},
-					{Service: hypershiftv1beta1.Konnectivity, ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route}},
-					{Service: hypershiftv1beta1.Ignition, ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route}},
+					{
+						Service:                   hypershiftv1beta1.APIServer,
+						ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route},
+					},
+					{
+						Service:                   hypershiftv1beta1.OAuthServer,
+						ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route},
+					},
+					{
+						Service:                   hypershiftv1beta1.Konnectivity,
+						ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route},
+					},
+					{
+						Service:                   hypershiftv1beta1.Ignition,
+						ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route},
+					},
 				},
 				Platform: hypershiftv1beta1.PlatformSpec{
 					Type: hypershiftv1beta1.AWSPlatform,
@@ -235,20 +247,38 @@ func newTestManifest(name string) *hyperfleetv1alpha1.Manifest {
 			Resources: []hyperfleetv1alpha1.ResourceTemplate{
 				{
 					Resource: "serviceaccounts",
-					Content:  runtime.RawExtension{Raw: []byte(`{"apiVersion":"v1","kind":"ServiceAccount","metadata":{"name":"e2e-runner","namespace":"e2e-actions"}}`)},
+					Content: runtime.RawExtension{Raw: []byte(
+						`{"apiVersion":"v1","kind":"ServiceAccount",` +
+							`"metadata":{"name":"e2e-runner","namespace":"e2e-actions"}}`,
+					)},
 				},
 				{
 					Resource: "roles",
-					Content:  runtime.RawExtension{Raw: []byte(`{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"Role","metadata":{"name":"e2e-runner","namespace":"e2e-actions"},"rules":[{"apiGroups":[""],"resources":["pods/log"],"verbs":["get"]}]}`)},
+					Content: runtime.RawExtension{Raw: []byte(
+						`{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"Role",` +
+							`"metadata":{"name":"e2e-runner","namespace":"e2e-actions"},` +
+							`"rules":[{"apiGroups":[""],"resources":["pods/log"],"verbs":["get"]}]}`,
+					)},
 				},
 				{
 					Resource: "rolebindings",
-					Content:  runtime.RawExtension{Raw: []byte(`{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"RoleBinding","metadata":{"name":"e2e-runner","namespace":"e2e-actions"},"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"Role","name":"e2e-runner"},"subjects":[{"kind":"ServiceAccount","name":"e2e-runner","namespace":"e2e-actions"}]}`)},
+					Content: runtime.RawExtension{Raw: []byte(
+						`{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"RoleBinding",` +
+							`"metadata":{"name":"e2e-runner","namespace":"e2e-actions"},` +
+							`"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"Role","name":"e2e-runner"},` +
+							`"subjects":[{"kind":"ServiceAccount","name":"e2e-runner","namespace":"e2e-actions"}]}`,
+					)},
 				},
 				{
 					Resource: "jobs",
-					Content:  runtime.RawExtension{Raw: []byte(`{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"e2e-job-abc123","namespace":"e2e-actions"},"spec":{"template":{"spec":{"serviceAccountName":"e2e-runner","containers":[{"name":"runner","image":"registry.example.com/e2e-runner:latest"}],"restartPolicy":"Never"}}}}`)},
-					Watch:    true,
+					Content: runtime.RawExtension{Raw: []byte(
+						`{"apiVersion":"batch/v1","kind":"Job",` +
+							`"metadata":{"name":"e2e-job-abc123","namespace":"e2e-actions"},` +
+							`"spec":{"template":{"spec":{"serviceAccountName":"e2e-runner",` +
+							`"containers":[{"name":"runner","image":"registry.example.com/e2e-runner:latest"}],` +
+							`"restartPolicy":"Never"}}}}`,
+					)},
+					Watch: true,
 				},
 			},
 		},
