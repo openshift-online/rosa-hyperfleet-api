@@ -20,17 +20,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log/slog"
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodbstreams"
+	"github.com/aws/aws-sdk-go-v2/service/sns"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	hyperfleetdb "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -41,7 +40,8 @@ import (
 	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/api/v1alpha1"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/controller"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo"
-	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo/statusstream"
+	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo/snspublisher"
+	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo/statussqsconsumer"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/render"
 )
 
@@ -52,14 +52,15 @@ func main() {
 	var probeAddr string
 	var awsRegion string
 	var baseDomain string
+	var sqsStatusQueueURL string
 	var maxConcurrentReconciles int
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.StringVar(&awsRegion, "aws-region", "", "AWS region for DynamoDB and EKS (required).")
+	flag.StringVar(&awsRegion, "aws-region", "", "AWS region for DynamoDB, SNS, SQS, and EKS (required).")
 	flag.StringVar(&baseDomain, "base-domain", "", "DNS base domain for hosted clusters (required).")
-	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 10,
-		"Maximum number of concurrent reconciles per controller.")
+	flag.StringVar(&sqsStatusQueueURL, "sqs-status-queue-url", "", "SQS queue URL for receiving status change notifications from kube-applier (required).")
+	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 10, "Maximum number of concurrent reconciles per controller.")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -73,6 +74,10 @@ func main() {
 	}
 	if baseDomain == "" {
 		setupLog.Error(nil, "--base-domain is required")
+		os.Exit(1)
+	}
+	if sqsStatusQueueURL == "" {
+		setupLog.Error(nil, "--sqs-status-queue-url is required")
 		os.Exit(1)
 	}
 
@@ -104,6 +109,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Discover the AWS account ID so we can construct deterministic SNS topic
+	// ARNs (arn:aws:sns:<region>:<accountID>:mc-<mcName>-specs) without
+	// requiring an explicit CLI flag.
+	stsClient := sts.NewFromConfig(awsCfg)
+	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		setupLog.Error(err, "Failed to get AWS caller identity for SNS ARN construction")
+		os.Exit(1)
+	}
+	awsAccountID := *identity.Account
+	setupLog.Info("Resolved AWS account ID for SNS topic ARNs", "accountID", awsAccountID)
+
 	scheme := runtime.NewScheme()
 	if err := v1alpha1.AddToScheme(scheme); err != nil {
 		setupLog.Error(err, "Failed to add v1alpha1 to scheme")
@@ -112,10 +129,10 @@ func main() {
 
 	log := ctrl.Log.WithName("pgruntime")
 
-	mgr, err := hyperfleetdb.NewManager(hyperfleetdb.Options{
+	mgr, err := pgruntime.NewManager(pgruntime.Options{
 		Scheme: scheme,
 		DSN:    dsn,
-		Shard: &hyperfleetdb.ShardConfig{
+		Shard: &pgruntime.ShardConfig{
 			Mod:   replicaCount,
 			Owned: []int{ordinal},
 			UnshardedGVKs: []schema.GroupVersionKind{
@@ -131,8 +148,10 @@ func main() {
 	}
 
 	dynamoDBClient := dynamodb.NewFromConfig(awsCfg)
-	dynamoClient := dynamo.NewClient(dynamoDBClient)
-	streamsClient := dynamodbstreams.NewFromConfig(awsCfg)
+	snsClient := sns.NewFromConfig(awsCfg)
+	sqsClient := sqs.NewFromConfig(awsCfg)
+	publisher := snspublisher.New(snsClient, awsRegion, awsAccountID)
+	dynamoClient := dynamo.NewClientWithSNS(dynamoDBClient, publisher)
 
 	rcfg := render.RegionalConfig{
 		BaseDomain: baseDomain,
@@ -196,19 +215,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	streamMgr := statusstream.NewManager(
-		dynamoDBClient,
-		streamsClient,
-		mgr.GetClient(),
-		[]string{dynamo.TableSuffixStatusApplyDesires, dynamo.TableSuffixStatusReadDesires},
+	// Replace DynamoDB Streams-based statusstream.Manager with a single
+	// pre-provisioned SQS queue per operator replica. kube-applier publishes
+	// a status notification to SNS after each status write; SNS delivers to
+	// all per-replica queues; the operator drains its own queue only.
+	// EventRouter.Dispatch silently drops document IDs it does not own,
+	// so no per-MC filtering is required here.
+	statusConsumer := statussqsconsumer.New(
+		sqsClient,
+		sqsStatusQueueURL,
 		func(documentID string) { eventRouter.Dispatch(documentID) },
-		slog.Default().With("component", "statusstream"),
 	)
 	watchCtx, watchCancel := context.WithCancel(context.Background())
 	defer watchCancel()
-	go streamMgr.Run(watchCtx, 5*time.Second)
+	go statusConsumer.Run(watchCtx)
 
-	setupLog.Info("Starting pgruntime manager")
+	setupLog.Info("Starting pgruntime manager",
+		"sqsStatusQueueURL", sqsStatusQueueURL,
+	)
 	if err := mgr.Start(signalCtx); err != nil {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)

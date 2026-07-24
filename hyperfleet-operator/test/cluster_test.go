@@ -34,11 +34,7 @@ var _ = Describe("Cluster lifecycle", func() {
 		By("waiting for Placement to be created and Bound")
 		Eventually(func(g Gomega) {
 			var p hyperfleetv1alpha1.Placement
-			nn := types.NamespacedName{
-				Namespace: testNS,
-				Name:      clusterName + "-placement",
-			}
-			g.Expect(k8sClient.Get(ctx, nn, &p)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + "-placement"}, &p)).To(Succeed())
 			g.Expect(p.Status.Phase).To(Equal(hyperfleetv1alpha1.PlacementPhaseBound))
 			g.Expect(p.Spec.ManagementCluster).To(Equal("mc01"))
 		}).Should(Succeed())
@@ -96,7 +92,7 @@ var _ = Describe("Cluster lifecycle", func() {
 		readTable := mc + "-specs-readdesires"
 		Eventually(func(g Gomega) {
 			readItems := scanTable(readTable)
-			g.Expect(readItems).ToNot(BeEmpty())
+			g.Expect(len(readItems)).To(BeNumerically(">=", 1))
 			resource := attrString(readItems[0], "spec", "targetItem", "resource")
 			g.Expect(resource).To(Equal("hostedclusters"))
 		}).Should(Succeed())
@@ -125,7 +121,7 @@ var _ = Describe("Cluster lifecycle", func() {
 		var readDocID string
 		Eventually(func(g Gomega) {
 			items := scanTable(readTable)
-			g.Expect(items).ToNot(BeEmpty())
+			g.Expect(len(items)).To(BeNumerically(">=", 1))
 			readDocID = attrString(items[0], "documentID")
 			g.Expect(readDocID).NotTo(BeEmpty())
 		}).Should(Succeed())
@@ -165,8 +161,7 @@ var _ = Describe("Cluster lifecycle", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		// DynamoDB Local streams are not reliable enough to deliver events
-		// within test timeouts, so dispatch manually to trigger re-reconciliation.
+		// Dispatch directly to trigger re-reconciliation (no DynamoDB Streams).
 		eventRouter.Dispatch(readDocID)
 
 		By("verifying Cluster CR status is updated with HostedCluster data")
@@ -214,8 +209,7 @@ var _ = Describe("Cluster lifecycle", func() {
 
 		By("verifying NodePool CR is deleted")
 		Eventually(func() error {
-			nn := types.NamespacedName{Namespace: testNS, Name: "e2e-nodepool"}
-			return k8sClient.Get(ctx, nn, &hyperfleetv1alpha1.NodePool{})
+			return k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "e2e-nodepool"}, &hyperfleetv1alpha1.NodePool{})
 		}).ShouldNot(Succeed())
 
 		By("verifying delete desire status entries exist in the applydesires status table")
@@ -234,11 +228,7 @@ var _ = Describe("Cluster lifecycle", func() {
 
 		By("verifying Placement CR is deleted")
 		Eventually(func() error {
-			nn := types.NamespacedName{
-				Namespace: testNS,
-				Name:      clusterName + "-placement",
-			}
-			return k8sClient.Get(ctx, nn, &hyperfleetv1alpha1.Placement{})
+			return k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + "-placement"}, &hyperfleetv1alpha1.Placement{})
 		}).ShouldNot(Succeed())
 
 		By("verifying Cluster CR is fully gone")
@@ -336,8 +326,7 @@ var _ = Describe("Cluster lifecycle", func() {
 		By("deleting only the NodePool CR")
 		Eventually(func() error {
 			var npToDelete hyperfleetv1alpha1.NodePool
-			nn := types.NamespacedName{Namespace: testNS, Name: "e2e-nodepool"}
-			if err := k8sClient.Get(ctx, nn, &npToDelete); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "e2e-nodepool"}, &npToDelete); err != nil {
 				return err
 			}
 			return k8sClient.Delete(ctx, &npToDelete)
@@ -371,18 +360,13 @@ var _ = Describe("Cluster lifecycle", func() {
 
 		By("verifying NodePool CR is fully gone")
 		Eventually(func() error {
-			nn := types.NamespacedName{Namespace: testNS, Name: "e2e-nodepool"}
-			return k8sClient.Get(ctx, nn, &hyperfleetv1alpha1.NodePool{})
+			return k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "e2e-nodepool"}, &hyperfleetv1alpha1.NodePool{})
 		}).ShouldNot(Succeed())
 
 		By("verifying Cluster and Placement are still alive")
 		var c hyperfleetv1alpha1.Cluster
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName}, &c)).To(Succeed())
 		var p hyperfleetv1alpha1.Placement
-		nn := types.NamespacedName{
-			Namespace: testNS,
-			Name:      clusterName + "-placement",
-		}
-		Expect(k8sClient.Get(ctx, nn, &p)).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + "-placement"}, &p)).To(Succeed())
 	})
 })

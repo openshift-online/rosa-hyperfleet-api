@@ -33,32 +33,35 @@ var _ = BeforeEach(func() {
 func purgeResources() {
 	c := mgr.GetClient()
 
-	var clusters hyperfleetv1alpha1.ClusterList
-	if err := c.List(ctx, &clusters); err == nil {
-		for i := range clusters.Items {
-			clusters.Items[i].SetFinalizers(nil)
-			_ = c.Update(ctx, &clusters.Items[i])
-			_ = c.Delete(ctx, &clusters.Items[i])
-		}
-	}
-	var nodepools hyperfleetv1alpha1.NodePoolList
-	if err := c.List(ctx, &nodepools); err == nil {
-		for i := range nodepools.Items {
-			nodepools.Items[i].SetFinalizers(nil)
-			_ = c.Update(ctx, &nodepools.Items[i])
-			_ = c.Delete(ctx, &nodepools.Items[i])
-		}
-	}
-	var manifests hyperfleetv1alpha1.ManifestList
-	if err := c.List(ctx, &manifests); err == nil {
-		for i := range manifests.Items {
-			manifests.Items[i].SetFinalizers(nil)
-			_ = c.Update(ctx, &manifests.Items[i])
-			_ = c.Delete(ctx, &manifests.Items[i])
-		}
-	}
-
+	// Repeatedly strip finalizers and issue deletes inside the Eventually loop.
+	// A concurrent reconcile may re-add finalizers between our Update and Delete
+	// calls, so we must keep retrying until all objects are gone.
 	Eventually(func() int {
+		var clusters hyperfleetv1alpha1.ClusterList
+		if err := c.List(ctx, &clusters); err == nil {
+			for i := range clusters.Items {
+				clusters.Items[i].SetFinalizers(nil)
+				_ = c.Update(ctx, &clusters.Items[i])
+				_ = c.Delete(ctx, &clusters.Items[i])
+			}
+		}
+		var nodepools hyperfleetv1alpha1.NodePoolList
+		if err := c.List(ctx, &nodepools); err == nil {
+			for i := range nodepools.Items {
+				nodepools.Items[i].SetFinalizers(nil)
+				_ = c.Update(ctx, &nodepools.Items[i])
+				_ = c.Delete(ctx, &nodepools.Items[i])
+			}
+		}
+		var manifests hyperfleetv1alpha1.ManifestList
+		if err := c.List(ctx, &manifests); err == nil {
+			for i := range manifests.Items {
+				manifests.Items[i].SetFinalizers(nil)
+				_ = c.Update(ctx, &manifests.Items[i])
+				_ = c.Delete(ctx, &manifests.Items[i])
+			}
+		}
+
 		total := 0
 		var cl hyperfleetv1alpha1.ClusterList
 		if c.List(ctx, &cl) == nil {
@@ -73,7 +76,7 @@ func purgeResources() {
 			total += len(ml.Items)
 		}
 		return total
-	}, 5*time.Second, 50*time.Millisecond).Should(Equal(0))
+	}, 30*time.Second, 200*time.Millisecond).Should(Equal(0))
 }
 
 func scanTable(tableName string) []map[string]dynamodbtypes.AttributeValue {
@@ -158,22 +161,10 @@ func newTestCluster(name string) *hyperfleetv1alpha1.Cluster {
 					},
 				},
 				Services: []hypershiftv1beta1.ServicePublishingStrategyMapping{
-					{
-						Service:                   hypershiftv1beta1.APIServer,
-						ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route},
-					},
-					{
-						Service:                   hypershiftv1beta1.OAuthServer,
-						ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route},
-					},
-					{
-						Service:                   hypershiftv1beta1.Konnectivity,
-						ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route},
-					},
-					{
-						Service:                   hypershiftv1beta1.Ignition,
-						ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route},
-					},
+					{Service: hypershiftv1beta1.APIServer, ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route}},
+					{Service: hypershiftv1beta1.OAuthServer, ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route}},
+					{Service: hypershiftv1beta1.Konnectivity, ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route}},
+					{Service: hypershiftv1beta1.Ignition, ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{Type: hypershiftv1beta1.Route}},
 				},
 				Platform: hypershiftv1beta1.PlatformSpec{
 					Type: hypershiftv1beta1.AWSPlatform,
@@ -244,38 +235,20 @@ func newTestManifest(name string) *hyperfleetv1alpha1.Manifest {
 			Resources: []hyperfleetv1alpha1.ResourceTemplate{
 				{
 					Resource: "serviceaccounts",
-					Content: runtime.RawExtension{Raw: []byte(
-						`{"apiVersion":"v1","kind":"ServiceAccount",` +
-							`"metadata":{"name":"e2e-runner","namespace":"e2e-actions"}}`,
-					)},
+					Content:  runtime.RawExtension{Raw: []byte(`{"apiVersion":"v1","kind":"ServiceAccount","metadata":{"name":"e2e-runner","namespace":"e2e-actions"}}`)},
 				},
 				{
 					Resource: "roles",
-					Content: runtime.RawExtension{Raw: []byte(
-						`{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"Role",` +
-							`"metadata":{"name":"e2e-runner","namespace":"e2e-actions"},` +
-							`"rules":[{"apiGroups":[""],"resources":["pods/log"],"verbs":["get"]}]}`,
-					)},
+					Content:  runtime.RawExtension{Raw: []byte(`{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"Role","metadata":{"name":"e2e-runner","namespace":"e2e-actions"},"rules":[{"apiGroups":[""],"resources":["pods/log"],"verbs":["get"]}]}`)},
 				},
 				{
 					Resource: "rolebindings",
-					Content: runtime.RawExtension{Raw: []byte(
-						`{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"RoleBinding",` +
-							`"metadata":{"name":"e2e-runner","namespace":"e2e-actions"},` +
-							`"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"Role","name":"e2e-runner"},` +
-							`"subjects":[{"kind":"ServiceAccount","name":"e2e-runner","namespace":"e2e-actions"}]}`,
-					)},
+					Content:  runtime.RawExtension{Raw: []byte(`{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"RoleBinding","metadata":{"name":"e2e-runner","namespace":"e2e-actions"},"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"Role","name":"e2e-runner"},"subjects":[{"kind":"ServiceAccount","name":"e2e-runner","namespace":"e2e-actions"}]}`)},
 				},
 				{
 					Resource: "jobs",
-					Content: runtime.RawExtension{Raw: []byte(
-						`{"apiVersion":"batch/v1","kind":"Job",` +
-							`"metadata":{"name":"e2e-job-abc123","namespace":"e2e-actions"},` +
-							`"spec":{"template":{"spec":{"serviceAccountName":"e2e-runner",` +
-							`"containers":[{"name":"runner","image":"registry.example.com/e2e-runner:latest"}],` +
-							`"restartPolicy":"Never"}}}}`,
-					)},
-					Watch: true,
+					Content:  runtime.RawExtension{Raw: []byte(`{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"e2e-job-abc123","namespace":"e2e-actions"},"spec":{"template":{"spec":{"serviceAccountName":"e2e-runner","containers":[{"name":"runner","image":"registry.example.com/e2e-runner:latest"}],"restartPolicy":"Never"}}}}`)},
+					Watch:    true,
 				},
 			},
 		},

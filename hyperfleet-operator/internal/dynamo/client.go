@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,8 +22,8 @@ import (
 var ErrNotFound = errors.New("desire not found")
 
 const (
-	TableSuffixApplyDesires       = "-applydesires"
-	TableSuffixReadDesires        = "-readdesires"
+	TableSuffixApplyDesires      = "-applydesires"
+	TableSuffixReadDesires       = "-readdesires"
 	TableSuffixStatusApplyDesires = "-status-applydesires"
 	TableSuffixStatusReadDesires  = "-status-readdesires"
 	attributeDocumentID           = "documentID"
@@ -32,6 +33,16 @@ type dynamoAPI interface {
 	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
 	PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
 	DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error)
+}
+
+// SNSPublisher publishes a spec change notification after a desire is written.
+// Implementations must be safe for concurrent use. A nil SNSPublisher disables
+// notifications (useful for tests and local development).
+type SNSPublisher interface {
+	// Publish sends a notification for the given document to the SNS topic for
+	// mcName. tableSuffix identifies the table type (e.g. "-applydesires").
+	// Errors are best-effort: callers should log them but need not propagate.
+	Publish(ctx context.Context, mcName, documentID, tableSuffix string) error
 }
 
 // UpsertResult reports whether an upsert changed the item and the updateTime
@@ -62,22 +73,75 @@ type cacheEntry struct {
 type Client struct {
 	db    dynamoAPI
 	cache sync.Map // table/documentID → cacheEntry
+	sns   SNSPublisher
 }
 
 var _ DesireClient = (*Client)(nil)
 
+// NewClient returns a Client with no SNS publisher. Desire writes succeed but
+// no SNS notifications are sent. Use NewClientWithSNS for production.
 func NewClient(db dynamoAPI) *Client {
 	return &Client{db: db}
 }
 
+// NewClientWithSNS returns a Client that publishes a spec change notification
+// to SNS after every desire write where the spec actually changed.
+func NewClientWithSNS(db dynamoAPI, publisher SNSPublisher) *Client {
+	return &Client{db: db, sns: publisher}
+}
+
 // UpsertApplyDesire writes an ApplyDesire spec only when content has changed.
+// If the spec changed and an SNSPublisher is configured, it publishes a
+// notification so kube-applier learns about the change without polling Streams.
 func (c *Client) UpsertApplyDesire(ctx context.Context, specsPrefix string, desire *ApplyDesire) (UpsertResult, error) {
-	return c.upsertDesire(ctx, specsPrefix+TableSuffixApplyDesires, desire.DocumentID, desire.Spec)
+	result, err := c.upsertDesire(ctx, specsPrefix+TableSuffixApplyDesires, desire.DocumentID, desire.Spec)
+	if err != nil {
+		return result, err
+	}
+	if result.Changed {
+		c.publishNotification(ctx, specsPrefix, desire.DocumentID, TableSuffixApplyDesires)
+	}
+	return result, nil
 }
 
 // UpsertReadDesire writes a ReadDesire spec only when content has changed.
+// If the spec changed and an SNSPublisher is configured, it publishes a
+// notification so kube-applier learns about the change without polling Streams.
 func (c *Client) UpsertReadDesire(ctx context.Context, specsPrefix string, desire *ReadDesire) (UpsertResult, error) {
-	return c.upsertDesire(ctx, specsPrefix+TableSuffixReadDesires, desire.DocumentID, desire.Spec)
+	result, err := c.upsertDesire(ctx, specsPrefix+TableSuffixReadDesires, desire.DocumentID, desire.Spec)
+	if err != nil {
+		return result, err
+	}
+	if result.Changed {
+		c.publishNotification(ctx, specsPrefix, desire.DocumentID, TableSuffixReadDesires)
+	}
+	return result, nil
+}
+
+// publishNotification sends an SNS notification for a changed desire write.
+// It is a no-op when no SNSPublisher is configured. Errors are logged but not
+// propagated — kube-applier's 5-minute safety-net poll covers missed events.
+func (c *Client) publishNotification(ctx context.Context, specsPrefix, documentID, tableSuffix string) {
+	if c.sns == nil {
+		return
+	}
+	mcName := mcNameFromPrefix(specsPrefix)
+	if err := c.sns.Publish(ctx, mcName, documentID, tableSuffix); err != nil {
+		slog.Error("Failed to publish desire change notification to SNS",
+			"mcName", mcName,
+			"documentID", documentID,
+			"tableSuffix", tableSuffix,
+			"error", err,
+		)
+	}
+}
+
+// mcNameFromPrefix strips the "-specs" suffix from a specsPrefix to recover the
+// management cluster name. E.g. "mc-prod-specs" → "prod", "mc01-specs" → "mc01".
+func mcNameFromPrefix(specsPrefix string) string {
+	name := strings.TrimPrefix(specsPrefix, "mc-")
+	name = strings.TrimSuffix(name, "-specs")
+	return name
 }
 
 // GetApplyDesireStatus reads an ApplyDesire from the status table.
