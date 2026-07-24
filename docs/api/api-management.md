@@ -115,11 +115,11 @@ type ClusterSpec struct {
 }
 ```
 
-| Write Mode | On Create (POST) | On Update (PUT/PATCH) |
-| ---------- | ----------------- | --------------------- |
-| **mutable** | Customer can set | Customer can change |
-| **immutable** | Customer can set | Rejected if changed |
-| **service-set** | Platform fills it in | Rejected if present |
+| Write Mode      | On Create (POST)     | On Update (PUT/PATCH) |
+| --------------- | -------------------- | --------------------- |
+| **mutable**     | Customer can set     | Customer can change   |
+| **immutable**   | Customer can set     | Rejected if changed   |
+| **service-set** | Platform fills it in | Rejected if present   |
 
 ### Marker 3: Feature Gate (`+openshift:enable:FeatureGate=X`)
 

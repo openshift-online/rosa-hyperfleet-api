@@ -19,6 +19,7 @@ make clean           # Remove build artifacts
 ```
 
 ### Integration & E2E Tests
+
 ```bash
 make e2e-init-db         # Initialize test database
 make e2e-authz-infra-up  # Start authorization test infrastructure
@@ -32,7 +33,7 @@ make e2e-authz-infra-down # Stop authorization test infrastructure
   - API handlers, services, and data access
   - gRPC and REST server implementations
 - **openapi/**: OpenAPI/Swagger specifications
-- **deployment/**: Kubernetes deployment manifests
+- **docs/**: API documentation and design references
 - **test/**: Integration and E2E test suites
 - **hack/**: Development scripts and utilities
 
@@ -41,4 +42,5 @@ make e2e-authz-infra-down # Stop authorization test infrastructure
 - Module path: `github.com/openshift/rosa-regional-platform-api`
 - Uses Ginkgo/Gomega for testing
 - OpenAPI-first API design
-- PostgreSQL for data persistence
+- PostgreSQL (Aurora via pgruntime) for cluster, nodepool, and management cluster data
+- DynamoDB for authorization tables and ZOA state

@@ -3,7 +3,7 @@ name: Bug Report
 about: Report a bug to help us improve
 title: "[BUG] "
 labels: bug
-assignees: ''
+assignees: ""
 ---
 
 ## Describe the Bug
@@ -12,9 +12,9 @@ assignees: ''
 
 ## Steps to Reproduce
 
-1. 
-2. 
-3. 
+1.
+2.
+3.
 
 ## Expected Behavior
 
@@ -26,9 +26,9 @@ assignees: ''
 
 ## Environment
 
-- OS: 
-- Version: 
-- Go version (if applicable): 
+- OS:
+- Version:
+- Go version (if applicable):
 
 ## Additional Context
 

@@ -35,12 +35,14 @@ The entire authentication model trusts HTTP headers (`X-Amz-Account-Id`, `X-Amz-
 If the API server is reachable by any path that bypasses API Gateway (e.g., direct pod IP, internal service name, misconfigured Kubernetes NetworkPolicy, VPC peering, or load balancer), any caller can forge any identity, including privileged accounts.
 
 **Attack Vectors:**
+
 1. **Direct pod access:** From within the EKS cluster (another pod, compromised node), call the API directly at `http://rosa-regional-platform-api:8000` with `X-Amz-Account-Id: 000000000000` (a hardcoded privileged account in test data) and `X-Amz-Caller-Arn: arn:aws:iam::000000000000:root` to gain full privileged access.
 2. **Network policy gap:** If Kubernetes NetworkPolicy is not configured (or uses default-allow), any pod in the cluster can forge headers and call the API.
 3. **API Gateway bypass:** If the ALB target group binding (`targetgroupbinding.yaml`) is misconfigured to also expose the pod directly, the API Gateway IAM auth layer is bypassed.
 4. **Internal AWS service access:** VPC peering, Transit Gateway, or AWS PrivateLink configurations that allow other accounts/services to reach the pod's VPC could be used to forge headers.
 
 **What to Mitigate:**
+
 - Implement a **request signing validation** layer. API Gateway signs forwarded requests with a known secret. Validate that all requests carry this signature before trusting the `X-Amz-*` headers.
 - Alternatively, configure **Kubernetes NetworkPolicy** to restrict ingress to the API pod to only the API Gateway VPC endpoint's source IP range.
 - Add a shared secret or HMAC signature in a custom header that API Gateway injects (via a request transformer), which the Go service validates before processing any `X-Amz-*` header.
@@ -64,6 +66,7 @@ apiHandler := handlers.CORS(
 `AllowedOrigins([]string{"*"})` permits cross-origin requests from any domain. Because authentication relies on AWS SigV4-signed requests (injected by API Gateway), this CORS policy cannot be directly exploited for CSRF in typical browser flows. However, it creates several risks:
 
 **Attack Vectors:**
+
 1. **Information leakage:** Error responses, API versions (`/api/v0/info`), and health endpoints are accessible from any origin in a browser context without preflight restrictions, potentially leaking environment information.
 2. **If custom auth headers are added:** If the API is ever extended with cookie-based auth or `Authorization` header-based auth (which is already listed in `AllowedHeaders`), the wildcard CORS policy immediately enables CSRF attacks from any origin.
 3. **Reflected XSS pivot:** If any endpoint returns user-controlled content without escaping, the CORS policy enables cross-origin exploitation.
@@ -81,12 +84,13 @@ Restrict `AllowedOrigins` to the specific frontend domains that need access (e.g
 ```go
 if cfg.Authz != nil && cfg.Authz.Enabled {
     // Full Cedar/AVP authz setup
-} 
+}
 // else: only RequireAllowedAccount is applied (account allowlist only)
 ```
 
 **Risk:**  
 When `cfg.Authz` is `nil` or `cfg.Authz.Enabled` is `false`, the server falls back to the legacy `RequireAllowedAccount` middleware, which only checks if the `X-Amz-Account-Id` is in a static allowlist. This means:
+
 - All accounts in the allowlist have full access to all operations, regardless of which IAM principal they use.
 - There is no per-resource authorization, no admin requirement, and no Cedar policy evaluation.
 - Any misconfiguration in the deployment (missing `AUTHZ_ENABLED=true` env var, missing DynamoDB config) silently degrades security.
@@ -95,6 +99,7 @@ When `cfg.Authz` is `nil` or `cfg.Authz.Enabled` is `false`, the server falls ba
 A deployment error (e.g., wrong ConfigMap, missing environment variable, failed DynamoDB connection that returns nil config) causes the server to start in the degraded `allowlist-only` mode. Any allowed account can perform all operations (create, delete, modify clusters, nodepools, etc.) without admin privileges.
 
 **What to Mitigate:**
+
 - **Fail-closed:** If authz configuration is expected but missing or invalid, the server should refuse to start rather than fall back to weaker controls.
 - Add a startup assertion: if `cfg.Authz` is nil and the environment requires authz, log a fatal error and exit.
 - Add a runtime health check that exposes the current auth mode, so monitoring can alert on degraded auth state.
@@ -152,6 +157,7 @@ With `MetricsBindAddress: "0.0.0.0"` and `MetricsPort: 9090`.
 
 **Risk:**  
 The Prometheus metrics endpoint is bound to `0.0.0.0:9090` with no authentication. Prometheus metrics can expose:
+
 - Request rates and patterns that reveal which API endpoints are being called (information useful for attackers)
 - Error rates and types (useful for understanding what attacks are partially succeeding)
 - Internal runtime metrics (goroutine counts, GC pauses, memory usage)
@@ -161,6 +167,7 @@ The Prometheus metrics endpoint is bound to `0.0.0.0:9090` with no authenticatio
 Any pod in the cluster can scrape `http://rosa-regional-platform-api:9090/metrics` and gain operational visibility into the API service. From within a compromised pod, this data can help an attacker understand traffic patterns and time attacks.
 
 **What to Mitigate:**
+
 - Bind the metrics server to `127.0.0.1` (localhost) only, and use Prometheus' in-cluster scraping (which uses the pod's localhost address, not a network service).
 - Or restrict metrics access via Kubernetes NetworkPolicy to only the Prometheus scraper pod(s).
 - Or add bearer token authentication to the metrics endpoint.

@@ -37,13 +37,14 @@ The `hcp:available` phase is distinct from `hcp:monitor` — it represents the w
 **State**: Infrastructure provisioning in progress.
 **Purpose**: Create the cloud infrastructure required for an HCP.
 **Current tests**:
-| Test | Label | Description |
-|------|-------|-------------|
-| Login to BASE_URL | `login` | Authenticate rosactl against the platform API |
-| Create cluster-vpc | `vpc-create` | Provision VPC via rosactl |
-| List cluster-vpc | `vpc-list` | Verify VPC appears in listing |
-| Create cluster-iam | `iam-create` | Provision IAM roles via rosactl |
-| List cluster-iam | `iam-list` | Verify IAM roles appear in listing |
+
+| Test                 | Label         | Description                                     |
+| -------------------- | ------------- | ----------------------------------------------- |
+| Login to BASE_URL    | `login`       | Authenticate rosactl against the platform API   |
+| Create cluster-vpc   | `vpc-create`  | Provision VPC via rosactl                       |
+| List cluster-vpc     | `vpc-list`    | Verify VPC appears in listing                   |
+| Create cluster-iam   | `iam-create`  | Provision IAM roles via rosactl                 |
+| List cluster-iam     | `iam-list`    | Verify IAM roles appear in listing              |
 | Add customer account | `account-add` | Register customer account with the platform API |
 
 #### `hcp:post-setup`
@@ -63,11 +64,12 @@ The `hcp:available` phase is distinct from `hcp:monitor` — it represents the w
 **State**: HCP creation in progress.
 **Purpose**: Create the HCP and supporting resources (OIDC).
 **Current tests**:
-| Test | Label | Description |
-|------|-------|-------------|
-| Create HCP cluster | `hcp-create` | Create cluster via rosactl, capture cluster ID |
-| Create cluster-oidc | `oidc-create` | Provision OIDC provider for the cluster |
-| List cluster-oidc | `oidc-list` | Verify OIDC provider appears in listing |
+
+| Test                | Label         | Description                                    |
+| ------------------- | ------------- | ---------------------------------------------- |
+| Create HCP cluster  | `hcp-create`  | Create cluster via rosactl, capture cluster ID |
+| Create cluster-oidc | `oidc-create` | Provision OIDC provider for the cluster        |
+| List cluster-oidc   | `oidc-list`   | Verify OIDC provider appears in listing        |
 
 #### `hcp:post-create`
 
@@ -86,10 +88,11 @@ The `hcp:available` phase is distinct from `hcp:monitor` — it represents the w
 **State**: Cluster transitioning to ready.
 **Purpose**: Poll for readiness.
 **Current tests**:
-| Test | Label | Description |
-|------|-------|-------------|
+
+| Test                   | Label            | Description                                                                             |
+| ---------------------- | ---------------- | --------------------------------------------------------------------------------------- |
 | Wait for cluster ready | `cluster-status` | Poll `/clusters/{id}/statuses` until all controller conditions are True (20min timeout) |
-| Wait for nodepools | `nodepools-wait` | Wait 5min for nodepools to deploy |
+| Wait for nodepools     | `nodepools-wait` | Wait 5min for nodepools to deploy                                                       |
 
 #### `hcp:post-monitor`
 
@@ -108,8 +111,9 @@ The `hcp:available` phase is distinct from `hcp:monitor` — it represents the w
 **State**: HCP is fully operational. API server reachable, nodepools ready, metrics flowing.
 **Purpose**: Run functional tests against a live HCP. This is the primary phase for feature verification.
 **Current tests**:
-| Test | Label | Description |
-|------|-------|-------------|
+
+| Test                    | Label         | Description                                                          |
+| ----------------------- | ------------- | -------------------------------------------------------------------- |
 | HCP availability metric | `hcp-metrics` | Query Thanos for `hcp:hostedcluster_available` recording rule metric |
 
 **Example uses**: Run workloads on the cluster, verify ingress, test HCP API server responsiveness, validate SLA recording rules are producing data, run customer-facing feature smoke tests.
@@ -131,14 +135,15 @@ The `hcp:available` phase is distinct from `hcp:monitor` — it represents the w
 **State**: Teardown in progress.
 **Purpose**: Delete the HCP and all associated infrastructure.
 **Current tests**:
-| Test | Label | Description |
-|------|-------|-------------|
-| Delete HCP cluster | `hcp-delete` | DELETE `/clusters/{id}`, expect 202 |
-| Poll until deleted | `cluster-query` | Poll GET `/clusters/{id}` until 404/410 (10min timeout) |
-| Delete resource bundles | `bundles-delete` | Delete all resource bundles matching cluster ID |
-| Delete cluster-oidc | `oidc-delete` | Remove OIDC provider via rosactl |
-| Delete cluster-vpc | `vpc-delete` | Remove VPC via rosactl (3 retries, 5min backoff) |
-| Delete cluster-iam | `iam-delete` | Remove IAM roles via rosactl |
+
+| Test                    | Label            | Description                                             |
+| ----------------------- | ---------------- | ------------------------------------------------------- |
+| Delete HCP cluster      | `hcp-delete`     | DELETE `/clusters/{id}`, expect 202                     |
+| Poll until deleted      | `cluster-query`  | Poll GET `/clusters/{id}` until 404/410 (10min timeout) |
+| Delete resource bundles | `bundles-delete` | Delete all resource bundles matching cluster ID         |
+| Delete cluster-oidc     | `oidc-delete`    | Remove OIDC provider via rosactl                        |
+| Delete cluster-vpc      | `vpc-delete`     | Remove VPC via rosactl (3 retries, 5min backoff)        |
+| Delete cluster-iam      | `iam-delete`     | Remove IAM roles via rosactl                            |
 
 #### `hcp:post-cleanup`
 
