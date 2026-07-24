@@ -226,7 +226,7 @@ var _ = BeforeSuite(func() {
 				if err != nil {
 					continue
 				}
-				for _, item := range out.Items {
+			for _, item := range out.Items {
 					docID, ok := item["documentID"]
 					if !ok {
 						continue
@@ -298,7 +298,7 @@ var _ = BeforeSuite(func() {
 					continue
 				}
 				for _, item := range out.Items {
-				docID, ok := item["documentID"]
+					docID, ok := item["documentID"]
 					if !ok {
 						continue
 					}
