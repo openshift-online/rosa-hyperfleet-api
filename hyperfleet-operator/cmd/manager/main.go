@@ -20,17 +20,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log/slog"
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodbstreams"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	hyperfleetdb "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -41,7 +38,7 @@ import (
 	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/controller"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo"
-	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo/statusstream"
+	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo/statussqsconsumer"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/render"
 )
 
@@ -53,13 +50,16 @@ func main() {
 	var awsRegion string
 	var baseDomain string
 	var maxConcurrentReconciles int
+	var sqsStatusQueueURL string
+	var sqsStatusQueueURLPrefix string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.StringVar(&awsRegion, "aws-region", "", "AWS region for DynamoDB and EKS (required).")
+	flag.StringVar(&awsRegion, "aws-region", "", "AWS region for DynamoDB, SQS, and EKS (required).")
 	flag.StringVar(&baseDomain, "base-domain", "", "DNS base domain for hosted clusters (required).")
-	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 10,
-		"Maximum number of concurrent reconciles per controller.")
+	flag.StringVar(&sqsStatusQueueURL, "sqs-status-queue-url", "", "Full SQS queue URL for receiving status change notifications from kube-applier. Mutually exclusive with --sqs-status-queue-url-prefix.")
+	flag.StringVar(&sqsStatusQueueURLPrefix, "sqs-status-queue-url-prefix", "", "SQS queue URL prefix; the pod ordinal (from hostname) is appended to form the full queue URL. Mutually exclusive with --sqs-status-queue-url.")
+	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 10, "Maximum number of concurrent reconciles per controller.")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -75,6 +75,14 @@ func main() {
 		setupLog.Error(nil, "--base-domain is required")
 		os.Exit(1)
 	}
+	if sqsStatusQueueURL != "" && sqsStatusQueueURLPrefix != "" {
+		setupLog.Error(nil, "--sqs-status-queue-url and --sqs-status-queue-url-prefix are mutually exclusive")
+		os.Exit(1)
+	}
+	if sqsStatusQueueURL == "" && sqsStatusQueueURLPrefix == "" {
+		setupLog.Error(nil, "one of --sqs-status-queue-url or --sqs-status-queue-url-prefix is required")
+		os.Exit(1)
+	}
 
 	dsn := os.Getenv("POSTGRES_DSN")
 	if dsn == "" {
@@ -87,6 +95,13 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "Failed to parse pod ordinal from hostname")
 		os.Exit(1)
+	}
+
+	// If a prefix was given, construct the full queue URL by appending the
+	// pod ordinal — matching the queue naming convention:
+	//   <prefix><ordinal>  e.g. https://sqs…/regional-hyperfleet-operator-2
+	if sqsStatusQueueURLPrefix != "" {
+		sqsStatusQueueURL = fmt.Sprintf("%s%d", sqsStatusQueueURLPrefix, ordinal)
 	}
 
 	setupLog.Info("shard config",
@@ -131,8 +146,9 @@ func main() {
 	}
 
 	dynamoDBClient := dynamodb.NewFromConfig(awsCfg)
+
+	sqsClient := sqs.NewFromConfig(awsCfg)
 	dynamoClient := dynamo.NewClient(dynamoDBClient)
-	streamsClient := dynamodbstreams.NewFromConfig(awsCfg)
 
 	rcfg := render.RegionalConfig{
 		BaseDomain: baseDomain,
@@ -196,19 +212,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	streamMgr := statusstream.NewManager(
-		dynamoDBClient,
-		streamsClient,
-		mgr.GetClient(),
-		[]string{dynamo.TableSuffixStatusApplyDesires, dynamo.TableSuffixStatusReadDesires},
+	// Each operator replica drains its own pre-provisioned SQS queue.
+	// EventBridge Pipes deliver status change notifications to the queue after
+	// each DynamoDB status write. EventRouter.Dispatch silently drops document
+	// IDs it does not own, so no per-MC filtering is required here.
+	statusConsumer := statussqsconsumer.New(
+		sqsClient,
+		sqsStatusQueueURL,
 		func(documentID string) { eventRouter.Dispatch(documentID) },
-		slog.Default().With("component", "statusstream"),
 	)
 	watchCtx, watchCancel := context.WithCancel(context.Background())
 	defer watchCancel()
-	go streamMgr.Run(watchCtx, 5*time.Second)
+	go statusConsumer.Run(watchCtx)
 
-	setupLog.Info("Starting pgruntime manager")
+	setupLog.Info("Starting pgruntime manager",
+		"sqsStatusQueueURL", sqsStatusQueueURL,
+	)
 	if err := mgr.Start(signalCtx); err != nil {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
