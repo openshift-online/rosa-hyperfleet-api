@@ -53,42 +53,41 @@ func (s *MarkerScanner) scanDir(dir string) error {
 		return fmt.Errorf("parsing directory: %w", err)
 	}
 
+	// Scope the type cache to this directory so same-named types in
+	// different packages don't collide.
+	dirCache := make(map[string]*ast.StructType)
+
+	// First pass: cache all struct types across all files in this package
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Files {
-			s.scanFile(file)
+			ast.Inspect(file, func(n ast.Node) bool {
+				typeSpec, ok := n.(*ast.TypeSpec)
+				if !ok {
+					return true
+				}
+				structType, ok := typeSpec.Type.(*ast.StructType)
+				if !ok {
+					return true
+				}
+				dirCache[typeSpec.Name.Name] = structType
+				return true
+			})
+		}
+	}
+
+	// Install this directory's cache for nested-type resolution
+	s.typeCache = dirCache
+
+	// Second pass: process root types once with the full cache available
+	for typeName, structType := range dirCache {
+		if isRootType(typeName) {
+			visited := make(map[string]bool)
+			visited[typeName] = true
+			s.processStruct(typeName, structType, "", visited)
 		}
 	}
 
 	return nil
-}
-
-// scanFile extracts markers from a single Go file
-func (s *MarkerScanner) scanFile(file *ast.File) {
-	// First pass: collect all type definitions
-	ast.Inspect(file, func(n ast.Node) bool {
-		typeSpec, ok := n.(*ast.TypeSpec)
-		if !ok {
-			return true
-		}
-
-		structType, ok := typeSpec.Type.(*ast.StructType)
-		if !ok {
-			return true
-		}
-
-		// Cache the type definition
-		s.typeCache[typeSpec.Name.Name] = structType
-
-		return true
-	})
-
-	// Second pass: process only root types (Cluster, NodePool, etc.)
-	// Skip Spec/Status/Passthrough types as they'll be processed via recursion
-	for typeName, structType := range s.typeCache {
-		if isRootType(typeName) {
-			s.processStruct(typeName, structType, "")
-		}
-	}
 }
 
 // isRootType returns true for top-level CRD types (not Spec/Status/Passthrough types)
@@ -102,14 +101,14 @@ func isRootType(typeName string) bool {
 }
 
 // processStruct walks struct fields and extracts markers
-func (s *MarkerScanner) processStruct(_ string, structType *ast.StructType, parentPath string) {
+func (s *MarkerScanner) processStruct(_ string, structType *ast.StructType, parentPath string, visited map[string]bool) {
 	for _, field := range structType.Fields.List {
-		s.processField(field, parentPath)
+		s.processField(field, parentPath, visited)
 	}
 }
 
 // processField extracts markers from a single field
-func (s *MarkerScanner) processField(field *ast.Field, parentPath string) {
+func (s *MarkerScanner) processField(field *ast.Field, parentPath string, visited map[string]bool) {
 	// Get JSON tag to determine field path
 	jsonName := getJSONName(field)
 	if jsonName == "" || jsonName == "-" {
@@ -131,31 +130,38 @@ func (s *MarkerScanner) processField(field *ast.Field, parentPath string) {
 	}
 
 	// Recursively process nested structs
-	s.processNestedType(field.Type, fieldPath)
+	s.processNestedType(field.Type, fieldPath, visited)
 }
 
-// processNestedType recursively handles nested struct types
-func (s *MarkerScanner) processNestedType(expr ast.Expr, fieldPath string) {
+// processNestedType recursively handles nested struct types.
+// visited tracks named types already being traversed to prevent infinite
+// recursion on self-referential or mutually recursive structs.
+func (s *MarkerScanner) processNestedType(expr ast.Expr, fieldPath string, visited map[string]bool) {
 	switch t := expr.(type) {
 	case *ast.StructType:
-		// Inline struct
-		s.processStruct("", t, fieldPath)
+		// Inline struct — no named type to track
+		s.processStruct("", t, fieldPath, visited)
 	case *ast.StarExpr:
 		// Pointer to type
-		s.processNestedType(t.X, fieldPath)
+		s.processNestedType(t.X, fieldPath, visited)
 	case *ast.Ident:
-		// Named type - look it up in the cache
+		// Named type - skip if already visited in this traversal
+		if visited[t.Name] {
+			return
+		}
 		if structType, ok := s.typeCache[t.Name]; ok {
-			s.processStruct(t.Name, structType, fieldPath)
+			visited[t.Name] = true
+			s.processStruct(t.Name, structType, fieldPath, visited)
+			delete(visited, t.Name)
 		}
 	case *ast.SelectorExpr:
 		// External type (e.g., metav1.Time) - skip
 	case *ast.ArrayType:
 		// Array/slice - process element type
-		s.processNestedType(t.Elt, fieldPath)
+		s.processNestedType(t.Elt, fieldPath, visited)
 	case *ast.MapType:
 		// Map - process value type
-		s.processNestedType(t.Value, fieldPath)
+		s.processNestedType(t.Value, fieldPath, visited)
 	}
 }
 

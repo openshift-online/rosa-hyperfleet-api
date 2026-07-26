@@ -114,14 +114,18 @@ func (g *Generator) collectImports(typeDefs []*TypeDef) []string {
 
 	for _, typeDef := range typeDefs {
 		for _, field := range typeDef.Fields {
-			// Strip pointer/slice/map prefixes to get base type
+			// Strip pointer/slice prefixes repeatedly to handle combined
+			// forms like []*configv1.Something, then extract map values.
 			typeStr := field.Type
-			typeStr = strings.TrimPrefix(typeStr, "*")
-			typeStr = strings.TrimPrefix(typeStr, "[]")
+			for strings.HasPrefix(typeStr, "*") || strings.HasPrefix(typeStr, "[]") {
+				typeStr = strings.TrimPrefix(typeStr, "*")
+				typeStr = strings.TrimPrefix(typeStr, "[]")
+			}
 			if strings.HasPrefix(typeStr, "map[") {
 				// Extract value type from map[K]V
 				if idx := strings.LastIndex(typeStr, "]"); idx != -1 && idx+1 < len(typeStr) {
 					typeStr = typeStr[idx+1:]
+					typeStr = strings.TrimPrefix(typeStr, "*")
 				}
 			}
 

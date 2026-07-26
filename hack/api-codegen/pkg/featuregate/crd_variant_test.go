@@ -22,6 +22,17 @@ func TestCRDVariantGenerator_shouldIncludeField(t *testing.T) {
 				WriteMode: registry.Mutable,
 				// No feature gate
 			},
+			"spec.creatorARN": {
+				FieldPath: "spec.creatorARN",
+				WriteMode: registry.ServiceSet,
+				Hidden:    true,
+			},
+			"spec.hiddenGated": {
+				FieldPath:   "spec.hiddenGated",
+				WriteMode:   registry.ServiceSet,
+				Hidden:      true,
+				FeatureGate: "HyperFleetAutoScaling",
+			},
 		},
 	}
 
@@ -60,6 +71,24 @@ func TestCRDVariantGenerator_shouldIncludeField(t *testing.T) {
 			fieldPath:  "type",
 			featureSet: Default,
 			want:       true,
+		},
+		{
+			name:       "hidden field with Default - excluded",
+			fieldPath:  "spec.creatorARN",
+			featureSet: Default,
+			want:       false,
+		},
+		{
+			name:       "hidden field with TechPreview - excluded",
+			fieldPath:  "spec.creatorARN",
+			featureSet: TechPreviewNoUpgrade,
+			want:       false,
+		},
+		{
+			name:       "hidden and gated field with TechPreview - excluded",
+			fieldPath:  "spec.hiddenGated",
+			featureSet: TechPreviewNoUpgrade,
+			want:       false,
 		},
 	}
 

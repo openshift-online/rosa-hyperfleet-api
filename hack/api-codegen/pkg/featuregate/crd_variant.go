@@ -51,12 +51,19 @@ func (g *CRDVariantGenerator) GenerateVariant(inputPath string, outputPath strin
 	if err != nil {
 		return fmt.Errorf("creating output file: %w", err)
 	}
-	defer func() { _ = f.Close() }()
 
 	encoder := yaml.NewEncoder(f)
 	encoder.SetIndent(2)
 	if err := encoder.Encode(&crd); err != nil {
+		f.Close()
 		return fmt.Errorf("writing YAML: %w", err)
+	}
+	if err := encoder.Close(); err != nil {
+		f.Close()
+		return fmt.Errorf("closing YAML encoder: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing output file: %w", err)
 	}
 
 	return nil
@@ -105,9 +112,10 @@ func (g *CRDVariantGenerator) filterCRDNode(node *yaml.Node, ctx *filterContext)
 			oldFieldPath := ctx.fieldPath
 
 			// Update context for this key
+			isStructuralWrapper := fieldName == "items" || fieldName == "additionalProperties"
 			if enteringSchema {
 				ctx.inSchema = true
-			} else if ctx.inSchema && fieldName != "properties" {
+			} else if ctx.inSchema && fieldName != "properties" && !isStructuralWrapper {
 				// We're inside schema properties, build field path
 				if ctx.fieldPath == "" {
 					ctx.fieldPath = fieldName
@@ -156,6 +164,10 @@ func (g *CRDVariantGenerator) shouldIncludeField(fieldPath string, featureSet Fe
 	if !exists {
 		// Field not in registry - include it (it's a structural field like "properties", "type", etc.)
 		return true
+	}
+
+	if meta.Hidden {
+		return false
 	}
 
 	// If field has a feature gate, check if it's enabled

@@ -1,6 +1,6 @@
 module github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen
 
-go 1.26.3
+go 1.26.5
 
 require (
 	github.com/openshift/hypershift/api v0.0.0-20251113065312-f919037748bf

@@ -130,15 +130,17 @@ func (v *Validator) validateWriteMode(fieldPath string, meta registry.FieldMeta,
 
 	if len(meta.FeatureGateAwareWriteModes) > 0 {
 		// Check for specific gate match first (takes precedence)
+		matched := false
 		for _, override := range meta.FeatureGateAwareWriteModes {
 			if override.FeatureGate != "" && req.IsFeatureGateEnabled(override.FeatureGate) {
 				effectiveMode = override.WriteMode
+				matched = true
 				break // First specific match wins
 			}
 		}
 
 		// If no specific match, check for default override (empty gate)
-		if effectiveMode == meta.WriteMode { // Still using base mode
+		if !matched {
 			for _, override := range meta.FeatureGateAwareWriteModes {
 				if override.FeatureGate == "" {
 					effectiveMode = override.WriteMode

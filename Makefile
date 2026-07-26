@@ -103,13 +103,13 @@ build-api:
 	cd platform-api && go build -o ../bin/rosa-hyperfleet-api ./cmd
 
 build-api-codegen:
-	cd hack/api-codegen && go build -o bin/passthrough-gen ./cmd/passthrough-gen
-	cd hack/api-codegen && go build -o bin/marker-scanner ./cmd/marker-scanner
-	cd hack/api-codegen && go build -o bin/openapi-gen ./cmd/openapi-gen
-	cd hack/api-codegen && go build -o bin/conversion-gen ./cmd/conversion-gen
-	cd hack/api-codegen && go build -o bin/crd-variants ./cmd/crd-variants
-	cd hack/api-codegen && go build -o bin/featuregate-info ./cmd/featuregate-info
-	cd hack/api-codegen && go build -o bin/verify-configuration ./cmd/verify-configuration
+	cd hack/api-codegen && go build -o ../../bin/passthrough-gen ./cmd/passthrough-gen
+	cd hack/api-codegen && go build -o ../../bin/marker-scanner ./cmd/marker-scanner
+	cd hack/api-codegen && go build -o ../../bin/openapi-gen ./cmd/openapi-gen
+	cd hack/api-codegen && go build -o ../../bin/conversion-gen ./cmd/conversion-gen
+	cd hack/api-codegen && go build -o ../../bin/crd-variants ./cmd/crd-variants
+	cd hack/api-codegen && go build -o ../../bin/featuregate-info ./cmd/featuregate-info
+	cd hack/api-codegen && go build -o ../../bin/verify-configuration ./cmd/verify-configuration
 
 # ── Test ─────────────────────────────────────────────────────────────────
 

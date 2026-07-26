@@ -270,40 +270,25 @@ func (g *Generator) generateFieldSchema(field *ast.Field) spec.Schema {
 		// Handle arrays
 		if strings.HasPrefix(typeStr, "[]") {
 			schema.Type = []string{"array"}
-			itemType := strings.TrimPrefix(typeStr, "[]")
+			elemType := strings.TrimPrefix(typeStr, "[]")
+			elemType = strings.TrimPrefix(elemType, "*")
 			schema.Items = &spec.SchemaOrArray{
-				Schema: &spec.Schema{
-					SchemaProps: spec.SchemaProps{
-						Type: []string{g.mapGoTypeToOpenAPI(itemType)},
-					},
-				},
+				Schema: g.resolveTypeSchema(elemType),
 			}
 		} else if strings.HasPrefix(typeStr, "map[") {
-			// Handle maps
+			// Handle maps — extract value type after the closing ]
 			schema.Type = []string{"object"}
+			valType := typeStr
+			if idx := strings.Index(typeStr, "]"); idx != -1 {
+				valType = typeStr[idx+1:]
+			}
+			valType = strings.TrimPrefix(valType, "*")
 			schema.AdditionalProperties = &spec.SchemaOrBool{
 				Allows: true,
-				Schema: &spec.Schema{
-					SchemaProps: spec.SchemaProps{
-						Type: []string{"string"},
-					},
-				},
+				Schema: g.resolveTypeSchema(valType),
 			}
 		} else {
-			// Reference to another type - check if it's a known type
-			// Strip package prefix (e.g., hypershiftv1beta1.PlatformSpec -> PlatformSpec)
-			typeName := typeStr
-			if idx := strings.LastIndex(typeStr, "."); idx != -1 {
-				typeName = typeStr[idx+1:]
-			}
-
-			// If it's a known type (defined in our input dirs), use $ref
-			if g.knownTypes != nil && g.knownTypes[typeName] {
-				schema.Ref = spec.MustCreateRef("#/definitions/" + typeName)
-			} else {
-				// Unknown type (imported from external package), treat as object
-				schema.Type = []string{"object"}
-			}
+			schema = *g.resolveTypeSchema(typeStr)
 		}
 	}
 
@@ -388,18 +373,26 @@ func (g *Generator) exprToString(expr ast.Expr) string {
 	}
 }
 
-// mapGoTypeToOpenAPI maps Go types to OpenAPI types
-func (g *Generator) mapGoTypeToOpenAPI(goType string) string {
+// resolveTypeSchema returns a schema for a Go type name, using $ref for known
+// definitions and primitive schemas for basic types.
+func (g *Generator) resolveTypeSchema(goType string) *spec.Schema {
 	switch goType {
 	case "string":
-		return "string"
+		return &spec.Schema{SchemaProps: spec.SchemaProps{Type: []string{"string"}}}
 	case "bool":
-		return "boolean"
+		return &spec.Schema{SchemaProps: spec.SchemaProps{Type: []string{"boolean"}}}
 	case "int", "int32", "int64":
-		return "integer"
+		return &spec.Schema{SchemaProps: spec.SchemaProps{Type: []string{"integer"}}}
 	case "float32", "float64":
-		return "number"
+		return &spec.Schema{SchemaProps: spec.SchemaProps{Type: []string{"number"}}}
 	default:
-		return "object"
+		typeName := goType
+		if idx := strings.LastIndex(goType, "."); idx != -1 {
+			typeName = goType[idx+1:]
+		}
+		if g.knownTypes != nil && g.knownTypes[typeName] {
+			return &spec.Schema{SchemaProps: spec.SchemaProps{Ref: spec.MustCreateRef("#/definitions/" + typeName)}}
+		}
+		return &spec.Schema{SchemaProps: spec.SchemaProps{Type: []string{"object"}}}
 	}
 }
