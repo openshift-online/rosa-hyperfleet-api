@@ -50,6 +50,9 @@ custom-gcl
 # Pinned tool binaries (built from hack/tools/go.mod)
 hack/tools/bin/
 
+# API codegen tool binaries (built from hack/api-codegen)
+hack/api-codegen/bin/
+
 # envtest binaries
 .envtest/
 hyperfleet-operator/bin/

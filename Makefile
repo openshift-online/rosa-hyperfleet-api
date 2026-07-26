@@ -1,6 +1,7 @@
 .PHONY: help build test test-unit test-integration lint clean \
-	build-hyperfleet-db build-operator build-api \
-	test-hyperfleet-db test-operator test-operator-int test-api \
+	build-hyperfleet-db build-operator build-api build-api-codegen \
+	test-hyperfleet-db test-operator test-operator-int test-api test-api-codegen \
+	coverage-api-codegen \
 	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-zoa test-e2e-authz \
 	e2e-authz-infra-up e2e-authz-infra-down e2e-init-db \
 	fmt vet verify deps \
@@ -57,16 +58,19 @@ help:
 	@echo "  build-api            Platform API server"
 	@echo "  build-operator       Hyperfleet operator (manager + compactor)"
 	@echo "  build-hyperfleet-db  Hyperfleet DB library"
+	@echo "  build-api-codegen    API codegen tools (build-time generators)"
 	@echo ""
 	@echo "Test:"
 	@echo "  test                 All tests (unit + integration)"
-	@echo "  test-unit            Unit tests: API + operator (no external services)"
+	@echo "  test-unit            Unit tests: API + operator + codegen (no external services)"
 	@echo "  test-integration     Integration tests: FleetDB + operator (podman)"
 	@echo "  test-e2e-authz       E2E authz (starts local infra)"
 	@echo "  test-e2e-api         E2E API"
 	@echo "  test-e2e-cli         E2E CLI"
 	@echo "  test-e2e-zoa         E2E ZOA"
 	@echo "  test-e2e-platform-monitoring  E2E monitoring"
+	@echo ""
+	@echo "  coverage-api-codegen Coverage report for codegen (hack/api-codegen)"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  lint                 golangci-lint on all modules"
@@ -86,7 +90,7 @@ help:
 
 # ── Build ────────────────────────────────────────────────────────────────
 
-build: build-hyperfleet-db build-operator build-api
+build: build-hyperfleet-db build-operator build-api build-api-codegen
 
 build-hyperfleet-db:
 	cd hyperfleet-db && go build ./...
@@ -98,16 +102,35 @@ build-operator:
 build-api:
 	cd platform-api && go build -o ../bin/rosa-hyperfleet-api ./cmd
 
+build-api-codegen:
+	cd hack/api-codegen && go build -o bin/passthrough-gen ./cmd/passthrough-gen
+	cd hack/api-codegen && go build -o bin/marker-scanner ./cmd/marker-scanner
+	cd hack/api-codegen && go build -o bin/openapi-gen ./cmd/openapi-gen
+	cd hack/api-codegen && go build -o bin/conversion-gen ./cmd/conversion-gen
+	cd hack/api-codegen && go build -o bin/crd-variants ./cmd/crd-variants
+	cd hack/api-codegen && go build -o bin/featuregate-info ./cmd/featuregate-info
+	cd hack/api-codegen && go build -o bin/verify-configuration ./cmd/verify-configuration
+
 # ── Test ─────────────────────────────────────────────────────────────────
 
 test: test-unit test-integration
 
-test-unit: test-api test-operator
+test-unit: test-api test-operator test-api-codegen
 
 test-integration: test-hyperfleet-db test-operator-int
 
 test-api:
 	cd platform-api && go test -v -race -count=1 $$(go list ./... | grep -v '/test/e2e')
+
+test-api-codegen:
+	cd hack/api-codegen && go test -v -race -count=1 ./...
+
+coverage-api-codegen:
+	cd hack/api-codegen && go test -race -coverprofile=coverage.out ./...
+	cd hack/api-codegen && go tool cover -func=coverage.out
+	@echo ""
+	@echo "HTML report: hack/api-codegen/coverage.html"
+	cd hack/api-codegen && go tool cover -html=coverage.out -o coverage.html
 
 test-operator: $(SETUP_ENVTEST)
 	@ASSETS=$$($(SETUP_ENVTEST) use -p path --bin-dir $(ENVTEST_BIN_DIR)) && \
@@ -170,16 +193,19 @@ fmt:
 	cd hyperfleet-db && go fmt ./...
 	cd hyperfleet-operator && go fmt ./...
 	cd platform-api && go fmt ./...
+	cd hack/api-codegen && go fmt ./...
 
 vet:
 	cd hyperfleet-db && go vet ./...
 	cd hyperfleet-operator && go vet ./...
 	cd platform-api && go vet ./...
+	cd hack/api-codegen && go vet ./...
 
 lint: $(GOLANGCI_LINT)
 	cd hyperfleet-db && $(GOLANGCI_LINT) run --config ../.golangci.yml --timeout 5m ./...
 	cd hyperfleet-operator && $(GOLANGCI_LINT) run --config ../.golangci.yml --timeout 5m ./...
 	cd platform-api && $(GOLANGCI_LINT) run --config ../.golangci.yml --timeout 5m ./...
+	cd hack/api-codegen && $(GOLANGCI_LINT) run --config ../../.golangci.yml --timeout 5m ./...
 
 verify:
 	cd hyperfleet-db && go mod tidy
@@ -188,13 +214,15 @@ verify:
 	cd platform-api && go mod tidy
 	cd test && go mod tidy
 	cd hack/tools && go mod tidy
+	cd hack/api-codegen && go mod tidy
 	git diff --exit-code \
 		hyperfleet-db/go.mod hyperfleet-db/go.sum \
 		hyperfleet-operator/api/go.mod hyperfleet-operator/api/go.sum \
 		hyperfleet-operator/go.mod hyperfleet-operator/go.sum \
 		platform-api/go.mod platform-api/go.sum \
 		test/go.mod test/go.sum \
-		hack/tools/go.mod hack/tools/go.sum
+		hack/tools/go.mod hack/tools/go.sum \
+		hack/api-codegen/go.mod hack/api-codegen/go.sum
 
 deps:
 	cd hyperfleet-db && go mod download && go mod tidy
@@ -202,6 +230,7 @@ deps:
 	cd hyperfleet-operator && go mod download && go mod tidy
 	cd platform-api && go mod download && go mod tidy
 	cd test && go mod download && go mod tidy
+	cd hack/api-codegen && go mod download && go mod tidy
 
 # ── Code Generation ──────────────────────────────────────────────────────
 
