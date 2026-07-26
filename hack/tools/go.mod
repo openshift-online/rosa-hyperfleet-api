@@ -1,6 +1,6 @@
 module github.com/openshift-online/rosa-hyperfleet-api/hack/tools
 
-go 1.26.5
+go 1.26.3
 
 require (
 	github.com/golangci/golangci-lint/v2 v2.12.2

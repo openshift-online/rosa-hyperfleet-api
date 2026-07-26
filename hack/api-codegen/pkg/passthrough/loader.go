@@ -1,9 +1,11 @@
 package passthrough
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/printer"
 	"go/token"
 	"os"
 	"strings"
@@ -69,11 +71,15 @@ func (g *Generator) GenerateTypeDef(typeName string) (*TypeDef, error) {
 		return nil, fmt.Errorf("type %s is not a struct", typeName)
 	}
 
-	// Auto-derive FieldPrefix from type name if not explicitly set
-	// e.g., "HostedClusterSpec" → "spec.hostedCluster", "NodePoolSpec" → "spec.nodePool"
-	if g.FieldPrefix == "" {
-		g.FieldPrefix = deriveFieldPrefix(typeName)
+	// Compute effective prefix per type without mutating g.FieldPrefix,
+	// so subsequent types derive their own prefix independently.
+	effectivePrefix := g.FieldPrefix
+	if effectivePrefix == "" {
+		effectivePrefix = deriveFieldPrefix(typeName)
 	}
+	savedPrefix := g.FieldPrefix
+	g.FieldPrefix = effectivePrefix
+	defer func() { g.FieldPrefix = savedPrefix }()
 
 	typeDef := &TypeDef{
 		Name:       typeName + "Passthrough",
@@ -160,6 +166,12 @@ func (g *Generator) typeToString(expr ast.Expr) string {
 		return "map[" + g.typeToString(t.Key) + "]" + g.typeToString(t.Value)
 	case *ast.SelectorExpr:
 		return g.typeToString(t.X) + "." + t.Sel.Name
+	case *ast.InterfaceType, *ast.FuncType, *ast.Ellipsis, *ast.IndexExpr, *ast.IndexListExpr:
+		var buf bytes.Buffer
+		if err := printer.Fprint(&buf, token.NewFileSet(), expr); err != nil {
+			return "interface{}"
+		}
+		return buf.String()
 	default:
 		return "interface{}"
 	}
