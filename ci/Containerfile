@@ -1,10 +1,13 @@
 # CI build-root image for rosa-hyperfleet-api.
-# Extends the standard Go builder with rootless podman support so that
-# integration tests can spin up containers (e.g. postgres) via nested podman.
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.26-openshift-4.23
-
-RUN dnf install -y podman fuse-overlayfs --setopt=install_weak_deps=False && dnf clean all && \
-    setcap cap_setuid+ep /usr/bin/newuidmap && \
-    setcap cap_setgid+ep /usr/bin/newgidmap && \
-    echo '1000:10000:65536' >> /etc/subuid && \
-    echo '1000:10000:65536' >> /etc/subgid
+# Multi-stage: copies the Go toolchain from the Red Hat Go builder into the
+# canonical nested-podman image, which provides rootless podman support
+# (entrypoint with dynamic subuid/subgid, fuse-overlayfs, setcap).
+# Bump the Go version by changing the tag on the first FROM line.
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.26-openshift-4.23 AS go-tools
+FROM nested-podman
+COPY --from=go-tools /usr/lib/golang /usr/lib/golang
+COPY --from=go-tools /usr/bin/go /usr/bin/go
+COPY --from=go-tools /usr/bin/gofmt /usr/bin/gofmt
+ENV PATH="/usr/lib/golang/bin:${PATH}"
+USER root
+RUN dnf install -y git make gcc --setopt=install_weak_deps=False && dnf clean all
