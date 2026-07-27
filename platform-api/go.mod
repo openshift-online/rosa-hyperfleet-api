@@ -1,6 +1,6 @@
 module github.com/openshift-online/rosa-hyperfleet-api/platform-api
 
-go 1.26.3
+go 1.25.0
 
 replace (
 	github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db => ../hyperfleet-db
