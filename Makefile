@@ -6,7 +6,7 @@
 	e2e-authz-infra-up e2e-authz-infra-down e2e-init-db \
 	fmt vet verify deps \
 	manifests generate setup-envtest \
-	codegen-passthrough codegen-registry codegen-verify \
+	codegen-passthrough codegen-registry codegen-verify codegen-openapi verify-openapi \
 	image-api image-operator image-push-api image-push-operator
 
 # ── Configuration ────────────────────────────────────────────────────────
@@ -85,6 +85,8 @@ help:
 	@echo "  codegen-passthrough  Run passthrough-gen (raw + curated types)"
 	@echo "  codegen-registry     Run marker-scanner (field_metadata.go/.json)"
 	@echo "  codegen-verify       Verify codegen packages compile"
+	@echo "  codegen-openapi      Generate and merge OpenAPI schemas from Go types"
+	@echo "  verify-openapi       Verify openapi.yaml matches generated schemas"
 	@echo "  setup-envtest        Install envtest binaries (etcd, kube-apiserver)"
 	@echo "  deps                 Download and tidy all modules"
 	@echo ""
@@ -114,6 +116,7 @@ build-api-codegen:
 	cd hack/api-codegen && go build -o ../../bin/crd-variants ./cmd/crd-variants
 	cd hack/api-codegen && go build -o ../../bin/featuregate-info ./cmd/featuregate-info
 	cd hack/api-codegen && go build -o ../../bin/verify-configuration ./cmd/verify-configuration
+	cd hack/api-codegen && go build -o ../../bin/openapi-merge ./cmd/openapi-merge
 
 # ── Test ─────────────────────────────────────────────────────────────────
 
@@ -273,6 +276,18 @@ codegen-registry: build-api-codegen
 codegen-verify: build-api-codegen
 	cd hyperfleet-operator/api && go build ./...
 	cd platform-api && go build ./internal/codegen/...
+
+codegen-openapi: build-api-codegen
+	./bin/openapi-gen \
+		--input-dirs=$(V1ALPHA1_DIR) \
+		--output-file=platform-api/openapi/generated-schemas.json
+	./bin/openapi-merge \
+		--generated=platform-api/openapi/generated-schemas.json \
+		--spec=platform-api/openapi/openapi.yaml
+
+verify-openapi: codegen-openapi
+	@git diff --exit-code platform-api/openapi/openapi.yaml || \
+		(echo "openapi.yaml is out of date; run 'make codegen-openapi'" && exit 1)
 
 # ── Images ───────────────────────────────────────────────────────────────
 

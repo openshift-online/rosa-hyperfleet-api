@@ -6,11 +6,9 @@ info:
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
-
 servers:
   - url: /api/v0
     description: API v0
-
 paths:
   /info:
     get:
@@ -40,7 +38,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /management_clusters:
     post:
       summary: Create a new management cluster
@@ -87,7 +84,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
     get:
       summary: List all management clusters
       description: |
@@ -117,7 +113,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /management_clusters/{id}:
     get:
       summary: Get a management cluster by ID
@@ -159,7 +154,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   # Cluster Management Endpoints
   /clusters:
     get:
@@ -197,7 +191,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
-
     post:
       summary: Create cluster
       description: |
@@ -238,7 +231,6 @@ paths:
           $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalError"
-
   /clusters/{id}:
     parameters:
       - name: id
@@ -247,7 +239,6 @@ paths:
         schema:
           type: string
         description: Cluster ID
-
     get:
       summary: Get cluster details
       description: Retrieve cluster details (user must own the cluster)
@@ -271,7 +262,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-
     patch:
       summary: Update cluster
       description: Update cluster spec (user must own the cluster)
@@ -301,7 +291,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-
     put:
       summary: Update cluster
       description: Update cluster spec (user must own the cluster). Same behavior as PATCH.
@@ -331,7 +320,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-
     delete:
       summary: Delete cluster
       description: Delete cluster (user must own the cluster)
@@ -360,7 +348,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-
   /clusters/{id}/statuses:
     parameters:
       - name: id
@@ -369,7 +356,6 @@ paths:
         schema:
           type: string
         description: Cluster ID
-
     get:
       summary: Get cluster statuses
       description: Retrieve cluster status and controller statuses (user must own the cluster)
@@ -393,7 +379,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-
   # NodePool Management Endpoints
   /nodepools:
     get:
@@ -436,7 +421,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
-
     post:
       summary: Create nodepool
       description: Create a new nodepool for the authenticated user
@@ -466,7 +450,6 @@ paths:
           $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalError"
-
   /nodepools/{id}:
     parameters:
       - name: id
@@ -475,7 +458,6 @@ paths:
         schema:
           type: string
         description: NodePool ID
-
     get:
       summary: Get nodepool details
       description: Retrieve nodepool details (user must own the cluster)
@@ -499,7 +481,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-
     put:
       summary: Update nodepool
       description: Update nodepool (user must own the cluster)
@@ -529,7 +510,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-
     delete:
       summary: Delete nodepool
       description: Delete nodepool (user must own the cluster)
@@ -558,7 +538,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-
   /nodepools/{id}/status:
     parameters:
       - name: id
@@ -567,7 +546,6 @@ paths:
         schema:
           type: string
         description: NodePool ID
-
     get:
       summary: Get nodepool status
       description: Retrieve nodepool status (user must own the cluster)
@@ -591,7 +569,6 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-
   /live:
     get:
       summary: Liveness probe
@@ -606,7 +583,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
-
   /ready:
     get:
       summary: Readiness probe
@@ -627,7 +603,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
-
   # Authorization - Account Management
   /accounts:
     post:
@@ -703,7 +678,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /accounts/{id}:
     get:
       summary: Get an account
@@ -776,7 +750,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   # Authorization - Check
   /authz/check:
     post:
@@ -818,7 +791,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   # Authorization - Policy Management
   /authz/policies:
     post:
@@ -886,7 +858,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /authz/policies/{id}:
     get:
       summary: Get a policy
@@ -1022,7 +993,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   # Authorization - Group Management
   /authz/groups:
     post:
@@ -1087,7 +1057,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /authz/groups/{id}:
     get:
       summary: Get a group
@@ -1165,7 +1134,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /authz/groups/{id}/members:
     get:
       summary: List group members
@@ -1257,7 +1225,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   # Authorization - Attachment Management
   /authz/attachments:
     post:
@@ -1350,7 +1317,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /authz/attachments/{id}:
     delete:
       summary: Delete an attachment
@@ -1389,7 +1355,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   # Authorization - Admin Management
   /authz/admins:
     post:
@@ -1456,7 +1421,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /authz/admins/{arn}:
     delete:
       summary: Remove an admin
@@ -1486,7 +1450,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   # ZOA Trusted Actions
   /trusted-actions:
     get:
@@ -1508,7 +1471,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /trusted-actions/{action}:
     get:
       summary: Describe a trusted action
@@ -1536,7 +1498,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /trusted-actions/{action}/run:
     post:
       summary: Execute a trusted action
@@ -1596,7 +1557,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /trusted-actions/runs:
     get:
       summary: List executions
@@ -1681,7 +1641,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /trusted-actions/runs/{id}:
     get:
       summary: Get execution details
@@ -1723,7 +1682,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
   /trusted-actions/audit:
     get:
       summary: List audit log
@@ -1785,7 +1743,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-
 components:
   schemas:
     ManagementClusterRequest:
@@ -1805,7 +1762,6 @@ components:
         accountId:
           type: string
           description: AWS account ID that owns the management cluster
-
     ManagementCluster:
       type: object
       description: A management cluster registered on hyperfleet-db
@@ -1821,7 +1777,6 @@ components:
         accountId:
           type: string
           description: AWS account ID that owns the management cluster
-
     ManagementClusterList:
       type: object
       description: List of management clusters
@@ -1841,7 +1796,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ManagementCluster"
-
     Error:
       type: object
       description: Error response
@@ -1860,7 +1814,6 @@ components:
         reason:
           type: string
           description: Human-readable error message
-
     HealthStatus:
       type: object
       description: Health check response
@@ -1869,7 +1822,6 @@ components:
           type: string
           enum: [ok, degraded, unavailable]
           description: Health status
-
     # Authorization Schemas
     EnableAccountRequest:
       type: object
@@ -1884,7 +1836,6 @@ components:
           type: boolean
           description: If true, account bypasses all authorization checks
           default: false
-
     Account:
       type: object
       description: An enabled account
@@ -1910,7 +1861,6 @@ components:
         createdBy:
           type: string
           description: ARN of who enabled the account
-
     AccountList:
       type: object
       description: List of accounts
@@ -1929,7 +1879,6 @@ components:
         total:
           type: integer
           description: Total number of accounts
-
     CheckAuthorizationRequest:
       type: object
       description: Request body for checking authorization
@@ -1956,7 +1905,6 @@ components:
           description: Tags on the resource
           additionalProperties:
             type: string
-
     CheckAuthorizationResponse:
       type: object
       description: Authorization decision response
@@ -1974,7 +1922,6 @@ components:
         reason:
           type: string
           description: Reason for the decision
-
     CreatePolicyRequest:
       type: object
       description: Request body for creating a policy
@@ -1991,7 +1938,6 @@ components:
         policy:
           type: string
           description: Native Cedar policy text
-
     UpdatePolicyRequest:
       type: object
       description: Request body for updating a policy
@@ -2005,7 +1951,6 @@ components:
         policy:
           type: string
           description: Native Cedar policy text
-
     Policy:
       type: object
       description: A Cedar policy
@@ -2031,7 +1976,6 @@ components:
         createdAt:
           type: string
           description: Creation timestamp
-
     PolicyList:
       type: object
       description: List of policies
@@ -2049,7 +1993,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Policy"
-
     CreateGroupRequest:
       type: object
       description: Request body for creating a group
@@ -2062,7 +2005,6 @@ components:
         description:
           type: string
           description: Optional group description
-
     Group:
       type: object
       description: A group of users
@@ -2088,7 +2030,6 @@ components:
         createdAt:
           type: string
           description: Creation timestamp
-
     GroupList:
       type: object
       description: List of groups
@@ -2106,7 +2047,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Group"
-
     MemberList:
       type: object
       description: List of group member ARNs
@@ -2125,7 +2065,6 @@ components:
           description: Member ARNs
           items:
             type: string
-
     UpdateGroupMembersRequest:
       type: object
       description: Request body for updating group members
@@ -2140,7 +2079,6 @@ components:
           description: ARNs to remove from the group
           items:
             type: string
-
     CreateAttachmentRequest:
       type: object
       description: Request body for creating an attachment
@@ -2160,7 +2098,6 @@ components:
         targetId:
           type: string
           description: Target ID (ARN for user, groupId for group)
-
     Attachment:
       type: object
       description: A policy attachment to a user or group
@@ -2193,7 +2130,6 @@ components:
         createdAt:
           type: string
           description: Creation timestamp
-
     AttachmentList:
       type: object
       description: List of attachments
@@ -2211,7 +2147,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Attachment"
-
     AddAdminRequest:
       type: object
       description: Request body for adding an admin
@@ -2221,7 +2156,6 @@ components:
         principalArn:
           type: string
           description: ARN of the principal to make admin
-
     Admin:
       type: object
       description: An admin for the account
@@ -2235,7 +2169,6 @@ components:
         principalArn:
           type: string
           description: Admin's AWS ARN
-
     AdminList:
       type: object
       description: List of admin ARNs
@@ -2254,45 +2187,68 @@ components:
           description: Admin principal ARNs
           items:
             type: string
-
     # Cluster Schemas
     ClusterSpec:
-      type: object
-      description: |
-        Cluster specification following the hyperfleet-operator v1alpha1.ClusterSpec
-        type. Contains a `creatorARN` and a nested `hostedCluster` field that follows
-        the HyperShift v1beta1 HostedClusterSpec schema.
+      description: |-
+        ClusterSpec defines the desired state of a ROSA HCP cluster.
+        metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
+        The owning AWS account is stored as the label hyperfleet.io/account-id.
       properties:
-        creatorARN:
+        deleteProtection:
+          description: DeleteProtection prevents accidental deletion when enabled.
+          type: boolean
+        displayName:
+          description: DisplayName is a human-readable name for the cluster.
           type: string
-          description: ARN of the user who created this cluster (auto-populated by the API)
+        expirationTimestamp:
+          description: ExpirationTimestamp marks when this cluster should be automatically deleted.
+          type: object
         hostedCluster:
+          description: |-
+            === HyperShift Passthrough ===
+            HostedCluster is the full HyperShift HostedClusterSpec. The customer provides
+            the fields they care about; the operator overrides platform-managed fields
+            (InfraID, DNS, PullSecret, Services, etc.) at render time.
           type: object
-          description: |
-            HyperShift v1beta1 HostedClusterSpec. Key fields include:
-            - platform: Cloud provider configuration (type, aws)
-            - networking: Cluster/service/machine network CIDRs
-            - release: OpenShift release image
-            - issuerURL: OIDC issuer URL (auto-populated)
-          additionalProperties: true
-
-    NodePoolSpec:
+        properties:
+          additionalProperties:
+            type: string
+          description: Properties are arbitrary key-value pairs for customer metadata.
+          type: object
+        tags:
+          additionalProperties:
+            type: string
+          description: Tags are customer-defined labels for organizational purposes.
+          type: object
+      required:
+        - hostedCluster
       type: object
-      description: |
-        NodePool specification following the hyperfleet-operator v1alpha1.NodePoolSpec
-        type. Contains a nested `nodePool` field that follows the HyperShift v1beta1
-        NodePoolSpec schema.
+    NodePoolSpec:
+      description: |-
+        NodePoolSpec defines the desired state of a NodePool.
+        The parent Cluster is identified by the shared metadata.Namespace (cluster UUID).
       properties:
-        nodePool:
+        autoRepair:
+          description: AutoRepair enables automatic repair of unhealthy nodes.
+          type: boolean
+        displayName:
+          description: DisplayName is a human-readable name for the node pool.
+          type: string
+        labels:
+          additionalProperties:
+            type: string
+          description: Labels to apply to nodes in this pool.
           type: object
-          description: |
-            HyperShift v1beta1 NodePoolSpec. Key fields include:
-            - platform: Cloud provider configuration (type, aws with instanceType, rootVolume)
-            - replicas: Number of worker nodes (default: 2)
-            - release: OpenShift release image
-            - management: Upgrade and repair configuration
+        nodePool:
           additionalProperties: true
-
+          description: |-
+            NodePool is the full HyperShift NodePoolSpec. The customer provides replicas,
+            platform, release, etc. The operator overrides ClusterName and adds system
+            resource tags at render time.
+          type: object
+      required:
+        - nodePool
+      type: object
     Cluster:
       type: object
       description: A user cluster resource
@@ -2342,7 +2298,6 @@ components:
           type: string
           format: date-time
           description: Last update timestamp
-
     ClusterCreateRequest:
       type: object
       description: |
@@ -2368,7 +2323,6 @@ components:
           description: Target project ID
         spec:
           $ref: "#/components/schemas/ClusterSpec"
-
     ClusterUpdateRequest:
       type: object
       description: Request body for updating a cluster
@@ -2377,7 +2331,6 @@ components:
       properties:
         spec:
           $ref: "#/components/schemas/ClusterSpec"
-
     ClusterStatusInfo:
       type: object
       description: Aggregated status for clusters
@@ -2412,7 +2365,6 @@ components:
           type: string
           format: date-time
           description: When status was last calculated
-
     APIEndpoint:
       type: object
       description: Control plane API endpoint
@@ -2422,7 +2374,6 @@ components:
         port:
           type: integer
           format: int32
-
     PlacementReference:
       type: object
       description: Management cluster assignment
@@ -2433,7 +2384,6 @@ components:
         managementCluster:
           type: string
           description: Management cluster name
-
     Condition:
       type: object
       description: Status condition
@@ -2455,7 +2405,6 @@ components:
         message:
           type: string
           description: Human-readable message
-
     ClusterControllerStatus:
       type: object
       description: Controller-specific status for a cluster
@@ -2487,7 +2436,6 @@ components:
           type: string
           format: date-time
           description: When this controller last updated
-
     ClusterStatusResponse:
       type: object
       description: Response for cluster status endpoint
@@ -2502,7 +2450,6 @@ components:
           description: Individual controller status reports
           items:
             $ref: "#/components/schemas/ClusterControllerStatus"
-
     ClusterList:
       type: object
       description: Paginated list of clusters
@@ -2525,7 +2472,6 @@ components:
         offset:
           type: integer
           description: Number of items skipped
-
     # NodePool Schemas
     NodePool:
       type: object
@@ -2572,7 +2518,6 @@ components:
           type: string
           format: date-time
           description: Last update timestamp
-
     NodePoolCreateRequest:
       type: object
       description: Request body for creating a nodepool
@@ -2592,7 +2537,6 @@ components:
           description: DNS-compatible nodepool name
         spec:
           $ref: "#/components/schemas/NodePoolSpec"
-
     NodePoolUpdateRequest:
       type: object
       description: Request body for updating a nodepool
@@ -2601,7 +2545,6 @@ components:
       properties:
         spec:
           $ref: "#/components/schemas/NodePoolSpec"
-
     NodePoolStatusInfo:
       type: object
       description: Aggregated status for nodepools
@@ -2629,7 +2572,6 @@ components:
           type: string
           format: date-time
           description: When status was last calculated
-
     NodePoolControllerStatus:
       type: object
       description: Controller-specific status for a nodepool
@@ -2657,7 +2599,6 @@ components:
           type: string
           format: date-time
           description: When this controller last updated
-
     NodePoolStatusResponse:
       type: object
       description: Response for nodepool status endpoint
@@ -2672,7 +2613,6 @@ components:
           description: Individual controller status reports
           items:
             $ref: "#/components/schemas/NodePoolControllerStatus"
-
     NodePoolList:
       type: object
       description: Paginated list of nodepools
@@ -2695,7 +2635,6 @@ components:
         offset:
           type: integer
           description: Number of items skipped
-
     # ZOA Trusted Action Schemas
     TrustedActionCatalog:
       type: object
@@ -2710,7 +2649,6 @@ components:
             $ref: "#/components/schemas/TrustedActionListItem"
         total:
           type: integer
-
     TrustedActionListItem:
       type: object
       description: Summary of a trusted action
@@ -2723,7 +2661,6 @@ components:
           type: string
         description:
           type: string
-
     TrustedActionDescribe:
       type: object
       description: Detailed trusted action metadata
@@ -2755,7 +2692,6 @@ components:
           items:
             type: string
           example: [target_cluster, jira]
-
     TrustedActionParam:
       type: object
       description: A parameter accepted by a trusted action
@@ -2768,7 +2704,6 @@ components:
           type: string
         description:
           type: string
-
     TrustedActionCreateRequest:
       type: object
       description: Request body for executing a trusted action
@@ -2796,7 +2731,6 @@ components:
           type: boolean
           description: Execute read-only variant of the action
           default: false
-
     Execution:
       type: object
       description: A trusted action execution record
@@ -2857,7 +2791,6 @@ components:
           type: integer
         duration_seconds:
           type: integer
-
     ExecutionResponse:
       type: object
       description: Full execution response with optional output and logs
@@ -2870,7 +2803,6 @@ components:
             logs:
               type: string
               description: Execution logs from S3 (included when ?include=logs)
-
     ExecutionList:
       type: object
       description: Paginated list of executions
@@ -2890,7 +2822,6 @@ components:
           type: integer
         has_more:
           type: boolean
-
     AuditEntry:
       type: object
       description: An audit log entry for a trusted action API call
@@ -2923,7 +2854,6 @@ components:
           type: integer
         timestamp:
           type: string
-
     AuditList:
       type: object
       description: List of audit log entries
@@ -2941,7 +2871,121 @@ components:
             $ref: "#/components/schemas/AuditEntry"
         total:
           type: integer
-
+    MachineConfigSpec:
+      description: |-
+        MachineConfigSpec specifies machine-level configuration.
+        This controls kernel parameters, systemd units, and file writes.
+        Most fields are platform-managed for security and stability.
+      properties:
+        allowedKernelArguments:
+          description: |-
+            allowedKernelArguments specifies kernel parameters customers can request.
+            This is a WHITELIST approach - customers can only request known-safe parameters.
+            Platform validates against an allowlist and applies approved parameters.
+            Tech Preview feature requiring explicit enablement.
+          items:
+            type: string
+          type: array
+        fips:
+          description: |-
+            fips enables FIPS mode on nodes.
+            Immutable - must be set at cluster creation, cannot be changed.
+          type: boolean
+      type: object
+    ClusterConfiguration:
+      description: |-
+        ClusterConfiguration specifies configuration for individual OCP components in the cluster.
+        This is a HyperFleet-owned mirror of hypershiftv1beta1.ClusterConfiguration that allows
+        us to add granular markers to nested fields like kubelet config.
+      properties:
+        kubelet:
+          $ref: '#/components/schemas/KubeletConfig'
+          description: |-
+            kubelet contains the configuration for kubelet on nodes.
+            This is where we can add granular control over kubelet fields.
+        machineConfig:
+          $ref: '#/components/schemas/MachineConfigSpec'
+          description: |-
+            machineConfig contains the configuration for machine-level settings (kernel params, systemd, files).
+            Granular markers allow safe subset exposure while hiding dangerous operations.
+      type: object
+    KubeletConfig:
+      description: |-
+        KubeletConfig specifies kubelet configuration.
+        This is a HyperFleet-owned type that mirrors hypershiftv1beta1.KubeletConfig
+        with granular markers for customer control.
+      properties:
+        containerLogMaxFiles:
+          description: containerLogMaxFiles is the maximum number of container log files.
+          format: int32
+          type: integer
+        containerLogMaxSize:
+          description: containerLogMaxSize is the maximum size of container log file before it is rotated.
+          type: string
+        imageGCHighThresholdPercent:
+          description: imageGCHighThresholdPercent is the disk usage percent triggering image GC.
+          format: int32
+          type: integer
+        imageGCLowThresholdPercent:
+          description: imageGCLowThresholdPercent is the disk usage percent to gc to.
+          format: int32
+          type: integer
+        imageMinimumGCAge:
+          description: imageMinimumGCAge is the minimum age for an unused image before it is garbage collected.
+          type: object
+        kubeReserved:
+          additionalProperties:
+            type: string
+          description: kubeReserved specifies resources reserved for Kubernetes system components.
+          type: object
+        maxPods:
+          description: |-
+            maxPods is the maximum number of pods per node.
+            Customers can set this to optimize for high-density workloads.
+          format: int32
+          type: integer
+        podPidsLimit:
+          description: |-
+            podPidsLimit is the maximum number of PIDs allowed per pod.
+            Customers can increase this for applications that spawn many processes.
+          format: int64
+          type: integer
+        registryBurst:
+          description: registryBurst is the maximum size of bursty pulls, temporarily allows pulls to burst.
+          format: int32
+          type: integer
+        registryPullQPS:
+          description: registryPullQPS is the limit of registry pulls per second.
+          format: int32
+          type: integer
+        serializeImagePulls:
+          description: |-
+            serializeImagePulls when enabled, tells kubelet to pull images one at a time.
+            Tech preview feature for optimizing image pull performance.
+          type: boolean
+        streamingConnectionIdleTimeout:
+          description: streamingConnectionIdleTimeout is the maximum time a streaming connection can be idle.
+          type: object
+        systemReserved:
+          additionalProperties:
+            type: string
+          description: |-
+            systemReserved specifies resources reserved for system daemons.
+            Customers can set this on cluster creation but cannot change it later.
+          type: object
+      type: object
+    HostedClusterSpecPassthrough:
+      description: HostedClusterSpecPassthrough mirrors HostedClusterSpec from upstream HyperShift
+      properties:
+        autoNode:
+          description: autoNode specifies the configuration for automatic node provisioning and lifecycle management.
+          type: object
+        configuration:
+          $ref: '#/components/schemas/ClusterConfiguration'
+          description: configuration specifies configuration for individual OCP components in the
+      required:
+        - autoNode
+      type: object
   responses:
     BadRequest:
       description: Bad request

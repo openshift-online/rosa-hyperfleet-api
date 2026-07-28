@@ -60,3 +60,6 @@ hyperfleet-operator/compactor
 
 # Generated passthrough raw output (regenerate with make codegen-passthrough)
 *.passthrough.go.raw
+
+# Generated OpenAPI schemas (regenerate with make codegen-openapi)
+platform-api/openapi/generated-schemas.json
