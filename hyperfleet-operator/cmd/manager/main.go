@@ -54,12 +54,14 @@ func main() {
 	var baseDomain string
 	var maxConcurrentReconciles int
 	var sqsStatusQueueURL string
+	var sqsStatusQueueURLPrefix string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.StringVar(&awsRegion, "aws-region", "", "AWS region for DynamoDB, SNS, SQS, and EKS (required).")
 	flag.StringVar(&baseDomain, "base-domain", "", "DNS base domain for hosted clusters (required).")
-	flag.StringVar(&sqsStatusQueueURL, "sqs-status-queue-url", "", "SQS queue URL for receiving status change notifications from kube-applier (required).")
+	flag.StringVar(&sqsStatusQueueURL, "sqs-status-queue-url", "", "Full SQS queue URL for receiving status change notifications from kube-applier. Mutually exclusive with --sqs-status-queue-url-prefix.")
+	flag.StringVar(&sqsStatusQueueURLPrefix, "sqs-status-queue-url-prefix", "", "SQS queue URL prefix; the pod ordinal (from hostname) is appended to form the full queue URL. Mutually exclusive with --sqs-status-queue-url.")
 	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 10, "Maximum number of concurrent reconciles per controller.")
 
 	opts := zap.Options{Development: true}
@@ -76,8 +78,12 @@ func main() {
 		setupLog.Error(nil, "--base-domain is required")
 		os.Exit(1)
 	}
-	if sqsStatusQueueURL == "" {
-		setupLog.Error(nil, "--sqs-status-queue-url is required")
+	if sqsStatusQueueURL != "" && sqsStatusQueueURLPrefix != "" {
+		setupLog.Error(nil, "--sqs-status-queue-url and --sqs-status-queue-url-prefix are mutually exclusive")
+		os.Exit(1)
+	}
+	if sqsStatusQueueURL == "" && sqsStatusQueueURLPrefix == "" {
+		setupLog.Error(nil, "one of --sqs-status-queue-url or --sqs-status-queue-url-prefix is required")
 		os.Exit(1)
 	}
 
@@ -92,6 +98,13 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "Failed to parse pod ordinal from hostname")
 		os.Exit(1)
+	}
+
+	// If a prefix was given, construct the full queue URL by appending the
+	// pod ordinal — matching the queue naming convention:
+	//   <prefix><ordinal>  e.g. https://sqs…/regional-hyperfleet-operator-2
+	if sqsStatusQueueURLPrefix != "" {
+		sqsStatusQueueURL = fmt.Sprintf("%s%d", sqsStatusQueueURLPrefix, ordinal)
 	}
 
 	setupLog.Info("shard config",
