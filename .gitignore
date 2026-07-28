@@ -57,3 +57,6 @@ hyperfleet-operator/bin/
 # Compiled operator binaries (built outside bin/)
 hyperfleet-operator/manager
 hyperfleet-operator/compactor
+
+# Generated passthrough raw output (regenerate with make codegen-passthrough)
+*.passthrough.go.raw
