@@ -6,6 +6,7 @@ import (
 	"go/format"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/template"
 )
@@ -147,10 +148,11 @@ func (g *Generator) collectImports(typeDefs []*TypeDef) []string {
 	}
 
 	// Convert set to sorted slice
-	var imports []string
+	imports := make([]string, 0, len(importSet))
 	for imp := range importSet {
 		imports = append(imports, imp)
 	}
+	sort.Strings(imports)
 
 	return imports
 }
