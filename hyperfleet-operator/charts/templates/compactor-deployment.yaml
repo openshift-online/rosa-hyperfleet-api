@@ -30,7 +30,7 @@ spec:
         - name: compactor
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["/compactor"]
+          command: ["/app/compactor"]
           args:
             - --interval={{ .Values.compactor.interval }}
             - --retention={{ .Values.compactor.retention }}
