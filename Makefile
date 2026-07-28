@@ -6,6 +6,7 @@
 	e2e-authz-infra-up e2e-authz-infra-down e2e-init-db \
 	fmt vet verify deps \
 	manifests generate setup-envtest \
+	codegen-passthrough codegen-registry codegen-verify \
 	image-api image-operator image-push-api image-push-operator
 
 # ── Configuration ────────────────────────────────────────────────────────
@@ -81,6 +82,9 @@ help:
 	@echo "Code Generation:"
 	@echo "  manifests            Generate CRD manifests"
 	@echo "  generate             Generate deepcopy methods"
+	@echo "  codegen-passthrough  Run passthrough-gen (raw + curated types)"
+	@echo "  codegen-registry     Run marker-scanner (field_metadata.go/.json)"
+	@echo "  codegen-verify       Verify codegen packages compile"
 	@echo "  setup-envtest        Install envtest binaries (etcd, kube-apiserver)"
 	@echo "  deps                 Download and tidy all modules"
 	@echo ""
@@ -244,6 +248,30 @@ ENVTEST_BIN_DIR ?= $(shell pwd)/.envtest
 
 setup-envtest: $(SETUP_ENVTEST)
 	$(SETUP_ENVTEST) use --bin-dir $(ENVTEST_BIN_DIR)
+
+# ── Codegen Pipeline ────────────────────────────────────────────────────
+
+HYPERSHIFT_IMPORT_PATH ?= github.com/openshift/hypershift/api/hypershift/v1beta1
+HYPERSHIFT_TYPES       ?= HostedClusterSpec,NodePoolSpec
+V1ALPHA1_DIR           := hyperfleet-operator/api/v1alpha1
+REGISTRY_DIR           := platform-api/internal/codegen/registry
+
+codegen-passthrough: build-api-codegen
+	./bin/passthrough-gen \
+		--import-path=$(HYPERSHIFT_IMPORT_PATH) \
+		--types=$(HYPERSHIFT_TYPES) \
+		--output-dir=$(V1ALPHA1_DIR) \
+		--package=v1alpha1
+	cp $(V1ALPHA1_DIR)/hostedclusterspec.passthrough.go $(V1ALPHA1_DIR)/zz_generated.passthrough.go.raw
+
+codegen-registry: build-api-codegen
+	./bin/marker-scanner \
+		--input-dirs=$(V1ALPHA1_DIR) \
+		--output-file=$(REGISTRY_DIR)/field_metadata.go
+
+codegen-verify: build-api-codegen
+	cd hyperfleet-operator/api && go build ./...
+	cd platform-api && go build ./internal/codegen/...
 
 # ── Images ───────────────────────────────────────────────────────────────
 

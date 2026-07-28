@@ -36,6 +36,37 @@ const (
 // NodePoolSpec defines the desired state of a NodePool.
 // The parent Cluster is identified by the shared metadata.Namespace (cluster UUID).
 type NodePoolSpec struct {
+	// === HyperFleet Envelope Fields ===
+
+	// DisplayName is a human-readable name for the node pool.
+	// +hyperfleet:write-mode=mutable
+	// +optional
+	DisplayName string `json:"displayName,omitempty"`
+
+	// AutoRepair enables automatic repair of unhealthy nodes.
+	// +hyperfleet:write-mode=mutable
+	// +optional
+	AutoRepair *bool `json:"autoRepair,omitempty"`
+
+	// Labels to apply to nodes in this pool.
+	// +hyperfleet:write-mode=mutable
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// AccountID identifies the customer account (platform-managed, hidden).
+	// +k8s:openapi-gen=false
+	// +hyperfleet:write-mode=service-set
+	// +optional
+	AccountID string `json:"accountId,omitempty"`
+
+	// InternalPoolID is an internal platform identifier (platform-managed, hidden).
+	// +k8s:openapi-gen=false
+	// +hyperfleet:write-mode=service-set
+	// +optional
+	InternalPoolID string `json:"internalPoolId,omitempty"`
+
+	// === HyperShift Passthrough ===
+
 	// NodePool is the full HyperShift NodePoolSpec. The customer provides replicas,
 	// platform, release, etc. The operator overrides ClusterName and adds system
 	// resource tags at render time.
