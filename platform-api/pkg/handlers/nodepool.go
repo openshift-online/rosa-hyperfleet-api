@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/conversion"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
@@ -195,11 +196,15 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	snapshot := cr.Spec
+
 	if err := hyperfleetdb.ApplyPlatformUpdateToNodePoolCR(cr, &req); err != nil {
 		h.logger.Error("failed to merge nodepool spec", "error", err)
 		h.writeError(w, http.StatusBadRequest, "NODEPOOLS-MGMT-UPDATE-002", "Invalid nodepool spec")
 		return
 	}
+
+	conversion.PreserveNodePoolServiceSet(&cr.Spec, &snapshot)
 
 	if err := h.db.UpdateNodePool(ctx, cr); err != nil {
 		h.logger.Error("failed to update nodepool", "error", err, "account_id", accountID, "nodepool_id", nodepoolID)

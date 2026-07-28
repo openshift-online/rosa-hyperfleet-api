@@ -159,7 +159,7 @@ func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.Field
 
 // flattenToFieldPaths converts a struct to a map of dot-separated field paths
 // via JSON round-trip. The prefix is prepended to all paths (e.g., "spec").
-func flattenToFieldPaths(prefix string, v interface{}) map[string]interface{} {
+func flattenToFieldPaths(prefix string, v interface{}) map[string]interface{} { //nolint:unparam
 	data, err := json.Marshal(v)
 	if err != nil {
 		return nil

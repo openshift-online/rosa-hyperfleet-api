@@ -1,30 +1,32 @@
 package conversion
 
+import (
+	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/api/v1alpha1"
+)
+
 // ClusterServiceSetFields holds platform-injected values for cluster creation.
 type ClusterServiceSetFields struct {
-	CloudURL   string
-	Placement  string
 	CreatorARN string
+	IssuerURL  string
 }
 
-// InjectClusterServiceSet merges service-set fields into a cluster spec map.
-// Only non-empty values are injected. Placement is only set if not already
-// present in the spec (allowing client-provided values to take precedence).
-func InjectClusterServiceSet(spec map[string]interface{}, ssf ClusterServiceSetFields) {
-	if ssf.CloudURL != "" {
-		spec["cloudUrl"] = ssf.CloudURL
-	}
-	if ssf.Placement != "" {
-		if spec["placement"] == nil || spec["placement"] == "" {
-			spec["placement"] = ssf.Placement
-		}
-	}
+// InjectClusterServiceSet populates service-set fields on a ClusterSpec during creation.
+// Only non-empty values are injected.
+func InjectClusterServiceSet(spec *v1alpha1.ClusterSpec, ssf ClusterServiceSetFields) {
 	if ssf.CreatorARN != "" {
-		spec["creatorARN"] = ssf.CreatorARN
+		spec.CreatorARN = ssf.CreatorARN
+	}
+	if ssf.IssuerURL != "" {
+		spec.HostedCluster.IssuerURL = ssf.IssuerURL
 	}
 }
 
-// RewriteCloudURLWithID sets cloudUrl to baseURL/clusterID in a response spec.
-func RewriteCloudURLWithID(spec map[string]interface{}, baseURL, clusterID string) {
-	spec["cloudUrl"] = baseURL + "/" + clusterID
+// PreserveClusterServiceSet restores service-set field values from a pre-update
+// snapshot into the updated spec, preventing the full-spec replacement in
+// ApplyPlatformUpdateToClusterCR from wiping platform-managed fields.
+func PreserveClusterServiceSet(updated, snapshot *v1alpha1.ClusterSpec) {
+	updated.CreatorARN = snapshot.CreatorARN
+	updated.AccountID = snapshot.AccountID
+	updated.InternalID = snapshot.InternalID
+	updated.HostedCluster.IssuerURL = snapshot.HostedCluster.IssuerURL
 }

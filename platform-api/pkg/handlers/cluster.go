@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/mux"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/conversion"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
@@ -133,10 +134,6 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if callerARN := middleware.GetCallerARN(ctx); callerARN != "" {
-		req.Spec.CreatorARN = callerARN
-	}
-
 	clusterID := uuid.New().String()
 
 	h.logger.Info("creating cluster", "account_id", accountID, "cluster_name", req.Name, "cluster_id", clusterID)
@@ -148,13 +145,14 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	conversion.InjectClusterServiceSet(&cr.Spec, conversion.ClusterServiceSetFields{
+		CreatorARN: middleware.GetCallerARN(ctx),
+		IssuerURL:  h.oidcIssuerBaseURL + "/" + clusterID,
+	})
+
 	if h.defaultClusterExpiration > 0 && cr.Spec.ExpirationTimestamp == nil {
 		expiry := metav1.NewTime(time.Now().Add(h.defaultClusterExpiration))
 		cr.Spec.ExpirationTimestamp = &expiry
-	}
-
-	if h.oidcIssuerBaseURL != "" {
-		cr.Spec.HostedCluster.IssuerURL = h.oidcIssuerBaseURL + "/" + clusterID
 	}
 
 	if err := h.db.CreateCluster(ctx, accountID, cr); err != nil {
@@ -230,8 +228,7 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existingIssuerURL := cr.Spec.HostedCluster.IssuerURL
-	existingExpiration := cr.Spec.ExpirationTimestamp
+	snapshot := cr.Spec
 
 	if err := hyperfleetdb.ApplyPlatformUpdateToClusterCR(cr, &req); err != nil {
 		h.logger.Error("failed to merge cluster spec", "error", err)
@@ -239,9 +236,9 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cr.Spec.HostedCluster.IssuerURL = existingIssuerURL
+	conversion.PreserveClusterServiceSet(&cr.Spec, &snapshot)
 	if cr.Spec.ExpirationTimestamp == nil {
-		cr.Spec.ExpirationTimestamp = existingExpiration
+		cr.Spec.ExpirationTimestamp = snapshot.ExpirationTimestamp
 	}
 
 	if err := h.db.UpdateCluster(ctx, cr); err != nil {
