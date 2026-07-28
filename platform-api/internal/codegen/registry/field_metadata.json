@@ -1,5 +1,10 @@
 [
   {
+    "fieldPath": "additionalTrustBundle",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
     "fieldPath": "allowedUnsafeSysctls",
     "writeMode": "service-set",
     "hidden": true
@@ -10,9 +15,62 @@
     "hidden": true
   },
   {
+    "fieldPath": "arch",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "auditWebhook",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
     "fieldPath": "authentication",
     "writeMode": "service-set",
     "hidden": true
+  },
+  {
+    "fieldPath": "autoNode",
+    "writeMode": "service-set"
+  },
+  {
+    "fieldPath": "autoScaling",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "autoscaling",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "capabilities",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "channel",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "clusterID",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "clusterName",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "config",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "configuration",
+    "writeMode": "service-set"
   },
   {
     "fieldPath": "containerLogMaxFiles",
@@ -21,6 +79,16 @@
   {
     "fieldPath": "containerLogMaxSize",
     "writeMode": "mutable"
+  },
+  {
+    "fieldPath": "controlPlaneRelease",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "controllerAvailabilityPolicy",
+    "writeMode": "service-set",
+    "hidden": true
   },
   {
     "fieldPath": "cpuManagerPolicy",
@@ -34,6 +102,16 @@
   },
   {
     "fieldPath": "cpuManagerReconcilePeriod",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "dns",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "etcd",
     "writeMode": "service-set",
     "hidden": true
   },
@@ -58,7 +136,17 @@
     "hidden": true
   },
   {
+    "fieldPath": "fips",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
     "fieldPath": "image",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "imageContentSources",
     "writeMode": "service-set",
     "hidden": true
   },
@@ -75,7 +163,27 @@
     "writeMode": "mutable"
   },
   {
+    "fieldPath": "infraID",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "infrastructureAvailabilityPolicy",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
     "fieldPath": "ingress",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "issuerURL",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "kubeAPIServerDNSName",
     "writeMode": "service-set",
     "hidden": true
   },
@@ -193,6 +301,11 @@
     "hidden": true
   },
   {
+    "fieldPath": "labels",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
     "fieldPath": "machineConfig",
     "writeMode": "service-set"
   },
@@ -231,6 +344,11 @@
     "hidden": true
   },
   {
+    "fieldPath": "management",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
     "fieldPath": "maxPods",
     "writeMode": "mutable"
   },
@@ -245,7 +363,52 @@
     "hidden": true
   },
   {
+    "fieldPath": "networking",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "nodeDrainTimeout",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "nodeLabels",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "nodeSelector",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "nodeVolumeDetachTimeout",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
     "fieldPath": "oauth",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "olmCatalogPlacement",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "operatorConfiguration",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "pausedUntil",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "platform",
     "writeMode": "service-set",
     "hidden": true
   },
@@ -255,6 +418,11 @@
   },
   {
     "fieldPath": "proxy",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "pullSecret",
     "writeMode": "service-set",
     "hidden": true
   },
@@ -269,7 +437,22 @@
     "featureGate": "HyperFleetKubeletAdvanced"
   },
   {
+    "fieldPath": "release",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "replicas",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
     "fieldPath": "scheduler",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "secretEncryption",
     "writeMode": "service-set",
     "hidden": true
   },
@@ -277,6 +460,16 @@
     "fieldPath": "serializeImagePulls",
     "writeMode": "mutable",
     "featureGate": "HyperFleetKubeletAdvanced"
+  },
+  {
+    "fieldPath": "serviceAccountSigningKey",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "services",
+    "writeMode": "service-set",
+    "hidden": true
   },
   {
     "fieldPath": "spec.accountId",
@@ -328,6 +521,11 @@
     "featureGate": "HyperFleetAutoScaling"
   },
   {
+    "fieldPath": "sshKey",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
     "fieldPath": "streamingConnectionIdleTimeout",
     "writeMode": "mutable"
   },
@@ -336,12 +534,32 @@
     "writeMode": "immutable"
   },
   {
+    "fieldPath": "taints",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "tolerations",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
     "fieldPath": "topologyManagerPolicy",
     "writeMode": "service-set",
     "hidden": true
   },
   {
     "fieldPath": "topologyManagerScope",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "tuningConfig",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "updateService",
     "writeMode": "service-set",
     "hidden": true
   }

@@ -45,6 +45,11 @@ type FieldMeta struct {
 
 // FieldRegistry maps field paths to their metadata
 var FieldRegistry = map[string]FieldMeta{
+	"additionalTrustBundle": {
+		FieldPath: "additionalTrustBundle",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
 	"allowedUnsafeSysctls": {
 		FieldPath: "allowedUnsafeSysctls",
 		WriteMode: ServiceSet,
@@ -55,10 +60,63 @@ var FieldRegistry = map[string]FieldMeta{
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
+	"arch": {
+		FieldPath: "arch",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"auditWebhook": {
+		FieldPath: "auditWebhook",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
 	"authentication": {
 		FieldPath: "authentication",
 		WriteMode: ServiceSet,
 		Hidden:    true,
+	},
+	"autoNode": {
+		FieldPath: "autoNode",
+		WriteMode: ServiceSet,
+	},
+	"autoScaling": {
+		FieldPath: "autoScaling",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"autoscaling": {
+		FieldPath: "autoscaling",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"capabilities": {
+		FieldPath: "capabilities",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"channel": {
+		FieldPath: "channel",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"clusterID": {
+		FieldPath: "clusterID",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"clusterName": {
+		FieldPath: "clusterName",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"config": {
+		FieldPath: "config",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"configuration": {
+		FieldPath: "configuration",
+		WriteMode: ServiceSet,
 	},
 	"containerLogMaxFiles": {
 		FieldPath: "containerLogMaxFiles",
@@ -67,6 +125,16 @@ var FieldRegistry = map[string]FieldMeta{
 	"containerLogMaxSize": {
 		FieldPath: "containerLogMaxSize",
 		WriteMode: Mutable,
+	},
+	"controlPlaneRelease": {
+		FieldPath: "controlPlaneRelease",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"controllerAvailabilityPolicy": {
+		FieldPath: "controllerAvailabilityPolicy",
+		WriteMode: ServiceSet,
+		Hidden:    true,
 	},
 	"cpuManagerPolicy": {
 		FieldPath: "cpuManagerPolicy",
@@ -80,6 +148,16 @@ var FieldRegistry = map[string]FieldMeta{
 	},
 	"cpuManagerReconcilePeriod": {
 		FieldPath: "cpuManagerReconcilePeriod",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"dns": {
+		FieldPath: "dns",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"etcd": {
+		FieldPath: "etcd",
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
@@ -103,8 +181,18 @@ var FieldRegistry = map[string]FieldMeta{
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
+	"fips": {
+		FieldPath: "fips",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
 	"image": {
 		FieldPath: "image",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"imageContentSources": {
+		FieldPath: "imageContentSources",
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
@@ -120,8 +208,28 @@ var FieldRegistry = map[string]FieldMeta{
 		FieldPath: "imageMinimumGCAge",
 		WriteMode: Mutable,
 	},
+	"infraID": {
+		FieldPath: "infraID",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"infrastructureAvailabilityPolicy": {
+		FieldPath: "infrastructureAvailabilityPolicy",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
 	"ingress": {
 		FieldPath: "ingress",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"issuerURL": {
+		FieldPath: "issuerURL",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"kubeAPIServerDNSName": {
+		FieldPath: "kubeAPIServerDNSName",
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
@@ -238,6 +346,11 @@ var FieldRegistry = map[string]FieldMeta{
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
+	"labels": {
+		FieldPath: "labels",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
 	"machineConfig": {
 		FieldPath: "machineConfig",
 		WriteMode: ServiceSet,
@@ -276,6 +389,11 @@ var FieldRegistry = map[string]FieldMeta{
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
+	"management": {
+		FieldPath: "management",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
 	"maxPods": {
 		FieldPath: "maxPods",
 		WriteMode: Mutable,
@@ -290,8 +408,53 @@ var FieldRegistry = map[string]FieldMeta{
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
+	"networking": {
+		FieldPath: "networking",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"nodeDrainTimeout": {
+		FieldPath: "nodeDrainTimeout",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"nodeLabels": {
+		FieldPath: "nodeLabels",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"nodeSelector": {
+		FieldPath: "nodeSelector",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"nodeVolumeDetachTimeout": {
+		FieldPath: "nodeVolumeDetachTimeout",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
 	"oauth": {
 		FieldPath: "oauth",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"olmCatalogPlacement": {
+		FieldPath: "olmCatalogPlacement",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"operatorConfiguration": {
+		FieldPath: "operatorConfiguration",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"pausedUntil": {
+		FieldPath: "pausedUntil",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"platform": {
+		FieldPath: "platform",
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
@@ -301,6 +464,11 @@ var FieldRegistry = map[string]FieldMeta{
 	},
 	"proxy": {
 		FieldPath: "proxy",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"pullSecret": {
+		FieldPath: "pullSecret",
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
@@ -314,8 +482,23 @@ var FieldRegistry = map[string]FieldMeta{
 		WriteMode:   Mutable,
 		FeatureGate: "HyperFleetKubeletAdvanced",
 	},
+	"release": {
+		FieldPath: "release",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"replicas": {
+		FieldPath: "replicas",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
 	"scheduler": {
 		FieldPath: "scheduler",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"secretEncryption": {
+		FieldPath: "secretEncryption",
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
@@ -323,6 +506,16 @@ var FieldRegistry = map[string]FieldMeta{
 		FieldPath:   "serializeImagePulls",
 		WriteMode:   Mutable,
 		FeatureGate: "HyperFleetKubeletAdvanced",
+	},
+	"serviceAccountSigningKey": {
+		FieldPath: "serviceAccountSigningKey",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"services": {
+		FieldPath: "services",
+		WriteMode: ServiceSet,
+		Hidden:    true,
 	},
 	"spec.accountId": {
 		FieldPath: "spec.accountId",
@@ -373,6 +566,11 @@ var FieldRegistry = map[string]FieldMeta{
 		WriteMode:   Mutable,
 		FeatureGate: "HyperFleetAutoScaling",
 	},
+	"sshKey": {
+		FieldPath: "sshKey",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
 	"streamingConnectionIdleTimeout": {
 		FieldPath: "streamingConnectionIdleTimeout",
 		WriteMode: Mutable,
@@ -381,6 +579,16 @@ var FieldRegistry = map[string]FieldMeta{
 		FieldPath: "systemReserved",
 		WriteMode: Immutable,
 	},
+	"taints": {
+		FieldPath: "taints",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"tolerations": {
+		FieldPath: "tolerations",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
 	"topologyManagerPolicy": {
 		FieldPath: "topologyManagerPolicy",
 		WriteMode: ServiceSet,
@@ -388,6 +596,16 @@ var FieldRegistry = map[string]FieldMeta{
 	},
 	"topologyManagerScope": {
 		FieldPath: "topologyManagerScope",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"tuningConfig": {
+		FieldPath: "tuningConfig",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"updateService": {
+		FieldPath: "updateService",
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
