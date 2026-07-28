@@ -1,7 +1,6 @@
 package main
 
 import (
-	_ "embed"
 	"flag"
 	"fmt"
 	"log"
@@ -11,9 +10,6 @@ import (
 	"github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen/pkg/markers"
 	"github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen/pkg/passthrough"
 )
-
-//go:embed field_metadata.json
-var embeddedRegistry []byte
 
 func main() {
 	var (
@@ -30,13 +26,13 @@ func main() {
 	flag.StringVar(&importPath, "import-path", "", "Go import path to resolve via go.mod (use this OR -source-dir)")
 	flag.StringVar(&outputDir, "output-dir", "", "Directory for generated output (required)")
 	flag.StringVar(&typeNames, "types", "", "Comma-separated list of type names to generate (required)")
-	flag.StringVar(&registryFile, "registry", "", "Path to field metadata registry (optional)")
+	flag.StringVar(&registryFile, "registry", "", "Path to field metadata registry JSON (required)")
 	flag.StringVar(&packageName, "package", "v1alpha1", "Package name for generated code")
 	flag.StringVar(&fieldPrefix, "field-prefix", "", "Dotted path prefix for registry lookups (e.g., spec.hostedCluster)")
 	flag.Parse()
 
 	// Validate flags
-	if outputDir == "" || typeNames == "" {
+	if outputDir == "" || typeNames == "" || registryFile == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -55,28 +51,16 @@ func main() {
 		types[i] = strings.TrimSpace(types[i])
 	}
 
-	// Load registry: use explicit file if provided, otherwise use embedded default
-	var registry markers.FieldRegistry
-	if registryFile != "" {
-		log.Printf("Loading field registry from: %s", registryFile)
-		var err error
-		registry, err = markers.LoadRegistryFromJSON(registryFile)
-		if err != nil {
-			log.Fatalf("Failed to load registry: %v", err)
-		}
-		log.Printf("Loaded %d field markers from registry", len(registry))
-	} else {
-		var err error
-		registry, err = markers.LoadRegistryFromJSONBytes(embeddedRegistry)
-		if err != nil {
-			log.Fatalf("Failed to load embedded registry: %v", err)
-		}
-		log.Printf("Loaded %d field markers from embedded registry", len(registry))
+	// Load field metadata registry
+	log.Printf("Loading field registry from: %s", registryFile)
+	registry, err := markers.LoadRegistryFromJSON(registryFile)
+	if err != nil {
+		log.Fatalf("Failed to load registry: %v", err)
 	}
+	log.Printf("Loaded %d field markers from registry", len(registry))
 
 	// Create generator
 	var gen *passthrough.Generator
-	var err error
 
 	if importPath != "" {
 		log.Printf("Resolving import path: %s", importPath)

@@ -261,7 +261,8 @@ codegen-passthrough: build-api-codegen
 		--source-dir=$$(cd hyperfleet-operator/api && go list -f '{{.Dir}}' $(HYPERSHIFT_IMPORT_PATH)) \
 		--types=$(HYPERSHIFT_TYPES) \
 		--output-dir=$(V1ALPHA1_DIR) \
-		--package=v1alpha1
+		--package=v1alpha1 \
+		--registry=$(REGISTRY_DIR)/field_metadata.json
 	rm -f $(V1ALPHA1_DIR)/zz_generated.passthrough.go
 
 codegen-registry: build-api-codegen
