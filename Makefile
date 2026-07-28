@@ -258,11 +258,11 @@ REGISTRY_DIR           := platform-api/internal/codegen/registry
 
 codegen-passthrough: build-api-codegen
 	./bin/passthrough-gen \
-		--import-path=$(HYPERSHIFT_IMPORT_PATH) \
+		--source-dir=$$(cd hyperfleet-operator/api && go list -f '{{.Dir}}' $(HYPERSHIFT_IMPORT_PATH)) \
 		--types=$(HYPERSHIFT_TYPES) \
 		--output-dir=$(V1ALPHA1_DIR) \
 		--package=v1alpha1
-	cp $(V1ALPHA1_DIR)/hostedclusterspec.passthrough.go $(V1ALPHA1_DIR)/zz_generated.passthrough.go.raw
+	rm -f $(V1ALPHA1_DIR)/zz_generated.passthrough.go
 
 codegen-registry: build-api-codegen
 	./bin/marker-scanner \
