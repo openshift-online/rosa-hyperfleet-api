@@ -12,9 +12,11 @@ import (
 	"github.com/gorilla/mux"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/types"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/validation"
 )
 
 // ClusterHandler handles cluster-related HTTP requests
@@ -22,15 +24,19 @@ type ClusterHandler struct {
 	db                       *hyperfleetdb.Client
 	oidcIssuerBaseURL        string
 	defaultClusterExpiration time.Duration
+	validator                *validation.FieldValidator
+	featureSet               featuregate.FeatureSet
 	logger                   *slog.Logger
 }
 
 // NewClusterHandler creates a new cluster handler
-func NewClusterHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, defaultClusterExpiration time.Duration, logger *slog.Logger) *ClusterHandler {
+func NewClusterHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, defaultClusterExpiration time.Duration, validator *validation.FieldValidator, featureSet featuregate.FeatureSet, logger *slog.Logger) *ClusterHandler {
 	return &ClusterHandler{
 		db:                       db,
 		oidcIssuerBaseURL:        oidcIssuerBaseURL,
 		defaultClusterExpiration: defaultClusterExpiration,
+		validator:                validator,
+		featureSet:               featureSet,
 		logger:                   logger,
 	}
 }
@@ -105,6 +111,11 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name == "" || req.Spec == nil {
 		h.writeError(w, http.StatusBadRequest, "CLUSTERS-MGMT-CREATE-002", "Missing required fields: name and spec")
+		return
+	}
+
+	if errs := h.validator.ValidateClusterCreate(req.Spec, h.featureSet); errs != nil {
+		h.writeValidationError(w, "CLUSTERS-MGMT-VALIDATION-001", errs)
 		return
 	}
 
@@ -214,6 +225,11 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if errs := h.validator.ValidateClusterUpdate(req.Spec, &cr.Spec, h.featureSet); errs != nil {
+		h.writeValidationError(w, "CLUSTERS-MGMT-VALIDATION-002", errs)
+		return
+	}
+
 	existingIssuerURL := cr.Spec.HostedCluster.IssuerURL
 	existingExpiration := cr.Spec.ExpirationTimestamp
 
@@ -302,6 +318,18 @@ func (h *ClusterHandler) writeError(w http.ResponseWriter, status int, code, rea
 		"kind":   "Error",
 		"code":   code,
 		"reason": reason,
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (h *ClusterHandler) writeValidationError(w http.ResponseWriter, code string, errs validation.ValidationErrors) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnprocessableEntity)
+	resp := map[string]any{
+		"kind":    "Error",
+		"code":    code,
+		"reason":  "Request validation failed",
+		"details": errs,
 	}
 	_ = json.NewEncoder(w).Encode(resp)
 }

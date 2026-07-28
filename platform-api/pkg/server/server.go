@@ -10,12 +10,14 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gorilla/mux"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/authz"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/authz/client"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/config"
 	apphandlers "github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/handlers"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/validation"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/zoa"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -36,12 +38,19 @@ type Server struct {
 func New(cfg *config.Config, dbClient *hyperfleetdb.Client, logger *slog.Logger) (*Server, error) {
 	ctx := context.Background()
 
+	// Create field validator
+	fieldValidator := validation.NewFieldValidator()
+	fs := featuregate.FeatureSet(cfg.Regional.FeatureSet)
+	if fs == "" {
+		fs = featuregate.Default
+	}
+
 	// Create handlers
 	healthHandler := apphandlers.NewHealthHandler()
 	infoHandler := apphandlers.NewInfoHandler()
 	mgmtClusterHandler := apphandlers.NewManagementClusterHandler(dbClient, logger)
-	clusterHandler := apphandlers.NewClusterHandler(dbClient, cfg.Regional.OIDCIssuerBaseURL, cfg.Regional.DefaultClusterExpiration, logger)
-	nodePoolHandler := apphandlers.NewNodePoolHandler(dbClient, logger)
+	clusterHandler := apphandlers.NewClusterHandler(dbClient, cfg.Regional.OIDCIssuerBaseURL, cfg.Regional.DefaultClusterExpiration, fieldValidator, fs, logger)
+	nodePoolHandler := apphandlers.NewNodePoolHandler(dbClient, fieldValidator, fs, logger)
 
 	// Create legacy authorization middleware (for non-authz routes)
 	authMiddleware := middleware.NewAuthorization(cfg.AllowedAccounts, logger)

@@ -23,6 +23,7 @@ type DBConfig struct {
 type RegionalConfig struct {
 	OIDCIssuerBaseURL        string
 	DefaultClusterExpiration time.Duration
+	FeatureSet               string
 }
 
 type ZoaConfig struct {
