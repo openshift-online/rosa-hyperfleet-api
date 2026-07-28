@@ -3,8 +3,9 @@ ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 
 USER 0
-RUN mkdir -p /workspace && chown 1001:0 /workspace
+RUN mkdir -p /workspace /tmp/gocache && chown 1001:0 /workspace /tmp/gocache
 USER 1001
+ENV GOCACHE=/tmp/gocache
 
 WORKDIR /workspace
 
