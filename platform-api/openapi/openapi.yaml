@@ -2204,12 +2204,12 @@ components:
           description: ExpirationTimestamp marks when this cluster should be automatically deleted.
           type: object
         hostedCluster:
+          $ref: '#/components/schemas/HostedClusterSpecPassthrough'
           description: |-
             === HyperShift Passthrough ===
             HostedCluster is the full HyperShift HostedClusterSpec. The customer provides
             the fields they care about; the operator overrides platform-managed fields
             (InfraID, DNS, PullSecret, Services, etc.) at render time.
-          type: object
         properties:
           additionalProperties:
             type: string

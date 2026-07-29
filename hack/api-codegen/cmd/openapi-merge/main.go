@@ -137,6 +137,10 @@ func findSchemasNode(doc *yaml.Node) *yaml.Node {
 
 var markerRe = regexp.MustCompile(`(?m)^\+[a-zA-Z].*$`)
 
+var passthroughRefs = map[string]map[string]string{
+	"ClusterSpec": {"hostedCluster": "HostedClusterSpecPassthrough"},
+}
+
 func swaggerDefToOAS3(typeName string, raw json.RawMessage) (*yaml.Node, error) {
 	var def map[string]interface{}
 	if err := json.Unmarshal(raw, &def); err != nil {
@@ -145,10 +149,34 @@ func swaggerDefToOAS3(typeName string, raw json.RawMessage) (*yaml.Node, error) 
 
 	cleanDescription(def)
 	inlineSelfRefs(typeName, def)
+	linkPassthroughRefs(typeName, def)
 	convertRefs(def)
 
 	node := toYAMLNode(def)
 	return node, nil
+}
+
+func linkPassthroughRefs(typeName string, m map[string]interface{}) {
+	fieldMap, ok := passthroughRefs[typeName]
+	if !ok {
+		return
+	}
+	props, ok := m["properties"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	for field, targetType := range fieldMap {
+		pm, ok := props[field].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if _, hasRef := pm["$ref"]; hasRef {
+			continue
+		}
+		pm["$ref"] = "#/definitions/" + targetType
+		delete(pm, "type")
+		delete(pm, "additionalProperties")
+	}
 }
 
 func inlineSelfRefs(typeName string, m map[string]interface{}) {

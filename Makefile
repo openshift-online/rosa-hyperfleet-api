@@ -7,7 +7,8 @@
 	fmt vet verify deps \
 	manifests generate setup-envtest \
 	codegen-passthrough codegen-registry codegen-verify codegen-openapi verify-openapi \
-	image-api image-operator image-push-api image-push-operator
+	image-api image-operator image-push-api image-push-operator \
+	swagger-ui-serve swagger-ui-open
 
 # ── Configuration ────────────────────────────────────────────────────────
 
@@ -288,6 +289,18 @@ codegen-openapi: build-api-codegen
 verify-openapi: codegen-openapi
 	@git diff --exit-code platform-api/openapi/openapi.yaml || \
 		(echo "openapi.yaml is out of date; run 'make codegen-openapi'" && exit 1)
+
+swagger-ui-serve:
+	@command -v python3 >/dev/null 2>&1 || { echo "Error: python3 is required"; exit 1; }
+	@echo "Swagger UI: http://localhost:8080/platform-api/openapi/swagger-ui/"
+	@echo "OpenAPI spec: http://localhost:8080/platform-api/openapi/openapi.yaml"
+	@echo "Press Ctrl+C to stop"
+	@python3 -m http.server 8080 --directory .
+
+swagger-ui-open:
+	@command -v open >/dev/null 2>&1 && open http://localhost:8080/platform-api/openapi/swagger-ui/ || \
+	command -v xdg-open >/dev/null 2>&1 && xdg-open http://localhost:8080/platform-api/openapi/swagger-ui/ || \
+	echo "Open http://localhost:8080/platform-api/openapi/swagger-ui/ in your browser"
 
 # ── Images ───────────────────────────────────────────────────────────────
 
