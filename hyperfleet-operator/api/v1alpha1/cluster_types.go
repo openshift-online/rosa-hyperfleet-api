@@ -51,7 +51,6 @@ type ClusterSpec struct {
 	DeleteProtection *bool `json:"deleteProtection,omitempty"`
 
 	// ExpirationTimestamp marks when this cluster should be automatically deleted.
-	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable
 	// +optional
 	ExpirationTimestamp *metav1.Time `json:"expirationTimestamp,omitempty"`
