@@ -157,8 +157,8 @@ github.com/prometheus/procfs v0.21.0 h1:Qh/e6TlBjZf+XLLqNCqFGmCU6Kj/2Bu7kj3oAc0U
 github.com/prometheus/procfs v0.21.0/go.mod h1:aB55Cww9pdSJVHk0hUf0inxWyyjPogFIjmHKYgMKmtY=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
-github.com/rrp-bot/rosa-hyperfleet-kube-applier v0.0.0-20260723175424-e3f92ee5ade9 h1:BJvEq05URpNV6McO15aWxOiSXajlkkGF4NsPabVe3tc=
-github.com/rrp-bot/rosa-hyperfleet-kube-applier v0.0.0-20260723175424-e3f92ee5ade9/go.mod h1:DCbosLo2nkirpFz7r5i70MYlgK9TcppykZGkjm0ltTk=
+github.com/rrp-bot/rosa-hyperfleet-kube-applier v0.0.0-20260730140449-9106cf5c01ed h1:4lBinC7nznkY2LfrEVwHU7F4PDALv28nOOU1Eg5yvOM=
+github.com/rrp-bot/rosa-hyperfleet-kube-applier v0.0.0-20260730140449-9106cf5c01ed/go.mod h1:akfFjlRC94AbZUaa6haV0glQ618TYPCPHKSef85ITRQ=
 github.com/spf13/pflag v1.0.10 h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=
 github.com/spf13/pflag v1.0.10/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
