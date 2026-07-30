@@ -24,7 +24,7 @@ func (m *mockSNSClient) Publish(_ context.Context, in *sns.PublishInput, _ ...fu
 func TestTopicARN(t *testing.T) {
 	p := New(nil, "us-east-1", "123456789012")
 	got := p.TopicARN("prod")
-	want := "arn:aws:sns:us-east-1:123456789012:mc-prod-specs"
+	want := "arn:aws:sns:us-east-1:123456789012:prod-specs-notifications"
 	if got != want {
 		t.Errorf("TopicARN = %q, want %q", got, want)
 	}
@@ -44,7 +44,7 @@ func TestPublish_CallsSNS(t *testing.T) {
 	}
 
 	call := mock.calls[0]
-	wantARN := "arn:aws:sns:us-east-1:123456789012:mc-prod-specs"
+	wantARN := "arn:aws:sns:us-east-1:123456789012:prod-specs-notifications"
 	if *call.TopicArn != wantARN {
 		t.Errorf("TopicArn = %q, want %q", *call.TopicArn, wantARN)
 	}
@@ -105,9 +105,9 @@ func TestPublish_DifferentMCs(t *testing.T) {
 		t.Fatalf("expected 3 calls, got %d", len(mock.calls))
 	}
 	wantARNs := []string{
-		"arn:aws:sns:us-east-1:111222333444:mc-mc01-specs",
-		"arn:aws:sns:us-east-1:111222333444:mc-mc02-specs",
-		"arn:aws:sns:us-east-1:111222333444:mc-prod-specs",
+		"arn:aws:sns:us-east-1:111222333444:mc01-specs-notifications",
+		"arn:aws:sns:us-east-1:111222333444:mc02-specs-notifications",
+		"arn:aws:sns:us-east-1:111222333444:prod-specs-notifications",
 	}
 	for i, want := range wantARNs {
 		if *mock.calls[i].TopicArn != want {

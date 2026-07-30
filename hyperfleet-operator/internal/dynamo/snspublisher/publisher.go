@@ -37,7 +37,7 @@ type Publisher struct {
 
 // New returns a Publisher that constructs topic ARNs as:
 //
-//	arn:aws:sns:<region>:<accountID>:mc-<mcName>-specs
+//	arn:aws:sns:<region>:<accountID>:<mcName>-specs-notifications
 func New(client SNSClient, region, accountID string) *Publisher {
 	return &Publisher{
 		client:    client,
@@ -47,8 +47,9 @@ func New(client SNSClient, region, accountID string) *Publisher {
 }
 
 // TopicARN returns the deterministic SNS topic ARN for the given MC name.
+// The topic name matches the Terraform convention: ${mc_name}-specs-notifications.
 func (p *Publisher) TopicARN(mcName string) string {
-	return fmt.Sprintf("arn:aws:sns:%s:%s:mc-%s-specs", p.region, p.accountID, mcName)
+	return fmt.Sprintf("arn:aws:sns:%s:%s:%s-specs-notifications", p.region, p.accountID, mcName)
 }
 
 // Publish sends a SpecNotification to the SNS topic for mcName. It is

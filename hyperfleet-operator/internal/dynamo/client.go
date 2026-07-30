@@ -137,11 +137,10 @@ func (c *Client) publishNotification(ctx context.Context, specsPrefix, documentI
 }
 
 // mcNameFromPrefix strips the "-specs" suffix from a specsPrefix to recover the
-// management cluster name. E.g. "mc-prod-specs" → "prod", "mc01-specs" → "mc01".
+// management cluster name. E.g. "eph-45df5708-mc01-specs" → "eph-45df5708-mc01",
+// "mc01-specs" → "mc01". SpecsPrefix is the inverse: SpecsPrefix(mc) = mc+"-specs".
 func mcNameFromPrefix(specsPrefix string) string {
-	name := strings.TrimPrefix(specsPrefix, "mc-")
-	name = strings.TrimSuffix(name, "-specs")
-	return name
+	return strings.TrimSuffix(specsPrefix, "-specs")
 }
 
 // GetApplyDesireStatus reads an ApplyDesire from the status table.

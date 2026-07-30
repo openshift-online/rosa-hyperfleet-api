@@ -259,7 +259,7 @@ func TestSNSPublishedOnChangedUpsert(t *testing.T) {
 		ManagementCluster: "prod",
 		ClusterID:         "c1",
 	}
-	specsPrefix := "mc-prod-specs"
+	specsPrefix := "prod-specs"
 
 	// First upsert: spec is new → should publish.
 	_, err := c.UpsertApplyDesire(ctx, specsPrefix, desire)
@@ -301,7 +301,7 @@ func TestSNSPublishedForReadDesire(t *testing.T) {
 		ManagementCluster: "staging",
 		ClusterID:         "c2",
 	}
-	specsPrefix := "mc-staging-specs"
+	specsPrefix := "staging-specs"
 
 	_, err := c.UpsertReadDesire(ctx, specsPrefix, desire)
 	if err != nil {
@@ -324,10 +324,10 @@ func TestMCNameFromPrefix(t *testing.T) {
 		prefix string
 		want   string
 	}{
-		{"mc-prod-specs", "prod"},
-		{"mc-staging-specs", "staging"},
-		{"mc-mc01-specs", "mc01"},
+		{"prod-specs", "prod"},
+		{"staging-specs", "staging"},
 		{"mc01-specs", "mc01"},
+		{"eph-45df5708-mc01-specs", "eph-45df5708-mc01"},
 	}
 	for _, tc := range cases {
 		got := mcNameFromPrefix(tc.prefix)
@@ -348,7 +348,7 @@ func TestNoSNSWithoutPublisher(t *testing.T) {
 	desire.Spec = ApplyDesireSpec{ClusterID: "c1"}
 
 	// Must not panic.
-	if _, err := c.UpsertApplyDesire(ctx, "mc-prod-specs", desire); err != nil {
+	if _, err := c.UpsertApplyDesire(ctx, "prod-specs", desire); err != nil {
 		t.Fatalf("UpsertApplyDesire without SNS: %v", err)
 	}
 }
