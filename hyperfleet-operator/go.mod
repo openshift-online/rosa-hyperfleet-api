@@ -25,7 +25,7 @@ require (
 	github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80
 	github.com/openshift/hypershift/api v0.0.0-20260625052409-9acec4759a16
 	github.com/prometheus/client_golang v1.23.2
-	github.com/rrp-bot/rosa-hyperfleet-kube-applier v0.0.0-20260730150449-9106cf5c01ed
+	github.com/rrp-bot/rosa-hyperfleet-kube-applier v0.0.0-20260730140449-9106cf5c01ed
 	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
 	k8s.io/client-go v0.36.1
