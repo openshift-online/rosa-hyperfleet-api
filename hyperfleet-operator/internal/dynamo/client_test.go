@@ -47,10 +47,33 @@ func (s *spyDB) DeleteItem(_ context.Context, input *dynamodb.DeleteItemInput, _
 	return &dynamodb.DeleteItemOutput{}, nil
 }
 
+// spySNSPublisher records SNS publish calls for assertion.
+type spySNSPublisher struct {
+	calls []snsPublishCall
+}
+
+type snsPublishCall struct {
+	mcName      string
+	documentID  string
+	tableSuffix string
+}
+
+func (s *spySNSPublisher) Publish(_ context.Context, mcName, documentID, tableSuffix string) error {
+	s.calls = append(s.calls, snsPublishCall{mcName: mcName, documentID: documentID, tableSuffix: tableSuffix})
+	return nil
+}
+
 func newTestClient() (*Client, *spyDB) {
 	spy := newSpyDB()
 	c := NewClient(spy)
 	return c, spy
+}
+
+func newTestClientWithSNS() (*Client, *spyDB, *spySNSPublisher) {
+	spy := newSpyDB()
+	snsSpy := &spySNSPublisher{}
+	c := NewClientWithSNS(spy, snsSpy)
+	return c, spy, snsSpy
 }
 
 func TestUpsertCacheHit(t *testing.T) {
@@ -221,5 +244,111 @@ func TestComputeSpecHash(t *testing.T) {
 	}
 	if len(h1) != 64 {
 		t.Errorf("expected 64-char hex hash, got %d chars", len(h1))
+	}
+}
+
+// TestSNSPublishedOnChangedUpsert verifies that SNS is notified when a spec
+// changes and not notified on cache hits (unchanged specs).
+func TestSNSPublishedOnChangedUpsert(t *testing.T) {
+	c, _, snsSpy := newTestClientWithSNS()
+	ctx := context.Background()
+
+	desire := &ApplyDesire{}
+	desire.DocumentID = "doc-1"
+	desire.Spec = ApplyDesireSpec{
+		ManagementCluster: "prod",
+		ClusterID:         "c1",
+	}
+	specsPrefix := "prod-specs"
+
+	// First upsert: spec is new → should publish.
+	_, err := c.UpsertApplyDesire(ctx, specsPrefix, desire)
+	if err != nil {
+		t.Fatalf("UpsertApplyDesire: %v", err)
+	}
+	if len(snsSpy.calls) != 1 {
+		t.Fatalf("expected 1 SNS call after new spec, got %d", len(snsSpy.calls))
+	}
+	if snsSpy.calls[0].mcName != "prod" {
+		t.Errorf("mcName = %q, want %q", snsSpy.calls[0].mcName, "prod")
+	}
+	if snsSpy.calls[0].documentID != "doc-1" {
+		t.Errorf("documentID = %q, want %q", snsSpy.calls[0].documentID, "doc-1")
+	}
+	if snsSpy.calls[0].tableSuffix != TableSuffixApplyDesires {
+		t.Errorf("tableSuffix = %q, want %q", snsSpy.calls[0].tableSuffix, TableSuffixApplyDesires)
+	}
+
+	// Second upsert: spec unchanged → cache hit → no SNS call.
+	_, err = c.UpsertApplyDesire(ctx, specsPrefix, desire)
+	if err != nil {
+		t.Fatalf("UpsertApplyDesire (unchanged): %v", err)
+	}
+	if len(snsSpy.calls) != 1 {
+		t.Errorf("expected no additional SNS call on unchanged spec, got %d total", len(snsSpy.calls))
+	}
+}
+
+// TestSNSPublishedForReadDesire verifies that ReadDesire upserts also trigger
+// SNS notifications with the correct table suffix.
+func TestSNSPublishedForReadDesire(t *testing.T) {
+	c, _, snsSpy := newTestClientWithSNS()
+	ctx := context.Background()
+
+	desire := &ReadDesire{}
+	desire.DocumentID = "doc-read-1"
+	desire.Spec = ReadDesireSpec{
+		ManagementCluster: "staging",
+		ClusterID:         "c2",
+	}
+	specsPrefix := "staging-specs"
+
+	_, err := c.UpsertReadDesire(ctx, specsPrefix, desire)
+	if err != nil {
+		t.Fatalf("UpsertReadDesire: %v", err)
+	}
+	if len(snsSpy.calls) != 1 {
+		t.Fatalf("expected 1 SNS call, got %d", len(snsSpy.calls))
+	}
+	if snsSpy.calls[0].tableSuffix != TableSuffixReadDesires {
+		t.Errorf("tableSuffix = %q, want %q", snsSpy.calls[0].tableSuffix, TableSuffixReadDesires)
+	}
+	if snsSpy.calls[0].mcName != "staging" {
+		t.Errorf("mcName = %q, want %q", snsSpy.calls[0].mcName, "staging")
+	}
+}
+
+// TestMCNameFromPrefix verifies the MC name extraction from a specs prefix.
+func TestMCNameFromPrefix(t *testing.T) {
+	cases := []struct {
+		prefix string
+		want   string
+	}{
+		{"prod-specs", "prod"},
+		{"staging-specs", "staging"},
+		{"mc01-specs", "mc01"},
+		{"eph-45df5708-mc01-specs", "eph-45df5708-mc01"},
+	}
+	for _, tc := range cases {
+		got := mcNameFromPrefix(tc.prefix)
+		if got != tc.want {
+			t.Errorf("mcNameFromPrefix(%q) = %q, want %q", tc.prefix, got, tc.want)
+		}
+	}
+}
+
+// TestNoSNSWithoutPublisher verifies that UpsertApplyDesire does not panic
+// when no SNSPublisher is configured (NewClient without SNS).
+func TestNoSNSWithoutPublisher(t *testing.T) {
+	c, _ := newTestClient() // no SNS publisher
+	ctx := context.Background()
+
+	desire := &ApplyDesire{}
+	desire.DocumentID = "doc-1"
+	desire.Spec = ApplyDesireSpec{ClusterID: "c1"}
+
+	// Must not panic.
+	if _, err := c.UpsertApplyDesire(ctx, "prod-specs", desire); err != nil {
+		t.Fatalf("UpsertApplyDesire without SNS: %v", err)
 	}
 }

@@ -36,6 +36,7 @@ spec:
             - --aws-region={{ required "awsRegion is required" .Values.awsRegion }}
             - --base-domain={{ required "baseDomain is required" .Values.baseDomain }}
             - --health-probe-bind-address=:8081
+            - --sqs-status-queue-url-prefix={{ required "sqsQueueUrlPrefix is required" .Values.sqsQueueUrlPrefix }}
           env:
             - name: POSTGRES_DSN
               valueFrom:

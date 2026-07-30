@@ -3,7 +3,6 @@ package integration
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -15,7 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodbstreams"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	hyperfleetdb "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db"
@@ -31,7 +29,6 @@ import (
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/api/v1alpha1"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/controller"
 	dynamo "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo"
-	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo/statusstream"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/render"
 )
 
@@ -68,10 +65,7 @@ var _ = BeforeSuite(func() {
 	if containerTool == "" {
 		containerTool = "podman"
 	}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-
 	// ── Postgres ──
-
 	By("starting Postgres container")
 	pgPort = freePort()
 	cmd := exec.Command(containerTool, "run", "-d", "--rm",
@@ -204,28 +198,16 @@ var _ = BeforeSuite(func() {
 		return mgr.GetCache().WaitForCacheSync(ctx)
 	}, 10*time.Second, 100*time.Millisecond).Should(BeTrue(), "pgruntime cache did not sync")
 
-	// ── DynamoDB Streams ──
-
-	By("starting DynamoDB status stream watchers")
-	streamsClient := dynamodbstreams.NewFromConfig(aws.Config{
-		Region:       "us-east-1",
-		Credentials:  credentials.NewStaticCredentialsProvider("test", "test", "test"),
-		BaseEndpoint: aws.String(fmt.Sprintf("http://127.0.0.1:%s", ddbPort)),
-	})
-	streamMgr := statusstream.NewManager(
-		dynamoDBCli,
-		streamsClient,
-		mgr.GetClient(),
-		[]string{dynamo.TableSuffixStatusApplyDesires, dynamo.TableSuffixStatusReadDesires},
-		func(documentID string) { eventRouter.Dispatch(documentID) },
-		logger.With("component", "statusstream"),
-	)
-	go streamMgr.Run(ctx, 5*time.Second)
-
 	// ── kube-applier-aws simulators ──
 
 	// Simulate kube-applier-aws: poll specs-applydesires and write status
 	// entries with Successful=True so controllers see apply confirmations.
+	//
+	// We always overwrite the status entry (no ConditionExpression) so that
+	// when a desire is updated to Type=Delete with a new updateTime, the next
+	// poll produces a fresh ObservedDesireUpdateTime >= the desire's updateTime.
+	// Without this, CheckApplyDesireStatuses rejects stale statuses and the
+	// controller loops forever waiting for delete confirmation.
 	go func() {
 		defer GinkgoRecover()
 		specsTable := mc + "-specs-applydesires"
@@ -244,7 +226,7 @@ var _ = BeforeSuite(func() {
 				if err != nil {
 					continue
 				}
-				for _, item := range out.Items {
+			for _, item := range out.Items {
 					docID, ok := item["documentID"]
 					if !ok {
 						continue
@@ -268,14 +250,21 @@ var _ = BeforeSuite(func() {
 					if err != nil {
 						continue
 					}
+					docIDStr := docID.(*dynamodbtypes.AttributeValueMemberS).Value
 					statusItem := map[string]dynamodbtypes.AttributeValue{
 						"documentID": docID,
 						"status":     &dynamodbtypes.AttributeValueMemberM{Value: statusAttrs},
 					}
-					_, _ = dynamoDBCli.PutItem(ctx, &dynamodb.PutItemInput{
-						TableName: aws.String(statusTable),
-						Item:      statusItem,
-					})
+				// Unconditional put: overwrites stale status so delete
+				// desires with a newer updateTime are confirmed promptly.
+				if _, putErr := dynamoDBCli.PutItem(ctx, &dynamodb.PutItemInput{
+					TableName: aws.String(statusTable),
+					Item:      statusItem,
+				}); putErr == nil {
+					// Always dispatch so the controller is notified on
+					// both first write and subsequent overwrites.
+					eventRouter.Dispatch(docIDStr)
+				}
 				}
 			}
 		}
@@ -313,13 +302,18 @@ var _ = BeforeSuite(func() {
 					if !ok {
 						continue
 					}
-					_, _ = dynamoDBCli.PutItem(ctx, &dynamodb.PutItemInput{
+					docIDStr := docID.(*dynamodbtypes.AttributeValueMemberS).Value
+					_, putErr := dynamoDBCli.PutItem(ctx, &dynamodb.PutItemInput{
 						TableName: aws.String(statusTable),
 						Item: map[string]dynamodbtypes.AttributeValue{
 							"documentID":         docID,
 							"status_kubeContent": &dynamodbtypes.AttributeValueMemberS{Value: string(completedJob)},
 						},
 					})
+					if putErr == nil {
+						// Notify the operator directly (replaces DynamoDB Streams watcher)
+						eventRouter.Dispatch(docIDStr)
+					}
 				}
 			}
 		}
@@ -372,12 +366,6 @@ func createTables(db *dynamodb.Client) {
 					},
 				},
 				BillingMode: dynamodbtypes.BillingModePayPerRequest,
-			}
-			if prefix == mc+"-status" {
-				input.StreamSpecification = &dynamodbtypes.StreamSpecification{
-					StreamEnabled:  aws.Bool(true),
-					StreamViewType: dynamodbtypes.StreamViewTypeNewAndOldImages,
-				}
 			}
 			_, err := db.CreateTable(context.Background(), input)
 			Expect(err).NotTo(HaveOccurred(), "create table %s", tableName)
