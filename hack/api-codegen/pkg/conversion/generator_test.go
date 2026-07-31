@@ -3,6 +3,7 @@ package conversion
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -90,6 +91,57 @@ func TestExprToString(t *testing.T) {
 	// This would require creating AST expression structures
 	// For now, just test the basic logic is correct
 	t.Skip("Requires AST expression creation - tested via integration")
+}
+
+func TestGeneratePassthroughHelpers_PointerAndSlice(t *testing.T) {
+	gen := NewGenerator("v1alpha1", "test/pkg", nil, "/out/v1alpha1")
+	gen.typeInfos["ChildType"] = &typeInfo{
+		Name:       "ChildType",
+		StructType: nil,
+		Fields: []*fieldInfo{
+			{GoName: "Name", JSONName: "name", GoType: "string"},
+		},
+	}
+	gen.typeInfos["TestSpec"] = &typeInfo{
+		Name:       "TestSpec",
+		StructType: nil,
+		Fields: []*fieldInfo{
+			{GoName: "PtrField", JSONName: "ptrField", GoType: "*ChildType"},
+			{GoName: "SliceField", JSONName: "sliceField", GoType: "[]ChildType"},
+			{GoName: "ValField", JSONName: "valField", GoType: "ChildType"},
+		},
+	}
+
+	code := gen.generatePassthroughHelpers("TestSpec")
+
+	// Value helpers should exist
+	if !strings.Contains(code, "func projectChildType(crd v1alpha1.ChildType) rest.ChildType") {
+		t.Error("missing value project helper")
+	}
+	if !strings.Contains(code, "func unprojectChildType(rest rest.ChildType) v1alpha1.ChildType") {
+		t.Error("missing value unproject helper")
+	}
+	// Pointer helpers should exist
+	if !strings.Contains(code, "func projectChildTypePtr(crd *v1alpha1.ChildType) *rest.ChildType") {
+		t.Error("missing pointer project helper")
+	}
+	if !strings.Contains(code, "func unprojectChildTypePtr(r *rest.ChildType) *v1alpha1.ChildType") {
+		t.Error("missing pointer unproject helper")
+	}
+	// Pointer helpers must nil-check
+	if !strings.Contains(code, "if crd == nil") {
+		t.Error("pointer project helper missing nil check")
+	}
+	if !strings.Contains(code, "if r == nil") {
+		t.Error("pointer unproject helper missing nil check")
+	}
+	// Slice helpers should exist
+	if !strings.Contains(code, "func projectChildTypeSlice(crd []v1alpha1.ChildType) []rest.ChildType") {
+		t.Error("missing slice project helper")
+	}
+	if !strings.Contains(code, "func unprojectChildTypeSlice(r []rest.ChildType) []v1alpha1.ChildType") {
+		t.Error("missing slice unproject helper")
+	}
 }
 
 // Note: needsFieldPrefix and makeUniqueFieldName are private helper methods

@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -78,29 +79,46 @@ func (s *MarkerScanner) scanDir(dir string) error {
 	// Install this directory's cache for nested-type resolution
 	s.typeCache = dirCache
 
-	// Second pass: process root types once with the full cache available
-	for typeName, structType := range dirCache {
+	// Second pass: process root types in sorted order for deterministic registry output
+	var roots []string
+	for typeName := range dirCache {
 		if isRootType(typeName) {
-			visited := make(map[string]bool)
-			visited[typeName] = true
-			s.processStruct(typeName, structType, "", visited)
+			roots = append(roots, typeName)
 		}
+	}
+	sort.Strings(roots)
+
+	for _, typeName := range roots {
+		visited := make(map[string]bool)
+		visited[typeName] = true
+		s.processStruct(typeName, dirCache[typeName], rootTypes[typeName], visited)
 	}
 
 	return nil
 }
 
-// isRootType returns true for types that the scanner should walk as top-level
-// entry points. This includes CRD types (Cluster, NodePool, …) and Passthrough
-// types whose fields carry markers but are not yet referenced from a CRD struct.
+// rootTypes maps type names to the parentPath prefix the scanner should use
+// when walking them as top-level entry points. CRD resource types start with
+// an empty prefix (their own Spec/Status fields carry the "spec."/"status."
+// segment). Passthrough types reference external packages that the scanner
+// cannot follow, so they are listed here with an explicit prefix so their
+// fields are emitted in canonical spec.-prefixed form. Sub-structs like
+// KubeletConfig or ClusterConfiguration are reached through field traversal
+// and must NOT appear here — walking them independently would emit bare
+// duplicate paths.
+var rootTypes = map[string]string{
+	"Cluster":                      "",
+	"NodePool":                     "",
+	"ManagementCluster":            "",
+	"Manifest":                     "",
+	"Placement":                    "",
+	"HostedClusterSpecPassthrough": "spec.hostedCluster",
+	"NodePoolSpecPassthrough":      "spec.nodePool",
+}
+
 func isRootType(typeName string) bool {
-	if strings.HasSuffix(typeName, "Passthrough") {
-		return true
-	}
-	return !strings.HasSuffix(typeName, "Spec") &&
-		!strings.HasSuffix(typeName, "Status") &&
-		!strings.HasSuffix(typeName, "List") &&
-		typeName != "ClusterReference"
+	_, ok := rootTypes[typeName]
+	return ok
 }
 
 // processStruct walks struct fields and extracts markers
@@ -114,7 +132,14 @@ func (s *MarkerScanner) processStruct(_ string, structType *ast.StructType, pare
 func (s *MarkerScanner) processField(field *ast.Field, parentPath string, visited map[string]bool) {
 	// Get JSON tag to determine field path
 	jsonName := getJSONName(field)
-	if jsonName == "" || jsonName == "-" {
+	if jsonName == "-" {
+		return
+	}
+
+	// Anonymous embedded fields have no JSON name; traverse their nested
+	// type under the current parentPath so promoted fields are registered.
+	if jsonName == "" {
+		s.processNestedType(field.Type, parentPath, visited)
 		return
 	}
 

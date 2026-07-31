@@ -45,285 +45,6 @@ type FieldMeta struct {
 
 // FieldRegistry maps field paths to their metadata
 var FieldRegistry = map[string]FieldMeta{
-	"allowedUnsafeSysctls": {
-		FieldPath: "allowedUnsafeSysctls",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"apiServer": {
-		FieldPath: "apiServer",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"authentication": {
-		FieldPath: "authentication",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"containerLogMaxFiles": {
-		FieldPath: "containerLogMaxFiles",
-		WriteMode: Mutable,
-	},
-	"containerLogMaxSize": {
-		FieldPath: "containerLogMaxSize",
-		WriteMode: Mutable,
-	},
-	"cpuManagerPolicy": {
-		FieldPath: "cpuManagerPolicy",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"cpuManagerPolicyOptions": {
-		FieldPath: "cpuManagerPolicyOptions",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"cpuManagerReconcilePeriod": {
-		FieldPath: "cpuManagerReconcilePeriod",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"evictionHard": {
-		FieldPath: "evictionHard",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"evictionSoft": {
-		FieldPath: "evictionSoft",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"evictionSoftGracePeriod": {
-		FieldPath: "evictionSoftGracePeriod",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"featureGate": {
-		FieldPath: "featureGate",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"image": {
-		FieldPath: "image",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"imageGCHighThresholdPercent": {
-		FieldPath: "imageGCHighThresholdPercent",
-		WriteMode: Mutable,
-	},
-	"imageGCLowThresholdPercent": {
-		FieldPath: "imageGCLowThresholdPercent",
-		WriteMode: Mutable,
-	},
-	"imageMinimumGCAge": {
-		FieldPath: "imageMinimumGCAge",
-		WriteMode: Mutable,
-	},
-	"ingress": {
-		FieldPath: "ingress",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"kubeReserved": {
-		FieldPath: "kubeReserved",
-		WriteMode: Immutable,
-	},
-	"kubelet": {
-		FieldPath: "kubelet",
-		WriteMode: ServiceSet,
-	},
-	"kubelet.allowedUnsafeSysctls": {
-		FieldPath: "kubelet.allowedUnsafeSysctls",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"kubelet.containerLogMaxFiles": {
-		FieldPath: "kubelet.containerLogMaxFiles",
-		WriteMode: Mutable,
-	},
-	"kubelet.containerLogMaxSize": {
-		FieldPath: "kubelet.containerLogMaxSize",
-		WriteMode: Mutable,
-	},
-	"kubelet.cpuManagerPolicy": {
-		FieldPath: "kubelet.cpuManagerPolicy",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"kubelet.cpuManagerPolicyOptions": {
-		FieldPath: "kubelet.cpuManagerPolicyOptions",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"kubelet.cpuManagerReconcilePeriod": {
-		FieldPath: "kubelet.cpuManagerReconcilePeriod",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"kubelet.evictionHard": {
-		FieldPath: "kubelet.evictionHard",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"kubelet.evictionSoft": {
-		FieldPath: "kubelet.evictionSoft",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"kubelet.evictionSoftGracePeriod": {
-		FieldPath: "kubelet.evictionSoftGracePeriod",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"kubelet.imageGCHighThresholdPercent": {
-		FieldPath: "kubelet.imageGCHighThresholdPercent",
-		WriteMode: Mutable,
-	},
-	"kubelet.imageGCLowThresholdPercent": {
-		FieldPath: "kubelet.imageGCLowThresholdPercent",
-		WriteMode: Mutable,
-	},
-	"kubelet.imageMinimumGCAge": {
-		FieldPath: "kubelet.imageMinimumGCAge",
-		WriteMode: Mutable,
-	},
-	"kubelet.kubeReserved": {
-		FieldPath: "kubelet.kubeReserved",
-		WriteMode: Immutable,
-	},
-	"kubelet.maxPods": {
-		FieldPath: "kubelet.maxPods",
-		WriteMode: Mutable,
-	},
-	"kubelet.memoryThrottlingFactor": {
-		FieldPath: "kubelet.memoryThrottlingFactor",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"kubelet.podPidsLimit": {
-		FieldPath: "kubelet.podPidsLimit",
-		WriteMode: Mutable,
-	},
-	"kubelet.registryBurst": {
-		FieldPath:   "kubelet.registryBurst",
-		WriteMode:   Mutable,
-		FeatureGate: "HyperFleetKubeletAdvanced",
-	},
-	"kubelet.registryPullQPS": {
-		FieldPath:   "kubelet.registryPullQPS",
-		WriteMode:   Mutable,
-		FeatureGate: "HyperFleetKubeletAdvanced",
-	},
-	"kubelet.serializeImagePulls": {
-		FieldPath:   "kubelet.serializeImagePulls",
-		WriteMode:   Mutable,
-		FeatureGate: "HyperFleetKubeletAdvanced",
-	},
-	"kubelet.streamingConnectionIdleTimeout": {
-		FieldPath: "kubelet.streamingConnectionIdleTimeout",
-		WriteMode: Mutable,
-	},
-	"kubelet.systemReserved": {
-		FieldPath: "kubelet.systemReserved",
-		WriteMode: Immutable,
-	},
-	"kubelet.topologyManagerPolicy": {
-		FieldPath: "kubelet.topologyManagerPolicy",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"kubelet.topologyManagerScope": {
-		FieldPath: "kubelet.topologyManagerScope",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"machineConfig": {
-		FieldPath: "machineConfig",
-		WriteMode: ServiceSet,
-	},
-	"machineConfig.allowedKernelArguments": {
-		FieldPath:   "machineConfig.allowedKernelArguments",
-		WriteMode:   Immutable,
-		FeatureGate: "HyperFleetMachineConfig",
-	},
-	"machineConfig.extensions": {
-		FieldPath: "machineConfig.extensions",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"machineConfig.files": {
-		FieldPath: "machineConfig.files",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"machineConfig.fips": {
-		FieldPath: "machineConfig.fips",
-		WriteMode: Immutable,
-	},
-	"machineConfig.kernelArguments": {
-		FieldPath: "machineConfig.kernelArguments",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"machineConfig.kernelType": {
-		FieldPath: "machineConfig.kernelType",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"machineConfig.systemdUnits": {
-		FieldPath: "machineConfig.systemdUnits",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"maxPods": {
-		FieldPath: "maxPods",
-		WriteMode: Mutable,
-	},
-	"memoryThrottlingFactor": {
-		FieldPath: "memoryThrottlingFactor",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"network": {
-		FieldPath: "network",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"oauth": {
-		FieldPath: "oauth",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"podPidsLimit": {
-		FieldPath: "podPidsLimit",
-		WriteMode: Mutable,
-	},
-	"proxy": {
-		FieldPath: "proxy",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"registryBurst": {
-		FieldPath:   "registryBurst",
-		WriteMode:   Mutable,
-		FeatureGate: "HyperFleetKubeletAdvanced",
-	},
-	"registryPullQPS": {
-		FieldPath:   "registryPullQPS",
-		WriteMode:   Mutable,
-		FeatureGate: "HyperFleetKubeletAdvanced",
-	},
-	"scheduler": {
-		FieldPath: "scheduler",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"serializeImagePulls": {
-		FieldPath:   "serializeImagePulls",
-		WriteMode:   Mutable,
-		FeatureGate: "HyperFleetKubeletAdvanced",
-	},
 	"spec.accountId": {
 		FieldPath: "spec.accountId",
 		WriteMode: ServiceSet,
@@ -377,6 +98,7 @@ var FieldRegistry = map[string]FieldMeta{
 	"spec.hostedCluster.channel": {
 		FieldPath: "spec.hostedCluster.channel",
 		WriteMode: ServiceSet,
+		Hidden:    true,
 	},
 	"spec.hostedCluster.clusterID": {
 		FieldPath: "spec.hostedCluster.clusterID",
@@ -410,6 +132,7 @@ var FieldRegistry = map[string]FieldMeta{
 	"spec.hostedCluster.fips": {
 		FieldPath: "spec.hostedCluster.fips",
 		WriteMode: ServiceSet,
+		Hidden:    true,
 	},
 	"spec.hostedCluster.imageContentSources": {
 		FieldPath: "spec.hostedCluster.imageContentSources",
@@ -459,10 +182,12 @@ var FieldRegistry = map[string]FieldMeta{
 	"spec.hostedCluster.operatorConfiguration": {
 		FieldPath: "spec.hostedCluster.operatorConfiguration",
 		WriteMode: ServiceSet,
+		Hidden:    true,
 	},
 	"spec.hostedCluster.pausedUntil": {
 		FieldPath: "spec.hostedCluster.pausedUntil",
 		WriteMode: ServiceSet,
+		Hidden:    true,
 	},
 	"spec.hostedCluster.platform": {
 		FieldPath: "spec.hostedCluster.platform",
@@ -601,23 +326,5 @@ var FieldRegistry = map[string]FieldMeta{
 		FieldPath:   "spec.tags",
 		WriteMode:   Mutable,
 		FeatureGate: "HyperFleetAutoScaling",
-	},
-	"streamingConnectionIdleTimeout": {
-		FieldPath: "streamingConnectionIdleTimeout",
-		WriteMode: Mutable,
-	},
-	"systemReserved": {
-		FieldPath: "systemReserved",
-		WriteMode: Immutable,
-	},
-	"topologyManagerPolicy": {
-		FieldPath: "topologyManagerPolicy",
-		WriteMode: ServiceSet,
-		Hidden:    true,
-	},
-	"topologyManagerScope": {
-		FieldPath: "topologyManagerScope",
-		WriteMode: ServiceSet,
-		Hidden:    true,
 	},
 }

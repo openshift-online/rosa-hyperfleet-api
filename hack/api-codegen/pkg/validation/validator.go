@@ -2,6 +2,7 @@ package validation
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen/pkg/featuregate"
@@ -162,20 +163,19 @@ func (v *Validator) validateWriteMode(fieldPath string, meta registry.FieldMeta,
 	case registry.Immutable:
 		// Immutable fields can be set on create but not changed on update
 		if req.Operation == OperationUpdate {
-			// Check if the field is actually being changed
 			if req.ExistingFields != nil {
-				_, existsInOld := req.ExistingFields[fieldPath]
+				oldVal, existsInOld := req.ExistingFields[fieldPath]
 				if existsInOld {
-					return &ValidationError{
-						FieldPath: fieldPath,
-						Reason:    "field is immutable and cannot be changed after creation",
+					newVal := req.Fields[fieldPath]
+					if !reflect.DeepEqual(oldVal, newVal) {
+						return &ValidationError{
+							FieldPath: fieldPath,
+							Reason:    "field is immutable and cannot be changed after creation",
+						}
 					}
 				}
 			}
-			// If field doesn't exist in old resource, this is adding a new field on update
-			// which is allowed for immutable fields (they can be set once)
 		}
-		// On create, immutable fields can be set
 		return nil
 
 	case registry.Mutable:

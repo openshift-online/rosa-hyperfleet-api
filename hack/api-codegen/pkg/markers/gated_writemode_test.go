@@ -12,11 +12,11 @@ func TestExtractMarkers_FeatureGateAwareWriteMode(t *testing.T) {
 
 	content := `package test
 
-type Root struct {
-	Spec Spec ` + "`json:\"spec\"`" + `
+type Cluster struct {
+	Spec ClusterSpec ` + "`json:\"spec\"`" + `
 }
 
-type Spec struct {
+type ClusterSpec struct {
 	// GA field with customer-tier-based write-mode control
 	// Standard customers: immutable
 	// Premium customers (with gate enabled): mutable

@@ -163,6 +163,52 @@ func TestFlattenToFieldPaths(t *testing.T) {
 	}
 }
 
+func TestValidate_ImmutableUnchangedAllowed(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.name": {FieldPath: "spec.name", WriteMode: registry.Immutable},
+	})
+
+	fields := map[string]interface{}{"spec.name": "same-value"}
+	existing := map[string]interface{}{"spec.name": "same-value"}
+
+	errs := v.validate(fields, existing, OperationUpdate, featuregate.Default)
+	if errs != nil {
+		t.Errorf("unchanged immutable field should be allowed, got: %v", errs)
+	}
+}
+
+func TestValidate_FeatureGateAwareWriteModes(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.releaseChannel": {
+			FieldPath: "spec.releaseChannel",
+			WriteMode: registry.Immutable,
+			FeatureGateAwareWriteModes: []registry.FeatureGateWriteMode{
+				{FeatureGate: "", WriteMode: registry.Immutable},
+				{FeatureGate: "HyperFleetAutoScaling", WriteMode: registry.Mutable},
+			},
+		},
+	})
+
+	fields := map[string]interface{}{"spec.releaseChannel": "new-channel"}
+	existing := map[string]interface{}{"spec.releaseChannel": "old-channel"}
+
+	// Default feature set: gate not enabled, falls back to immutable — change blocked
+	errs := v.validate(fields, existing, OperationUpdate, featuregate.Default)
+	if errs == nil {
+		t.Error("expected immutable error when gate not enabled")
+		return
+	}
+	if len(errs) != 1 || errs[0].Field != "spec.releaseChannel" {
+		t.Errorf("unexpected error: %v", errs)
+	}
+
+	// TechPreview feature set: HyperFleetAutoScaling enabled, overrides to mutable — change allowed
+	errs = v.validate(fields, existing, OperationUpdate, featuregate.TechPreviewNoUpgrade)
+	if errs != nil {
+		t.Errorf("expected mutable override when gate enabled, got: %v", errs)
+	}
+}
+
 func TestValidationErrors_Error(t *testing.T) {
 	errs := ValidationErrors{
 		{Field: "spec.a", Reason: "blocked"},

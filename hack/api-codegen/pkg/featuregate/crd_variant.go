@@ -3,12 +3,26 @@ package featuregate
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen/pkg/registry"
 )
+
+// openAPIKeywords are leaf names in an OpenAPI schema that describe the schema
+// itself rather than user-defined properties. shouldIncludeField uses this set
+// to avoid warning about paths that are structural, not missing registrations.
+var openAPIKeywords = map[string]bool{
+	"type": true, "description": true, "required": true, "format": true,
+	"minimum": true, "maximum": true, "enum": true, "default": true,
+	"pattern": true, "minLength": true, "maxLength": true,
+	"minItems": true, "maxItems": true, "uniqueItems": true,
+	"nullable": true, "readOnly": true, "writeOnly": true,
+	"example": true, "allOf": true, "oneOf": true, "anyOf": true, "not": true,
+}
 
 // CRDVariantGenerator generates feature-set-specific CRD variants
 type CRDVariantGenerator struct {
@@ -162,7 +176,13 @@ func (g *CRDVariantGenerator) shouldIncludeField(fieldPath string, featureSet Fe
 	// Check if field is in registry
 	meta, exists := g.fieldRegistry[fieldPath]
 	if !exists {
-		// Field not in registry - include it (it's a structural field like "properties", "type", etc.)
+		leaf := fieldPath
+		if idx := strings.LastIndex(fieldPath, "."); idx != -1 {
+			leaf = fieldPath[idx+1:]
+		}
+		if !openAPIKeywords[leaf] && !strings.HasPrefix(leaf, "x-kubernetes-") {
+			log.Printf("WARNING: field path %q not found in registry, including by default", fieldPath)
+		}
 		return true
 	}
 

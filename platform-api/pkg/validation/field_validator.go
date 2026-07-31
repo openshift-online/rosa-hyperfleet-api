@@ -3,6 +3,7 @@ package validation
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/api/v1alpha1"
@@ -111,7 +112,7 @@ func (v *FieldValidator) validate(fields, existingFields map[string]interface{},
 			}
 		}
 
-		if err := v.validateWriteMode(fieldPath, meta, op, existingFields); err != nil {
+		if err := v.validateWriteMode(fieldPath, meta, op, fields, existingFields, fs); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -122,14 +123,24 @@ func (v *FieldValidator) validate(fields, existingFields map[string]interface{},
 	return nil
 }
 
-func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.FieldMeta, op Operation, existingFields map[string]interface{}) *ValidationError {
+func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.FieldMeta, op Operation, fields, existingFields map[string]interface{}, fs featuregate.FeatureSet) *ValidationError {
 	effectiveMode := meta.WriteMode
 
 	if len(meta.FeatureGateAwareWriteModes) > 0 {
+		matched := false
 		for _, override := range meta.FeatureGateAwareWriteModes {
-			if override.FeatureGate == "" {
+			if override.FeatureGate != "" && featuregate.IsGateEnabled(override.FeatureGate, fs) {
 				effectiveMode = override.WriteMode
+				matched = true
 				break
+			}
+		}
+		if !matched {
+			for _, override := range meta.FeatureGateAwareWriteModes {
+				if override.FeatureGate == "" {
+					effectiveMode = override.WriteMode
+					break
+				}
 			}
 		}
 	}
@@ -142,10 +153,14 @@ func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.Field
 		}
 	case registry.Immutable:
 		if op == OperationUpdate && existingFields != nil {
-			if _, existsInOld := existingFields[fieldPath]; existsInOld {
-				return &ValidationError{
-					Field:  fieldPath,
-					Reason: "field is immutable and cannot be changed after creation",
+			oldVal, existsInOld := existingFields[fieldPath]
+			if existsInOld {
+				newVal := fields[fieldPath]
+				if !reflect.DeepEqual(oldVal, newVal) {
+					return &ValidationError{
+						Field:  fieldPath,
+						Reason: "field is immutable and cannot be changed after creation",
+					}
 				}
 			}
 		}

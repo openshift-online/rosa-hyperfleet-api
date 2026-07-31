@@ -90,6 +90,76 @@ type EtcdSpec struct {
 	}
 }
 
+func TestProcessField_EmbeddedWithoutJSONTag(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "types.go")
+
+	content := `package test
+
+type Cluster struct {
+	Spec ClusterSpec ` + "`json:\"spec\"`" + `
+}
+
+type ClusterSpec struct {
+	// Anonymous embedded struct — no JSON tag
+	CommonFields
+}
+
+type CommonFields struct {
+	// +hyperfleet:write-mode=mutable
+	DisplayName string ` + "`json:\"displayName\"`" + `
+}
+`
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	scanner := NewScanner([]string{tmpDir})
+	if err := scanner.Scan(); err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	meta, found := scanner.Registry["spec.displayName"]
+	if !found {
+		t.Fatal("spec.displayName not found — embedded field was not traversed")
+	}
+	if meta.WriteMode != Mutable {
+		t.Errorf("WriteMode = %v, want %v", meta.WriteMode, Mutable)
+	}
+}
+
+func TestProcessField_ExplicitlyIgnored(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "types.go")
+
+	content := `package test
+
+type Cluster struct {
+	Spec ClusterSpec ` + "`json:\"spec\"`" + `
+}
+
+type ClusterSpec struct {
+	// +hyperfleet:write-mode=mutable
+	Ignored string ` + "`json:\"-\"`" + `
+}
+`
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	scanner := NewScanner([]string{tmpDir})
+	if err := scanner.Scan(); err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	if _, found := scanner.Registry["spec.Ignored"]; found {
+		t.Error("json:\"-\" field should not be registered")
+	}
+	if _, found := scanner.Registry["Ignored"]; found {
+		t.Error("json:\"-\" field should not be registered under bare name")
+	}
+}
+
 func TestValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -99,7 +169,7 @@ func TestValidation(t *testing.T) {
 		{
 			name: "valid - all visible fields have write mode",
 			content: `package test
-type Root struct {
+type Cluster struct {
 	Spec Spec ` + "`json:\"spec\"`" + `
 }
 type Spec struct {
@@ -111,7 +181,7 @@ type Spec struct {
 		{
 			name: "invalid - field has marker but missing write mode",
 			content: `package test
-type Root struct {
+type Cluster struct {
 	Spec Spec ` + "`json:\"spec\"`" + `
 }
 type Spec struct {
@@ -123,7 +193,7 @@ type Spec struct {
 		{
 			name: "valid - hidden field without write mode is OK",
 			content: `package test
-type Root struct {
+type Cluster struct {
 	Spec Spec ` + "`json:\"spec\"`" + `
 }
 type Spec struct {

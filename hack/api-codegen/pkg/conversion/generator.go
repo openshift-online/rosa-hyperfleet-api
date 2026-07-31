@@ -265,45 +265,76 @@ func (g *Generator) exprToString(expr ast.Expr) string {
 	}
 }
 
-// qualifyType adds package qualifiers to unqualified types that need them
-func (g *Generator) qualifyType(goType string) string {
-	// List of v1alpha1 types that need qualification when used in REST package
-	v1alpha1Types := []string{
-		"ClusterConfiguration",
-		"KubeletConfig",
-		"MachineConfigSpec",
-		"APIServerNetworkConfiguration",
-		"ClusterAuthentication",
-		"FeatureGateConfiguration",
-		"ImageConfiguration",
-		"IngressConfiguration",
-		"NetworkConfiguration",
-		"OAuthConfiguration",
-		"SchedulerConfiguration",
-		"ProxyConfiguration",
+// typeQualifiers maps unqualified Go type names to the import alias they
+// require when referenced outside their declaring package.
+var typeQualifiers = map[string]string{
+	"ClusterConfiguration":             "v1alpha1",
+	"KubeletConfig":                    "v1alpha1",
+	"MachineConfigSpec":                "v1alpha1",
+	"APIServerNetworkConfiguration":    "v1alpha1",
+	"ClusterAuthentication":            "v1alpha1",
+	"FeatureGateConfiguration":         "v1alpha1",
+	"ImageConfiguration":               "v1alpha1",
+	"IngressConfiguration":             "v1alpha1",
+	"NetworkConfiguration":             "v1alpha1",
+	"OAuthConfiguration":               "v1alpha1",
+	"SchedulerConfiguration":           "v1alpha1",
+	"ProxyConfiguration":               "v1alpha1",
+	"AutoNode":                         "hypershiftv1beta1",
+	"Release":                          "hypershiftv1beta1",
+	"PlatformSpec":                     "hypershiftv1beta1",
+	"DNSSpec":                          "hypershiftv1beta1",
+	"ClusterNetworking":                "hypershiftv1beta1",
+	"ClusterAutoscaling":               "hypershiftv1beta1",
+	"EtcdSpec":                         "hypershiftv1beta1",
+	"ServicePublishingStrategyMapping": "hypershiftv1beta1",
+	"ImageContentSource":               "hypershiftv1beta1",
+	"SecretEncryptionSpec":             "hypershiftv1beta1",
+	"OLMCatalogPlacement":              "hypershiftv1beta1",
+	"Capabilities":                     "hypershiftv1beta1",
+	"OperatorConfiguration":            "hypershiftv1beta1",
+	"NodePoolPlatform":                 "hypershiftv1beta1",
+	"NodePoolManagement":               "hypershiftv1beta1",
+	"NodePoolAutoScaling":              "hypershiftv1beta1",
+	"Taint":                            "hypershiftv1beta1",
+	"AvailabilityPolicy":               "hypershiftv1beta1",
+}
+
+// detectTypeImport returns the import alias required for a Go type string,
+// checking both already-qualified prefixes and unqualified names via typeQualifiers.
+func detectTypeImport(goType string) string {
+	base := strings.TrimPrefix(goType, "*")
+	base = strings.TrimPrefix(base, "[]")
+
+	for _, prefix := range []string{"corev1.", "configv1.", "metav1.", "hypershiftv1beta1.", "v1alpha1."} {
+		if strings.Contains(base, prefix) {
+			return strings.TrimSuffix(prefix, ".")
+		}
 	}
 
-	// Handle pointer types
+	if alias, ok := typeQualifiers[base]; ok {
+		return alias
+	}
+
+	return ""
+}
+
+// qualifyType adds package qualifiers to unqualified types that need them
+func (g *Generator) qualifyType(goType string) string {
 	isPointer := strings.HasPrefix(goType, "*")
 	baseType := strings.TrimPrefix(goType, "*")
 
-	// Strip any existing package qualifier to get the bare type name
-	// E.g., "hypershiftv1beta1.ClusterConfiguration" → "ClusterConfiguration"
 	if idx := strings.LastIndex(baseType, "."); idx != -1 {
 		baseType = baseType[idx+1:]
 	}
 
-	// Check if this is a v1alpha1 type that needs qualification
-	for _, t := range v1alpha1Types {
-		if baseType == t {
-			if isPointer {
-				return "*v1alpha1." + baseType
-			}
-			return "v1alpha1." + baseType
+	if alias, ok := typeQualifiers[baseType]; ok && alias == "v1alpha1" {
+		if isPointer {
+			return "*v1alpha1." + baseType
 		}
+		return "v1alpha1." + baseType
 	}
 
-	// Return as-is if already qualified or doesn't need qualification
 	return goType
 }
 
@@ -370,53 +401,16 @@ func (g *Generator) generateRESTType(ti *typeInfo) string {
 	}
 
 	// Check which imports we need (based on VISIBLE fields only)
-	needsMetav1 := false
-	needsHyperShift := false
-	needsV1alpha1 := false
-
+	restImports := map[string]bool{}
 	for _, fi := range visibleFields {
-		// Use qualified type (which may have been rewritten by qualifyType)
 		goType := g.qualifyType(fi.GoType)
-		// Strip pointer and slice markers to get base type
-		goType = strings.TrimPrefix(goType, "*")
-		goType = strings.TrimPrefix(goType, "[]")
-
-		// Check for already-qualified types
-		if strings.Contains(goType, "metav1.") {
-			needsMetav1 = true
-		}
-		if strings.Contains(goType, "hypershiftv1beta1.") {
-			needsHyperShift = true
-		}
-		if strings.Contains(goType, "v1alpha1.") {
-			needsV1alpha1 = true
-		}
-
-		// Check for unqualified types that need imports
-		// HyperShift types (check against known HyperShift type names)
-		hypershiftTypes := []string{"AutoNode", "Release", "PlatformSpec", "DNSSpec", "ClusterNetworking",
-			"ClusterAutoscaling", "EtcdSpec", "ServicePublishingStrategyMapping", "ImageContentSource",
-			"SecretEncryptionSpec", "OLMCatalogPlacement", "Capabilities", "OperatorConfiguration",
-			"NodePoolPlatform", "NodePoolManagement", "NodePoolAutoScaling", "Taint", "AvailabilityPolicy"}
-		for _, t := range hypershiftTypes {
-			if goType == t {
-				needsHyperShift = true
-				break
-			}
-		}
-
-		// v1alpha1 types
-		v1alpha1Types := []string{"ClusterConfiguration", "KubeletConfig", "MachineConfigSpec",
-			"APIServerNetworkConfiguration", "ClusterAuthentication", "FeatureGateConfiguration",
-			"ImageConfiguration", "IngressConfiguration", "NetworkConfiguration",
-			"OAuthConfiguration", "SchedulerConfiguration", "ProxyConfiguration"}
-		for _, t := range v1alpha1Types {
-			if goType == t {
-				needsV1alpha1 = true
-				break
-			}
+		if alias := detectTypeImport(goType); alias != "" {
+			restImports[alias] = true
 		}
 	}
+	needsMetav1 := restImports["metav1"]
+	needsHyperShift := restImports["hypershiftv1beta1"]
+	needsV1alpha1 := restImports["v1alpha1"]
 
 	// Write imports
 	if needsMetav1 || needsHyperShift || needsV1alpha1 {
@@ -501,36 +495,15 @@ func (g *Generator) generateServiceSetFields() error {
 		FieldPath string
 	}
 
-	fieldsMap := make(map[string]serviceSetField) // Use map to deduplicate
+	fieldsMap := make(map[string]serviceSetField)
 
 	for path, meta := range registry.FieldRegistry {
 		if meta.WriteMode == registry.ServiceSet {
-			// Infer Go field name from path
-			goName := g.pathToGoName(path)
-
-			// Infer type from parsed types
-			goType := g.inferTypeFromPath(path)
-
-			jsonTag := g.pathToJSONTag(path)
-
-			// Use JSONTag as key to deduplicate (same field name from different paths)
-			// Prefer longer GoType (more specific)
-			if existing, exists := fieldsMap[jsonTag]; exists {
-				if len(goType) > len(existing.GoType) {
-					fieldsMap[jsonTag] = serviceSetField{
-						GoName:    goName,
-						GoType:    goType,
-						JSONTag:   jsonTag,
-						FieldPath: path,
-					}
-				}
-			} else {
-				fieldsMap[jsonTag] = serviceSetField{
-					GoName:    goName,
-					GoType:    goType,
-					JSONTag:   jsonTag,
-					FieldPath: path,
-				}
+			fieldsMap[path] = serviceSetField{
+				GoName:    g.pathToGoName(path),
+				GoType:    g.inferTypeFromPath(path),
+				JSONTag:   g.pathToJSONTag(path),
+				FieldPath: path,
 			}
 		}
 	}
@@ -552,31 +525,20 @@ func (g *Generator) generateServiceSetFields() error {
 		QualifiedType string
 	}
 	var qFields []qualifiedField
-	needsCorev1 := false
-	needsConfigv1 := false
-	needsMetav1 := false
-	needsHyperShift := false
-	needsV1alpha1 := false
+	ssfImports := map[string]bool{}
 
 	for _, f := range fields {
 		qt := g.qualifyType(f.GoType)
-		if strings.Contains(qt, "corev1.") {
-			needsCorev1 = true
-		}
-		if strings.Contains(qt, "configv1.") {
-			needsConfigv1 = true
-		}
-		if strings.Contains(qt, "metav1.") {
-			needsMetav1 = true
-		}
-		if strings.Contains(qt, "hypershiftv1beta1.") {
-			needsHyperShift = true
-		}
-		if strings.Contains(qt, "v1alpha1.") {
-			needsV1alpha1 = true
+		if alias := detectTypeImport(qt); alias != "" {
+			ssfImports[alias] = true
 		}
 		qFields = append(qFields, qualifiedField{serviceSetField: f, QualifiedType: qt})
 	}
+	needsCorev1 := ssfImports["corev1"]
+	needsConfigv1 := ssfImports["configv1"]
+	needsMetav1 := ssfImports["metav1"]
+	needsHyperShift := ssfImports["hypershiftv1beta1"]
+	needsV1alpha1 := ssfImports["v1alpha1"]
 
 	// Derive package name and output path from OutputDir.
 	// The parent of OutputDir is where types.go lives (alongside the version subdirectory).
@@ -628,37 +590,32 @@ func (g *Generator) generateServiceSetFields() error {
 	return os.WriteFile(typesPath, []byte(b.String()), 0644)
 }
 
-// pathToGoName converts a field path to a Go field name
-// e.g., "spec.accountId" -> "AccountID"
+// pathToGoName converts a field path to a Go field name using all segments
+// after stripping the "spec." prefix so that distinct paths produce distinct names.
+// e.g., "spec.accountId" -> "AccountID", "spec.hostedCluster.release" -> "HostedClusterRelease"
 func (g *Generator) pathToGoName(path string) string {
+	path = strings.TrimPrefix(path, "spec.")
 	parts := strings.Split(path, ".")
 	if len(parts) == 0 {
 		return ""
 	}
 
-	// Take last part and convert to PascalCase
-	lastPart := parts[len(parts)-1]
-
-	// Handle common patterns
-	lastPart = strings.ReplaceAll(lastPart, "Id", "ID")
-	lastPart = strings.ReplaceAll(lastPart, "Arn", "ARN")
-
-	// Capitalize first letter if not already
-	if len(lastPart) > 0 && lastPart[0] >= 'a' && lastPart[0] <= 'z' {
-		lastPart = strings.ToUpper(string(lastPart[0])) + lastPart[1:]
+	var name string
+	for _, part := range parts {
+		part = strings.ReplaceAll(part, "Id", "ID")
+		part = strings.ReplaceAll(part, "Arn", "ARN")
+		if len(part) > 0 && part[0] >= 'a' && part[0] <= 'z' {
+			part = strings.ToUpper(string(part[0])) + part[1:]
+		}
+		name += part
 	}
-
-	return lastPart
+	return name
 }
 
-// pathToJSONTag extracts the JSON tag from a path
-// e.g., "spec.accountId" -> "accountId"
+// pathToJSONTag derives a unique JSON tag from a field path
+// e.g., "spec.accountId" -> "accountId", "spec.hostedCluster.release" -> "hostedCluster.release"
 func (g *Generator) pathToJSONTag(path string) string {
-	parts := strings.Split(path, ".")
-	if len(parts) == 0 {
-		return path
-	}
-	return parts[len(parts)-1]
+	return strings.TrimPrefix(path, "spec.")
 }
 
 // inferTypeFromPath infers the Go type for a field path
@@ -813,7 +770,15 @@ func (g *Generator) generateProjectSpecFunction(_, specType string) string {
 		}
 
 		if needsHelper {
-			fmt.Fprintf(&b, "\t\t%s: project%s(crd.%s),\n", fi.GoName, baseType, fi.GoName)
+			isPointer := strings.HasPrefix(fi.GoType, "*")
+			isSlice := strings.HasPrefix(fi.GoType, "[]")
+			if isPointer {
+				fmt.Fprintf(&b, "\t\t%s: project%sPtr(crd.%s),\n", fi.GoName, baseType, fi.GoName)
+			} else if isSlice {
+				fmt.Fprintf(&b, "\t\t%s: project%sSlice(crd.%s),\n", fi.GoName, baseType, fi.GoName)
+			} else {
+				fmt.Fprintf(&b, "\t\t%s: project%s(crd.%s),\n", fi.GoName, baseType, fi.GoName)
+			}
 		} else {
 			fmt.Fprintf(&b, "\t\t%s: crd.%s,\n", fi.GoName, fi.GoName)
 		}
@@ -911,7 +876,15 @@ func (g *Generator) generateUnprojectFunction(resource string) string {
 		}
 
 		if needsHelper {
-			fmt.Fprintf(&b, "\t\t%s: unproject%s(spec.%s),\n", fi.GoName, baseType, fi.GoName)
+			isPointer := strings.HasPrefix(fi.GoType, "*")
+			isSlice := strings.HasPrefix(fi.GoType, "[]")
+			if isPointer {
+				fmt.Fprintf(&b, "\t\t%s: unproject%sPtr(spec.%s),\n", fi.GoName, baseType, fi.GoName)
+			} else if isSlice {
+				fmt.Fprintf(&b, "\t\t%s: unproject%sSlice(spec.%s),\n", fi.GoName, baseType, fi.GoName)
+			} else {
+				fmt.Fprintf(&b, "\t\t%s: unproject%s(spec.%s),\n", fi.GoName, baseType, fi.GoName)
+			}
 		} else {
 			fmt.Fprintf(&b, "\t\t%s: spec.%s,\n", fi.GoName, fi.GoName)
 		}
@@ -961,75 +934,117 @@ func (g *Generator) generatePassthroughHelpers(specType string) string {
 		}
 
 		customType := baseType
+		isPointer := strings.HasPrefix(fi.GoType, "*")
+		isSlice := strings.HasPrefix(fi.GoType, "[]")
 
-		if g.emittedHelpers[customType] {
-			continue
-		}
-		g.emittedHelpers[customType] = true
+		// Generate value helpers if not already emitted
+		if !g.emittedHelpers[customType] {
+			g.emittedHelpers[customType] = true
 
-		// Generate project helper
-		fmt.Fprintf(&b, "// project%s converts CRD type to REST\n", customType)
-		fmt.Fprintf(&b, "func project%s(crd v1alpha1.%s) rest.%s {\n", customType, customType, customType)
-		fmt.Fprintf(&b, "\treturn rest.%s{\n", customType)
+			// Generate project helper
+			fmt.Fprintf(&b, "// project%s converts CRD type to REST\n", customType)
+			fmt.Fprintf(&b, "func project%s(crd v1alpha1.%s) rest.%s {\n", customType, customType, customType)
+			fmt.Fprintf(&b, "\treturn rest.%s{\n", customType)
 
-		for _, pfi := range pti.Fields {
-			if !pfi.Hidden {
-				// Check if this is a mirror type field
-				if IsMirrorType(pfi.GoName) {
-					mapping := GetMirrorMapping(pfi.GoName)
-					if mapping != nil {
-						// Extract base type
-						fieldBaseType := strings.TrimPrefix(pfi.GoType, "*")
-						fieldBaseType = strings.TrimPrefix(fieldBaseType, "[]")
-						// Remove package qualifier
-						if idx := strings.LastIndex(fieldBaseType, "."); idx != -1 {
-							fieldBaseType = fieldBaseType[idx+1:]
+			for _, pfi := range pti.Fields {
+				if !pfi.Hidden {
+					// Check if this is a mirror type field
+					if IsMirrorType(pfi.GoName) {
+						mapping := GetMirrorMapping(pfi.GoName)
+						if mapping != nil {
+							// Extract base type
+							fieldBaseType := strings.TrimPrefix(pfi.GoType, "*")
+							fieldBaseType = strings.TrimPrefix(fieldBaseType, "[]")
+							// Remove package qualifier
+							if idx := strings.LastIndex(fieldBaseType, "."); idx != -1 {
+								fieldBaseType = fieldBaseType[idx+1:]
+							}
+
+							// Use conversion helper (CRD v1beta1 → REST v1alpha1)
+							fmt.Fprintf(&b, "\t\t%s: Convert%s_v1beta1_to_v1alpha1(crd.%s),\n",
+								pfi.GoName, fieldBaseType, pfi.GoName)
+							continue
 						}
-
-						// Use conversion helper (CRD v1beta1 → REST v1alpha1)
-						fmt.Fprintf(&b, "\t\t%s: Convert%s_v1beta1_to_v1alpha1(crd.%s),\n",
-							pfi.GoName, fieldBaseType, pfi.GoName)
-						continue
 					}
+					fmt.Fprintf(&b, "\t\t%s: crd.%s,\n", pfi.GoName, pfi.GoName)
 				}
-				fmt.Fprintf(&b, "\t\t%s: crd.%s,\n", pfi.GoName, pfi.GoName)
 			}
-		}
 
-		b.WriteString("\t}\n")
-		b.WriteString("}\n\n")
+			b.WriteString("\t}\n")
+			b.WriteString("}\n\n")
 
-		// Generate unproject helper
-		fmt.Fprintf(&b, "// unproject%s converts REST type to CRD\n", customType)
-		fmt.Fprintf(&b, "func unproject%s(rest rest.%s) v1alpha1.%s {\n", customType, customType, customType)
-		fmt.Fprintf(&b, "\treturn v1alpha1.%s{\n", customType)
+			// Generate unproject helper
+			fmt.Fprintf(&b, "// unproject%s converts REST type to CRD\n", customType)
+			fmt.Fprintf(&b, "func unproject%s(rest rest.%s) v1alpha1.%s {\n", customType, customType, customType)
+			fmt.Fprintf(&b, "\treturn v1alpha1.%s{\n", customType)
 
-		for _, pfi := range pti.Fields {
-			if !pfi.Hidden {
-				// Check if this is a mirror type field
-				if IsMirrorType(pfi.GoName) {
-					mapping := GetMirrorMapping(pfi.GoName)
-					if mapping != nil {
-						// Extract base type
-						fieldBaseType := strings.TrimPrefix(pfi.GoType, "*")
-						fieldBaseType = strings.TrimPrefix(fieldBaseType, "[]")
-						// Remove package qualifier
-						if idx := strings.LastIndex(fieldBaseType, "."); idx != -1 {
-							fieldBaseType = fieldBaseType[idx+1:]
+			for _, pfi := range pti.Fields {
+				if !pfi.Hidden {
+					// Check if this is a mirror type field
+					if IsMirrorType(pfi.GoName) {
+						mapping := GetMirrorMapping(pfi.GoName)
+						if mapping != nil {
+							// Extract base type
+							fieldBaseType := strings.TrimPrefix(pfi.GoType, "*")
+							fieldBaseType = strings.TrimPrefix(fieldBaseType, "[]")
+							// Remove package qualifier
+							if idx := strings.LastIndex(fieldBaseType, "."); idx != -1 {
+								fieldBaseType = fieldBaseType[idx+1:]
+							}
+
+							// Use conversion helper (REST v1alpha1 → CRD v1beta1)
+							fmt.Fprintf(&b, "\t\t%s: Convert%s_v1alpha1_to_v1beta1(rest.%s),\n",
+								pfi.GoName, fieldBaseType, pfi.GoName)
+							continue
 						}
-
-						// Use conversion helper (REST v1alpha1 → CRD v1beta1)
-						fmt.Fprintf(&b, "\t\t%s: Convert%s_v1alpha1_to_v1beta1(rest.%s),\n",
-							pfi.GoName, fieldBaseType, pfi.GoName)
-						continue
 					}
+					fmt.Fprintf(&b, "\t\t%s: rest.%s,\n", pfi.GoName, pfi.GoName)
 				}
-				fmt.Fprintf(&b, "\t\t%s: rest.%s,\n", pfi.GoName, pfi.GoName)
 			}
+
+			b.WriteString("\t}\n")
+			b.WriteString("}\n\n")
 		}
 
-		b.WriteString("\t}\n")
-		b.WriteString("}\n\n")
+		// Generate pointer wrappers if needed
+		if isPointer && !g.emittedHelpers[customType+"Ptr"] {
+			g.emittedHelpers[customType+"Ptr"] = true
+
+			fmt.Fprintf(&b, "func project%sPtr(crd *v1alpha1.%s) *rest.%s {\n", customType, customType, customType)
+			b.WriteString("\tif crd == nil {\n\t\treturn nil\n\t}\n")
+			fmt.Fprintf(&b, "\tv := project%s(*crd)\n", customType)
+			b.WriteString("\treturn &v\n")
+			b.WriteString("}\n\n")
+
+			fmt.Fprintf(&b, "func unproject%sPtr(r *rest.%s) *v1alpha1.%s {\n", customType, customType, customType)
+			b.WriteString("\tif r == nil {\n\t\treturn nil\n\t}\n")
+			fmt.Fprintf(&b, "\tv := unproject%s(*r)\n", customType)
+			b.WriteString("\treturn &v\n")
+			b.WriteString("}\n\n")
+		}
+
+		// Generate slice wrappers if needed
+		if isSlice && !g.emittedHelpers[customType+"Slice"] {
+			g.emittedHelpers[customType+"Slice"] = true
+
+			fmt.Fprintf(&b, "func project%sSlice(crd []v1alpha1.%s) []rest.%s {\n", customType, customType, customType)
+			b.WriteString("\tif crd == nil {\n\t\treturn nil\n\t}\n")
+			fmt.Fprintf(&b, "\tout := make([]rest.%s, len(crd))\n", customType)
+			b.WriteString("\tfor i := range crd {\n")
+			fmt.Fprintf(&b, "\t\tout[i] = project%s(crd[i])\n", customType)
+			b.WriteString("\t}\n")
+			b.WriteString("\treturn out\n")
+			b.WriteString("}\n\n")
+
+			fmt.Fprintf(&b, "func unproject%sSlice(r []rest.%s) []v1alpha1.%s {\n", customType, customType, customType)
+			b.WriteString("\tif r == nil {\n\t\treturn nil\n\t}\n")
+			fmt.Fprintf(&b, "\tout := make([]v1alpha1.%s, len(r))\n", customType)
+			b.WriteString("\tfor i := range r {\n")
+			fmt.Fprintf(&b, "\t\tout[i] = unproject%s(r[i])\n", customType)
+			b.WriteString("\t}\n")
+			b.WriteString("\treturn out\n")
+			b.WriteString("}\n\n")
+		}
 	}
 
 	return b.String()

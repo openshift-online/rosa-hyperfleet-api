@@ -40,7 +40,7 @@ func TestValidator_Validate_WriteMode(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name:        "immutable field on update (field exists) - blocked",
+			name:        "immutable field on update (value changed) - blocked",
 			fieldPath:   "spec.name",
 			writeMode:   registry.Immutable,
 			operation:   OperationUpdate,
@@ -107,6 +107,28 @@ func TestValidator_Validate_WriteMode(t *testing.T) {
 				t.Errorf("Validate() error = %v, want error containing %q", err, tt.errContains)
 			}
 		})
+	}
+}
+
+func TestValidator_Validate_ImmutableUnchanged(t *testing.T) {
+	v := &Validator{
+		registry: map[string]registry.FieldMeta{
+			"spec.name": {
+				FieldPath: "spec.name",
+				WriteMode: registry.Immutable,
+			},
+		},
+	}
+
+	req := &Request{
+		Operation:      OperationUpdate,
+		Fields:         map[string]interface{}{"spec.name": "same-value"},
+		ExistingFields: map[string]interface{}{"spec.name": "same-value"},
+		FeatureSet:     featuregate.Default,
+	}
+
+	if err := v.Validate(req); err != nil {
+		t.Errorf("Validate() should allow unchanged immutable field, got error: %v", err)
 	}
 }
 

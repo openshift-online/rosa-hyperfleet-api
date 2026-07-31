@@ -269,9 +269,24 @@ func TestNewCRDVariantGenerator(t *testing.T) {
 		t.Error("fieldRegistry is nil")
 	}
 
-	// Check that a known field exists
-	_, exists := g.fieldRegistry["spec.displayName"]
-	if !exists {
-		t.Error("expected spec.displayName to exist in registry")
+	// Check that canonical prefixed keys exist
+	canonicalKeys := []string{
+		"spec.displayName",
+		"spec.hostedCluster.release",
+		"spec.nodePool.release",
+	}
+	for _, key := range canonicalKeys {
+		if _, exists := g.fieldRegistry[key]; !exists {
+			t.Errorf("expected canonical key %q to exist in registry", key)
+		}
+	}
+
+	// Verify bare duplicate keys are absent — these should only appear
+	// with their canonical spec.-prefixed form.
+	bareKeys := []string{"release", "platform", "pausedUntil"}
+	for _, key := range bareKeys {
+		if _, exists := g.fieldRegistry[key]; exists {
+			t.Errorf("bare key %q should not exist in registry; use canonical prefixed form", key)
+		}
 	}
 }

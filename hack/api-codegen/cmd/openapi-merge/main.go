@@ -56,6 +56,17 @@ func main() {
 		schemas[name] = node
 	}
 
+	var missing []string
+	for name := range mergeTypes {
+		if _, ok := schemas[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		log.Fatalf("merge types not found in generated definitions: %s", strings.Join(missing, ", "))
+	}
+
 	specData, err := os.ReadFile(*specPath)
 	if err != nil {
 		log.Fatalf("reading spec: %v", err)
@@ -82,7 +93,13 @@ func main() {
 		}
 	}
 
-	for name, node := range schemas {
+	schemaNames := make([]string, 0, len(schemas))
+	for name := range schemas {
+		schemaNames = append(schemaNames, name)
+	}
+	sort.Strings(schemaNames)
+
+	for _, name := range schemaNames {
 		found := false
 		for i := 0; i < len(schemasNode.Content)-1; i += 2 {
 			if schemasNode.Content[i].Value == name {
@@ -92,7 +109,7 @@ func main() {
 		}
 		if !found {
 			keyNode := &yaml.Node{Kind: yaml.ScalarNode, Value: name}
-			schemasNode.Content = append(schemasNode.Content, keyNode, node)
+			schemasNode.Content = append(schemasNode.Content, keyNode, schemas[name])
 			replaced++
 		}
 	}

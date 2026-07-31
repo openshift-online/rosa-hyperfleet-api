@@ -21,7 +21,7 @@ Build-time code generators for the ROSA Hyperfleet API. These tools scan Go type
 
 The generators are chained in a dependency order. Each phase builds on the output of the previous one.
 
-```
+```text
 Phase 0: Port codegen tools into monorepo (ROSAENG-62606)
 Phase 1: passthrough-gen → marker-scanner (ROSAENG-61801)
            Generates typed passthrough structs with markers,
