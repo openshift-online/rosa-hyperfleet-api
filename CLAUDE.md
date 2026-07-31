@@ -36,8 +36,8 @@ make generate           # Generate deepcopy
 ```
 hyperfleet-db/go.mod              ← standalone
 hyperfleet-operator/api/go.mod   ← standalone (CRD types sub-module)
-hyperfleet-operator/go.mod       ← requires: fleetdb, hyperfleet-operator/api
-platform-api/go.mod         ← requires: fleetdb, hyperfleet-operator/api
+hyperfleet-operator/go.mod       ← requires: hyperfleet-db, hyperfleet-operator/api
+platform-api/go.mod         ← requires: hyperfleet-db, hyperfleet-operator/api
 ```
 
 Cross-module refs use permanent `replace` directives to sibling dirs.

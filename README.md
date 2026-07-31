@@ -30,6 +30,13 @@ platform-api/go.mod              ← requires: hyperfleet-db, hyperfleet-operato
 ## Docs
 
 - [OpenAPI spec](platform-api/openapi/openapi.yaml)
+- [API Management](docs/api/api-management.md)
+- [Rate Limiting](docs/api/rate-limit.md)
 - [ZOA Trusted Actions](docs/api/zoa-endpoints.md)
+- [V2 SDK Initiative](docs/api/v2-sdk-initiative.md)
+- [V2 SDK ROSA Integration](docs/api/v2-sdk-rosa-integration.md)
 - [Authorization](docs/authz.md)
+- [E2E Lifecycle Testing](docs/e2e-lifecycle-testing.md)
+- [Konflux CI/CD](docs/konflux/README.md)
 - [Konflux / Quay image tags](docs/konflux/quay-image-tags.md)
+- [Rate Limiting Tests](docs/testing/rate-limit.md)
