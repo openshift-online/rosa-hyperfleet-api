@@ -57,3 +57,6 @@ hyperfleet-operator/bin/
 # Compiled operator binaries (built outside bin/)
 hyperfleet-operator/manager
 hyperfleet-operator/compactor
+
+# Codegen intermediate files
+*.passthrough.go.raw

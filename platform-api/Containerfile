@@ -8,11 +8,13 @@ WORKDIR /app
 
 COPY hyperfleet-db/go.mod hyperfleet-db/go.sum ./hyperfleet-db/
 COPY hyperfleet-operator/api/go.mod hyperfleet-operator/api/go.sum ./hyperfleet-operator/api/
+COPY hack/api-codegen/go.mod hack/api-codegen/go.sum ./hack/api-codegen/
 COPY platform-api/go.mod platform-api/go.sum ./platform-api/
 RUN cd platform-api && go mod download
 
 COPY hyperfleet-db/ ./hyperfleet-db/
 COPY hyperfleet-operator/api/ ./hyperfleet-operator/api/
+COPY hack/api-codegen/ ./hack/api-codegen/
 COPY platform-api/ ./platform-api/
 
 RUN cd platform-api && \

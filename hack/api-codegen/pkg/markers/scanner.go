@@ -90,13 +90,15 @@ func (s *MarkerScanner) scanDir(dir string) error {
 	return nil
 }
 
-// isRootType returns true for top-level CRD types (not Spec/Status/Passthrough types)
+// isRootType returns true for types that are entry points for marker scanning.
+// Passthrough types ARE root types since they carry curated markers.
 func isRootType(typeName string) bool {
-	// Root types don't have suffixes
+	if strings.HasSuffix(typeName, "Passthrough") {
+		return true
+	}
 	return !strings.HasSuffix(typeName, "Spec") &&
 		!strings.HasSuffix(typeName, "Status") &&
 		!strings.HasSuffix(typeName, "List") &&
-		!strings.HasSuffix(typeName, "Passthrough") &&
 		typeName != "ClusterReference"
 }
 

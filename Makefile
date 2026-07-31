@@ -5,7 +5,9 @@
 	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-zoa test-e2e-authz test-e2e-sdk \
 	e2e-authz-infra-up e2e-authz-infra-down e2e-init-db \
 	fmt vet verify deps \
-	manifests generate generate-clientset verify-clientset setup-envtest \
+	manifests generate generate-clientset verify-clientset \
+	generate-public-deepcopy setup-envtest \
+	codegen-passthrough codegen-registry codegen-verify codegen \
 	image-api image-operator image-push-api image-push-operator
 
 # ── Configuration ────────────────────────────────────────────────────────
@@ -106,9 +108,14 @@ help:
 	@echo ""
 	@echo "Code Generation:"
 	@echo "  manifests            Generate CRD manifests"
-	@echo "  generate             Generate deepcopy methods"
-	@echo "  generate-clientset         Generate typed client SDK from CRD types"
-	@echo "  verify-clientset           Fail if generated clientset is out of date"
+	@echo "  generate             Generate deepcopy methods (v1alpha1)"
+	@echo "  generate-clientset   Generate typed client SDK from CRD types"
+	@echo "  verify-clientset     Fail if generated clientset is out of date"
+	@echo "  generate-public-deepcopy  Generate deepcopy methods (v2alpha1 public API)"
+	@echo "  codegen              Full codegen pipeline (passthrough → deepcopy → registry)"
+	@echo "  codegen-passthrough  Generate passthrough types from HyperShift"
+	@echo "  codegen-registry     Generate field metadata registry from markers"
+	@echo "  codegen-verify       Verify codegen outputs compile"
 	@echo "  setup-envtest        Install envtest binaries (etcd, kube-apiserver)"
 	@echo "  deps                 Download and tidy all modules"
 	@echo ""
@@ -260,6 +267,7 @@ verify:
 	cd hyperfleet-db && go mod tidy
 	cd hyperfleet-operator/api && go mod tidy
 	cd hyperfleet-operator && go mod tidy
+	cd api/public/v2alpha1 && go mod tidy
 	cd platform-api && go mod tidy
 	cd test && go mod tidy
 	cd hack/tools && go mod tidy
@@ -268,6 +276,7 @@ verify:
 		hyperfleet-db/go.mod hyperfleet-db/go.sum \
 		hyperfleet-operator/api/go.mod hyperfleet-operator/api/go.sum \
 		hyperfleet-operator/go.mod hyperfleet-operator/go.sum \
+		api/public/v2alpha1/go.mod api/public/v2alpha1/go.sum \
 		platform-api/go.mod platform-api/go.sum \
 		test/go.mod test/go.sum \
 		hack/tools/go.mod hack/tools/go.sum \
@@ -277,6 +286,7 @@ deps:
 	cd hyperfleet-db && go mod download && go mod tidy
 	cd hyperfleet-operator/api && go mod download && go mod tidy
 	cd hyperfleet-operator && go mod download && go mod tidy
+	cd api/public/v2alpha1 && go mod download && go mod tidy
 	cd platform-api && go mod download && go mod tidy
 	cd test && go mod download && go mod tidy
 	cd hack/api-codegen && go mod download && go mod tidy
@@ -314,6 +324,28 @@ generate-clientset: $(CLIENT_GEN) $(WIRE_GEN)
 
 verify-clientset: generate-clientset
 	git diff --exit-code clientset/
+
+codegen-passthrough: build-api-codegen
+	cd api/public/v2alpha1 && ../../../bin/passthrough-gen \
+		-import-path github.com/openshift/hypershift/api/hypershift/v1beta1 \
+		-types HostedClusterSpec,NodePoolSpec \
+		-output-dir . \
+		-package v2alpha1
+	mv api/public/v2alpha1/zz_generated.passthrough.go api/public/v2alpha1/zz_generated.passthrough.go.raw
+
+generate-public-deepcopy: codegen-passthrough $(CONTROLLER_GEN)
+	$(CONTROLLER_GEN) object paths="./api/public/v2alpha1/..."
+
+codegen-registry: generate-public-deepcopy build-api-codegen
+	./bin/marker-scanner \
+		-input-dirs api/public/v2alpha1 \
+		-output-file platform-api/internal/codegen/registry/field_metadata.go
+
+codegen-verify: codegen-registry
+	cd api/public/v2alpha1 && go build ./...
+	cd platform-api && go build ./internal/codegen/...
+
+codegen: codegen-verify
 
 ENVTEST_BIN_DIR ?= $(shell pwd)/.envtest
 

@@ -3,7 +3,7 @@ module github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen
 go 1.26.3
 
 require (
-	github.com/openshift/hypershift/api v0.0.0-20251113065312-f919037748bf
+	github.com/openshift/hypershift/api v0.0.0-20260625052409-9acec4759a16
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apiextensions-apiserver v0.36.0
 	sigs.k8s.io/controller-tools v0.21.0
@@ -17,7 +17,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
-	github.com/openshift/api v0.0.0-20250609083529-2b129d95495e // indirect
+	github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/mod v0.38.0 // indirect
