@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.2
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.30
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.32
 	github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/api v0.0.0
 	k8s.io/apimachinery v0.36.0
 	k8s.io/client-go v0.36.0
