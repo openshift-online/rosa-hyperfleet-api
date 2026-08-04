@@ -340,7 +340,8 @@ generate-public-deepcopy: codegen-passthrough $(CONTROLLER_GEN)
 codegen-registry: generate-public-deepcopy build-api-codegen
 	./bin/marker-scanner \
 		-input-dirs api/public/v2alpha1 \
-		-output-file platform-api/internal/codegen/registry/field_metadata.go
+		-output-file platform-api/internal/codegen/registry/field_metadata.go \
+		$(if $(VERBOSE),-verbose)
 
 codegen-verify: codegen-registry
 	cd api/public/v2alpha1 && go build ./...

@@ -37,7 +37,7 @@ func main() {
 	}
 
 	// Create scanner and scan directories
-	scanner := markers.NewScanner(dirs)
+	scanner := markers.NewScanner(dirs, verbose)
 
 	log.Printf("Scanning directories: %v", dirs)
 	if err := scanner.Scan(); err != nil {

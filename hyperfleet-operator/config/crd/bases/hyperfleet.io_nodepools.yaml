@@ -53,6 +53,14 @@ spec:
               NodePoolSpec defines the desired state of a NodePool.
               The parent Cluster is identified by the shared metadata.Namespace (cluster UUID).
             properties:
+              accountId:
+                description: AccountID is the AWS account ID that owns this node pool
+                  (platform-managed).
+                type: string
+              internalPoolId:
+                description: InternalPoolID is an internal platform identifier for
+                  this node pool (platform-managed).
+                type: string
               nodePool:
                 description: |-
                   NodePool is the full HyperShift NodePoolSpec. The customer provides replicas,

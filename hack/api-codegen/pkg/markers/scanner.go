@@ -18,22 +18,32 @@ var (
 	featureGateAwareWriteModePattern = regexp.MustCompile(`\+hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="([^"]*)",writeMode="(mutable|immutable|service-set)"`)
 )
 
-// NewScanner creates a new marker scanner
-func NewScanner(inputDirs []string) *MarkerScanner {
+// NewScanner creates a new marker scanner.
+// Pass verbose=true to log each type, field, and marker as the scanner processes them.
+func NewScanner(inputDirs []string, verbose bool) *MarkerScanner {
 	return &MarkerScanner{
 		InputDirs: inputDirs,
 		Registry:  make(FieldRegistry),
 		typeCache: make(map[string]*ast.StructType),
+		verbose:   verbose,
+	}
+}
+
+func (s *MarkerScanner) logf(format string, args ...any) {
+	if s.verbose {
+		fmt.Fprintf(os.Stderr, "[scanner] "+format+"\n", args...)
 	}
 }
 
 // Scan walks the input directories and extracts marker metadata
 func (s *MarkerScanner) Scan() error {
 	for _, dir := range s.InputDirs {
+		s.logf("scanning directory: %s", dir)
 		if err := s.scanDir(dir); err != nil {
 			return fmt.Errorf("scanning directory %s: %w", dir, err)
 		}
 	}
+	s.logf("scan complete: %d fields in registry", len(s.Registry))
 	return nil
 }
 
@@ -78,12 +88,15 @@ func (s *MarkerScanner) scanDir(dir string) error {
 	// Install this directory's cache for nested-type resolution
 	s.typeCache = dirCache
 
+	s.logf("  cached %d struct types", len(dirCache))
+
 	// Second pass: process root types once with the full cache available
 	for typeName, structType := range dirCache {
 		if isRootType(typeName) {
 			visited := make(map[string]bool)
 			visited[typeName] = true
 			prefix := rootTypePrefix(typeName)
+			s.logf("  root type: %s (prefix=%q)", typeName, prefix)
 			s.processStruct(typeName, structType, prefix, visited)
 		}
 	}
@@ -147,6 +160,7 @@ func (s *MarkerScanner) processField(field *ast.Field, parentPath string, visite
 	// Extract markers from comments
 	meta := s.extractMarkers(field, fieldPath)
 	if meta != nil {
+		s.logf("    field: %s  write-mode=%s  hidden=%v  gate=%s", fieldPath, meta.WriteMode, meta.Hidden, meta.FeatureGate)
 		s.Registry[fieldPath] = *meta
 	}
 

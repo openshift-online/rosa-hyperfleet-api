@@ -36,6 +36,14 @@ const (
 // NodePoolSpec defines the desired state of a NodePool.
 // The parent Cluster is identified by the shared metadata.Namespace (cluster UUID).
 type NodePoolSpec struct {
+	// AccountID is the AWS account ID that owns this node pool (platform-managed).
+	// +optional
+	AccountID string `json:"accountId,omitempty"`
+
+	// InternalPoolID is an internal platform identifier for this node pool (platform-managed).
+	// +optional
+	InternalPoolID string `json:"internalPoolId,omitempty"`
+
 	// NodePool is the full HyperShift NodePoolSpec. The customer provides replicas,
 	// platform, release, etc. The operator overrides ClusterName and adds system
 	// resource tags at render time.

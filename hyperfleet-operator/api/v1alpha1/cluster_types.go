@@ -37,6 +37,14 @@ const (
 // metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
 // The owning AWS account is stored as the label hyperfleet.io/account-id.
 type ClusterSpec struct {
+	// AccountID is the AWS account ID that owns this cluster (platform-managed).
+	// +optional
+	AccountID string `json:"accountId,omitempty"`
+
+	// InternalID is an internal platform identifier for this cluster (platform-managed).
+	// +optional
+	InternalID string `json:"internalId,omitempty"`
+
 	// CreatorARN is the IAM ARN of the user who created this cluster.
 	// Used to bootstrap the initial cluster-admin RBAC mapping.
 	// +optional

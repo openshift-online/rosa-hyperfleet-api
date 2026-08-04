@@ -57,4 +57,7 @@ type MarkerScanner struct {
 
 	// typeCache maps type names to their struct definitions
 	typeCache map[string]*ast.StructType
+
+	// verbose enables detailed logging to stderr during scanning
+	verbose bool
 }

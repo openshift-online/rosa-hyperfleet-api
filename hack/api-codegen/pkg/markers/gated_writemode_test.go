@@ -38,7 +38,7 @@ type Spec struct {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	scanner := NewScanner([]string{tmpDir})
+	scanner := NewScanner([]string{tmpDir}, false)
 	if err := scanner.Scan(); err != nil {
 		t.Fatalf("Scan failed: %v", err)
 	}

@@ -193,11 +193,17 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	snapshot := cr.Spec
+
 	if err := hyperfleetdb.ApplyPlatformUpdateToNodePoolCR(cr, &req); err != nil {
 		h.logger.Error("failed to merge nodepool spec", "error", err)
 		h.writeError(w, http.StatusBadRequest, "NODEPOOLS-MGMT-UPDATE-002", "Invalid nodepool spec")
 		return
 	}
+
+	// Restore service-set fields wiped by the full spec replacement.
+	cr.Spec.AccountID = snapshot.AccountID
+	cr.Spec.InternalPoolID = snapshot.InternalPoolID
 
 	if err := h.db.UpdateNodePool(ctx, cr); err != nil {
 		h.logger.Error("failed to update nodepool", "error", err, "account_id", accountID, "nodepool_id", nodepoolID)
