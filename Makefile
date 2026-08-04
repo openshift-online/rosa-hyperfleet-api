@@ -7,7 +7,7 @@
 	fmt vet verify deps \
 	manifests generate generate-clientset verify-clientset \
 	generate-public-deepcopy setup-envtest \
-	codegen-passthrough codegen-registry codegen-verify codegen \
+	codegen-passthrough codegen-registry codegen-verify codegen verify-codegen \
 	image-api image-operator image-push-api image-push-operator
 
 # ── Configuration ────────────────────────────────────────────────────────
@@ -116,6 +116,7 @@ help:
 	@echo "  codegen-passthrough  Generate passthrough types from HyperShift"
 	@echo "  codegen-registry     Generate field metadata registry from markers"
 	@echo "  codegen-verify       Verify codegen outputs compile"
+	@echo "  verify-codegen       Fail if codegen outputs are out of date"
 	@echo "  setup-envtest        Install envtest binaries (etcd, kube-apiserver)"
 	@echo "  deps                 Download and tidy all modules"
 	@echo ""
@@ -346,6 +347,10 @@ codegen-verify: codegen-registry
 	cd platform-api && go build ./internal/codegen/...
 
 codegen: codegen-verify
+
+verify-codegen: codegen
+	git diff --exit-code api/public/v2alpha1/zz_generated.deepcopy.go
+	git diff --exit-code platform-api/internal/codegen/registry/
 
 ENVTEST_BIN_DIR ?= $(shell pwd)/.envtest
 

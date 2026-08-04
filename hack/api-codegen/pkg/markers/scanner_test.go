@@ -90,6 +90,82 @@ type EtcdSpec struct {
 	}
 }
 
+func TestPassthroughTypesPrefixed(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	testFile := filepath.Join(tmpDir, "types.go")
+	content := `package test
+
+type HostedClusterSpecPassthrough struct {
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=service-set
+	PausedUntil *string ` + "`json:\"pausedUntil,omitempty\"`" + `
+
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=immutable
+	FIPS bool ` + "`json:\"fips\"`" + `
+}
+
+type NodePoolSpecPassthrough struct {
+	// +k8s:openapi-gen=false
+	// +hyperfleet:write-mode=service-set
+	PausedUntil *string ` + "`json:\"pausedUntil,omitempty\"`" + `
+
+	// +k8s:openapi-gen=false
+	// +hyperfleet:write-mode=service-set
+	Replicas *int ` + "`json:\"replicas,omitempty\"`" + `
+}
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	scanner := NewScanner([]string{tmpDir})
+	if err := scanner.Scan(); err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	tests := []struct {
+		fieldPath string
+		writeMode WriteMode
+		hidden    bool
+	}{
+		{"spec.hostedCluster.pausedUntil", ServiceSet, false},
+		{"spec.hostedCluster.fips", Immutable, false},
+		{"spec.nodePool.pausedUntil", ServiceSet, true},
+		{"spec.nodePool.replicas", ServiceSet, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.fieldPath, func(t *testing.T) {
+			meta, found := scanner.Registry[tt.fieldPath]
+			if !found {
+				t.Fatalf("Field %s not found in registry (keys: %v)", tt.fieldPath, registryKeys(scanner.Registry))
+			}
+			if meta.WriteMode != tt.writeMode {
+				t.Errorf("WriteMode = %v, want %v", meta.WriteMode, tt.writeMode)
+			}
+			if meta.Hidden != tt.hidden {
+				t.Errorf("Hidden = %v, want %v", meta.Hidden, tt.hidden)
+			}
+		})
+	}
+
+	// Verify no flat "pausedUntil" key exists (the old collision)
+	if _, found := scanner.Registry["pausedUntil"]; found {
+		t.Error("flat key \"pausedUntil\" should not exist; passthrough fields must be prefixed")
+	}
+}
+
+func registryKeys(r FieldRegistry) []string {
+	keys := make([]string, 0, len(r))
+	for k := range r {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func TestValidation(t *testing.T) {
 	tests := []struct {
 		name    string

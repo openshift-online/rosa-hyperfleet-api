@@ -83,11 +83,30 @@ func (s *MarkerScanner) scanDir(dir string) error {
 		if isRootType(typeName) {
 			visited := make(map[string]bool)
 			visited[typeName] = true
-			s.processStruct(typeName, structType, "", visited)
+			prefix := rootTypePrefix(typeName)
+			s.processStruct(typeName, structType, prefix, visited)
 		}
 	}
 
 	return nil
+}
+
+// rootTypePrefix returns a dotted prefix that namespaces registry keys by root
+// type, so fields with the same JSON name in different root types (e.g.
+// HostedClusterSpecPassthrough.PausedUntil vs NodePoolSpecPassthrough.PausedUntil)
+// don't collide in the flat FieldRegistry map. The prefixes mirror
+// conversion/generator.go buildFieldPath so consumers can look up entries
+// with the same key they construct.
+func rootTypePrefix(typeName string) string {
+	if strings.HasSuffix(typeName, "Passthrough") {
+		if strings.HasPrefix(typeName, "HostedCluster") {
+			return "spec.hostedCluster"
+		}
+		if strings.HasPrefix(typeName, "NodePool") {
+			return "spec.nodePool"
+		}
+	}
+	return ""
 }
 
 // isRootType returns true for types that are entry points for marker scanning.
