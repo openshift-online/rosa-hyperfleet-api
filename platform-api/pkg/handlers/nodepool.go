@@ -7,20 +7,24 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/types"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/validation"
 )
 
 type NodePoolHandler struct {
-	db     *hyperfleetdb.Client
-	logger *slog.Logger
+	db        *hyperfleetdb.Client
+	validator *validation.FieldValidator
+	logger    *slog.Logger
 }
 
 func NewNodePoolHandler(db *hyperfleetdb.Client, logger *slog.Logger) *NodePoolHandler {
 	return &NodePoolHandler{
-		db:     db,
-		logger: logger,
+		db:        db,
+		validator: validation.NewFieldValidator(),
+		logger:    logger,
 	}
 }
 
@@ -92,6 +96,11 @@ func (h *NodePoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name == "" || req.ClusterID == "" || req.Spec == nil {
 		h.writeError(w, http.StatusBadRequest, "NODEPOOLS-MGMT-CREATE-002", "Missing required fields: name, cluster_id, and spec")
+		return
+	}
+
+	if errs := h.validator.ValidateCreate(req.Spec, featuregate.Default); errs != nil {
+		h.writeValidationErrors(w, errs)
 		return
 	}
 
@@ -179,6 +188,11 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if errs := h.validator.ValidateUpdate(req.Spec, &cr.Spec, featuregate.Default); errs != nil {
+		h.writeValidationErrors(w, errs)
+		return
+	}
+
 	if err := hyperfleetdb.ApplyPlatformUpdateToNodePoolCR(cr, &req); err != nil {
 		h.logger.Error("failed to merge nodepool spec", "error", err)
 		h.writeError(w, http.StatusBadRequest, "NODEPOOLS-MGMT-UPDATE-002", "Invalid nodepool spec")
@@ -247,6 +261,18 @@ func (h *NodePoolHandler) writeJSON(w http.ResponseWriter, status int, data any)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
+}
+
+func (h *NodePoolHandler) writeValidationErrors(w http.ResponseWriter, errs validation.ValidationErrors) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnprocessableEntity)
+	resp := map[string]any{
+		"kind":   "Error",
+		"code":   "NODEPOOLS-MGMT-VALIDATION-001",
+		"reason": "Request validation failed",
+		"errors": errs,
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (h *NodePoolHandler) writeError(w http.ResponseWriter, status int, code, reason string) {
