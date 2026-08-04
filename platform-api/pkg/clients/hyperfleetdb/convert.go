@@ -75,6 +75,8 @@ func ClusterCRToPlatform(cr *hyperfleetv1alpha1.Cluster) *types.Cluster {
 // metadata.Name = human-readable cluster name.
 func PlatformCreateToClusterCR(clusterID, accountID string, req *types.ClusterCreateRequest) (*hyperfleetv1alpha1.Cluster, error) {
 	spec := *req.Spec
+	spec.AccountID = accountID
+	spec.InternalID = clusterID
 
 	return &hyperfleetv1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -147,8 +149,10 @@ func NodePoolCRToPlatform(cr *hyperfleetv1alpha1.NodePool) *types.NodePool {
 
 // PlatformCreateToNodePoolCR converts a platform NodePoolCreateRequest into a
 // v1alpha1.NodePool CR. metadata.Namespace = clusterID, metadata.Name = human name.
-func PlatformCreateToNodePoolCR(accountID string, req *types.NodePoolCreateRequest) (*hyperfleetv1alpha1.NodePool, error) {
+func PlatformCreateToNodePoolCR(accountID, internalPoolID string, req *types.NodePoolCreateRequest) (*hyperfleetv1alpha1.NodePool, error) {
 	spec := *req.Spec
+	spec.AccountID = accountID
+	spec.InternalPoolID = internalPoolID
 
 	return &hyperfleetv1alpha1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
@@ -116,7 +117,8 @@ func (h *NodePoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("creating nodepool", "account_id", accountID, "cluster_id", req.ClusterID, "nodepool_name", req.Name)
 
-	cr, err := hyperfleetdb.PlatformCreateToNodePoolCR(accountID, &req)
+	internalPoolID := uuid.New().String()
+	cr, err := hyperfleetdb.PlatformCreateToNodePoolCR(accountID, internalPoolID, &req)
 	if err != nil {
 		h.logger.Error("failed to convert nodepool spec", "error", err, "account_id", accountID)
 		h.writeError(w, http.StatusBadRequest, "NODEPOOLS-MGMT-CREATE-002", "Invalid nodepool spec")

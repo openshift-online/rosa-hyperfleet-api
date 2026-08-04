@@ -25,7 +25,7 @@ func TestPlatformCreateToNodePoolCR_SetsAccountLabel(t *testing.T) {
 		},
 	}
 
-	np, err := PlatformCreateToNodePoolCR("acct-123", req)
+	np, err := PlatformCreateToNodePoolCR("acct-123", "pool-uuid-1", req)
 	if err != nil {
 		t.Fatalf("PlatformCreateToNodePoolCR: %v", err)
 	}
@@ -36,6 +36,14 @@ func TestPlatformCreateToNodePoolCR_SetsAccountLabel(t *testing.T) {
 
 	if got := np.Namespace; got != "cluster-test-cluster-id" {
 		t.Errorf("namespace = %q, want %q", got, "cluster-test-cluster-id")
+	}
+
+	if got := np.Spec.AccountID; got != "acct-123" {
+		t.Errorf("spec.AccountID = %q, want %q", got, "acct-123")
+	}
+
+	if got := np.Spec.InternalPoolID; got != "pool-uuid-1" {
+		t.Errorf("spec.InternalPoolID = %q, want %q", got, "pool-uuid-1")
 	}
 }
 
@@ -61,5 +69,13 @@ func TestPlatformCreateToClusterCR_SetsAccountLabel(t *testing.T) {
 
 	if got := cr.Labels["hyperfleet.io/account-id"]; got != "acct-456" {
 		t.Errorf("account-id label = %q, want %q", got, "acct-456")
+	}
+
+	if got := cr.Spec.AccountID; got != "acct-456" {
+		t.Errorf("spec.AccountID = %q, want %q", got, "acct-456")
+	}
+
+	if got := cr.Spec.InternalID; got != "cluster-uuid" {
+		t.Errorf("spec.InternalID = %q, want %q", got, "cluster-uuid")
 	}
 }
