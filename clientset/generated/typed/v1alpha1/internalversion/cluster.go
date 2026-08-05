@@ -32,7 +32,7 @@ import (
 // ClustersGetter has a method to return a ClusterInterface.
 // A group's client should implement this interface.
 type ClustersGetter interface {
-	Clusters(namespace string) ClusterInterface
+	Clusters() ClusterInterface
 }
 
 // ClusterInterface has methods to work with Cluster resources.
@@ -56,13 +56,13 @@ type clusters struct {
 }
 
 // newClusters returns a Clusters
-func newClusters(c *V1alpha1Client, namespace string) *clusters {
+func newClusters(c *V1alpha1Client) *clusters {
 	return &clusters{
 		gentype.NewClientWithList[*v1alpha1.Cluster, *v1alpha1.ClusterList](
 			"clusters",
 			c.RESTClient(),
 			scheme.ParameterCodec,
-			namespace,
+			"",
 			func() *v1alpha1.Cluster { return &v1alpha1.Cluster{} },
 			func() *v1alpha1.ClusterList { return &v1alpha1.ClusterList{} },
 		),

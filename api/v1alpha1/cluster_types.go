@@ -131,6 +131,7 @@ type PlacementReference struct {
 }
 
 // +genclient
+// +genclient:nonNamespaced
 // +wire:field=name,meta=name
 // +wire:field=id,meta=uid
 // +wire:field=resource_version,meta=resourceVersion

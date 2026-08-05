@@ -232,7 +232,7 @@ func (c *nodePoolClient) WaitUntil(ctx context.Context, id string, condition fun
 // V1alpha1Interface is the platform-scoped typed client for the hyperfleet.io/v1alpha1 group.
 type V1alpha1Interface interface {
 	RESTClient() rest.Interface
-	Clusters(namespace string) ClusterInterface
+	Clusters() ClusterInterface
 	NodePools(namespace string) NodePoolInterface
 }
 
@@ -249,8 +249,8 @@ func (w *wrappedV1alpha1) RESTClient() rest.Interface {
 	return w.inner.RESTClient()
 }
 
-func (w *wrappedV1alpha1) Clusters(namespace string) ClusterInterface {
-	return &clusterClient{inner: w.inner.Clusters(namespace)}
+func (w *wrappedV1alpha1) Clusters() ClusterInterface {
+	return &clusterClient{inner: w.inner.Clusters()}
 }
 
 func (w *wrappedV1alpha1) NodePools(namespace string) NodePoolInterface {

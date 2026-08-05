@@ -28,8 +28,8 @@ type FakeV1alpha1 struct {
 	*testing.Fake
 }
 
-func (c *FakeV1alpha1) Clusters(namespace string) internalversion.ClusterInterface {
-	return newFakeClusters(c, namespace)
+func (c *FakeV1alpha1) Clusters() internalversion.ClusterInterface {
+	return newFakeClusters(c)
 }
 
 func (c *FakeV1alpha1) NodePools(namespace string) internalversion.NodePoolInterface {

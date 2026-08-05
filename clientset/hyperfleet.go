@@ -24,7 +24,7 @@ limitations under the License.
 //	    AccountID: "123456789012",
 //	    AWSConfig: awsCfg,
 //	})
-//	cluster, err := cs.HyperfleetV1alpha1().Clusters("123456789012").Get(ctx, "my-cluster", metav1.GetOptions{})
+//	cluster, err := cs.HyperfleetV1alpha1().Clusters().Get(ctx, "my-cluster", wrappers.GetOptions{})
 package hyperfleet
 
 import (

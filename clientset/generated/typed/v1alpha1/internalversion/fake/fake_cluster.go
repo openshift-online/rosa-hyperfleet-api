@@ -30,11 +30,11 @@ type fakeClusters struct {
 	Fake *FakeV1alpha1
 }
 
-func newFakeClusters(fake *FakeV1alpha1, namespace string) internalversion.ClusterInterface {
+func newFakeClusters(fake *FakeV1alpha1) internalversion.ClusterInterface {
 	return &fakeClusters{
 		gentype.NewFakeClientWithList[*v1alpha1.Cluster, *v1alpha1.ClusterList](
 			fake.Fake,
-			namespace,
+			"",
 			v1alpha1.SchemeGroupVersion.WithResource("clusters"),
 			v1alpha1.SchemeGroupVersion.WithKind("Cluster"),
 			func() *v1alpha1.Cluster { return &v1alpha1.Cluster{} },
