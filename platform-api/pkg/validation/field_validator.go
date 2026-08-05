@@ -130,6 +130,9 @@ func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.Field
 
 	switch effectiveMode {
 	case registry.ServiceSet:
+		if isZeroValue(fields[fieldPath]) {
+			return nil
+		}
 		return &ValidationError{
 			Field:  fieldPath,
 			Reason: "field is platform-managed and cannot be set by customers",
@@ -169,6 +172,34 @@ func flattenToFieldPaths(v any) map[string]any {
 	result := make(map[string]any)
 	flattenMap("spec", m, result)
 	return result
+}
+
+// isZeroValue returns true when v is a JSON-deserialized zero value.
+// After json.Unmarshal into map[string]any, Go zero values appear as:
+// nil (null slices/pointers), "" (strings), false (bools), 0.0 (numbers),
+// and empty maps (zero-value structs).
+func isZeroValue(v any) bool {
+	if v == nil {
+		return true
+	}
+	switch val := v.(type) {
+	case string:
+		return val == ""
+	case bool:
+		return !val
+	case float64:
+		return val == 0
+	case map[string]any:
+		for _, child := range val {
+			if !isZeroValue(child) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		return len(val) == 0
+	}
+	return false
 }
 
 func flattenMap(prefix string, m map[string]any, result map[string]any) {

@@ -41,6 +41,49 @@ func TestValidateCreate_RejectsServiceSetFields(t *testing.T) {
 	}
 }
 
+func TestValidateCreate_SkipsServiceSetFieldsAtZeroValue(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.networking": {FieldPath: "spec.networking", WriteMode: registry.ServiceSet},
+		"spec.etcd":       {FieldPath: "spec.etcd", WriteMode: registry.ServiceSet},
+		"spec.fips":       {FieldPath: "spec.fips", WriteMode: registry.ServiceSet},
+		"spec.services":   {FieldPath: "spec.services", WriteMode: registry.ServiceSet},
+		"spec.pullSecret": {FieldPath: "spec.pullSecret", WriteMode: registry.ServiceSet},
+	})
+
+	spec := map[string]any{
+		"networking": map[string]any{},
+		"etcd":       map[string]any{"managementType": "", "managed": map[string]any{}},
+		"fips":       false,
+		"services":   nil,
+		"pullSecret": map[string]any{"name": ""},
+	}
+
+	errs := v.ValidateCreate(spec, featuregate.Default)
+	if errs != nil {
+		t.Errorf("expected no errors for zero-value service-set fields, got %v", errs)
+	}
+}
+
+func TestValidateCreate_RejectsNonZeroServiceSetFields(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.networking": {FieldPath: "spec.networking", WriteMode: registry.ServiceSet},
+		"spec.fips":       {FieldPath: "spec.fips", WriteMode: registry.ServiceSet},
+	})
+
+	spec := map[string]any{
+		"networking": map[string]any{"clusterNetwork": []any{map[string]any{"cidr": "10.0.0.0/8"}}},
+		"fips":       true,
+	}
+
+	errs := v.ValidateCreate(spec, featuregate.Default)
+	if errs == nil {
+		t.Fatal("expected validation errors for non-zero service-set fields, got nil")
+	}
+	if len(errs) != 2 {
+		t.Errorf("expected 2 errors, got %d: %v", len(errs), errs)
+	}
+}
+
 func TestValidateCreate_AllowsMutableFields(t *testing.T) {
 	v := newTestValidator(map[string]registry.FieldMeta{
 		"spec.displayName": {FieldPath: "spec.displayName", WriteMode: registry.Mutable},
