@@ -94,7 +94,7 @@ type HostedClusterSpecPassthrough struct {
 	// configuration specifies configuration for individual OCP components in the
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=service-set
-	Configuration *hypershiftv1beta1.ClusterConfiguration `json:"configuration,omitempty"`
+	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
 	// operatorConfiguration specifies configuration for individual OCP operators in the cluster.
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=service-set
@@ -104,8 +104,8 @@ type HostedClusterSpecPassthrough struct {
 	// +hyperfleet:write-mode=service-set
 	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
 	// imageContentSources specifies image mirrors that can be used by cluster
-	// +k8s:openapi-gen=false
-	// +hyperfleet:write-mode=service-set
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=mutable
 	ImageContentSources []hypershiftv1beta1.ImageContentSource `json:"imageContentSources,omitempty"`
 	// additionalTrustBundle is a local reference to a ConfigMap that must have a "ca-bundle.crt" key
 	// +k8s:openapi-gen=false

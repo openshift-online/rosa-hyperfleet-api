@@ -342,6 +342,198 @@
     "writeMode": "service-set"
   },
   {
+    "fieldPath": "spec.hostedCluster.configuration.apiServer",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.authentication",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.featureGate",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.image",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.ingress",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet",
+    "writeMode": "service-set"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.allowedUnsafeSysctls",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.containerLogMaxFiles",
+    "writeMode": "mutable"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.containerLogMaxSize",
+    "writeMode": "mutable"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.cpuManagerPolicy",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.cpuManagerPolicyOptions",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.cpuManagerReconcilePeriod",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.evictionHard",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.evictionSoft",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.evictionSoftGracePeriod",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.imageGCHighThresholdPercent",
+    "writeMode": "mutable"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.imageGCLowThresholdPercent",
+    "writeMode": "mutable"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.imageMinimumGCAge",
+    "writeMode": "mutable"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.kubeReserved",
+    "writeMode": "immutable"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.maxPods",
+    "writeMode": "mutable"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.memoryThrottlingFactor",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.podPidsLimit",
+    "writeMode": "mutable"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.registryBurst",
+    "writeMode": "mutable",
+    "featureGate": "HyperFleetKubeletAdvanced"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.registryPullQPS",
+    "writeMode": "mutable",
+    "featureGate": "HyperFleetKubeletAdvanced"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.serializeImagePulls",
+    "writeMode": "mutable",
+    "featureGate": "HyperFleetKubeletAdvanced"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.streamingConnectionIdleTimeout",
+    "writeMode": "mutable"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.systemReserved",
+    "writeMode": "immutable"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.topologyManagerPolicy",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.kubelet.topologyManagerScope",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.machineConfig",
+    "writeMode": "service-set"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.machineConfig.allowedKernelArguments",
+    "writeMode": "immutable",
+    "featureGate": "HyperFleetMachineConfig"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.machineConfig.extensions",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.machineConfig.files",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.machineConfig.fips",
+    "writeMode": "immutable"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.machineConfig.kernelArguments",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.machineConfig.kernelType",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.machineConfig.systemdUnits",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.network",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.oauth",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.proxy",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.hostedCluster.configuration.scheduler",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
     "fieldPath": "spec.hostedCluster.controlPlaneRelease",
     "writeMode": "service-set",
     "hidden": true
@@ -367,8 +559,7 @@
   },
   {
     "fieldPath": "spec.hostedCluster.imageContentSources",
-    "writeMode": "service-set",
-    "hidden": true
+    "writeMode": "mutable"
   },
   {
     "fieldPath": "spec.hostedCluster.infraID",
@@ -514,6 +705,11 @@
   },
   {
     "fieldPath": "spec.nodePool.nodeVolumeDetachTimeout",
+    "writeMode": "service-set",
+    "hidden": true
+  },
+  {
+    "fieldPath": "spec.nodePool.osImageStream",
     "writeMode": "service-set",
     "hidden": true
   },

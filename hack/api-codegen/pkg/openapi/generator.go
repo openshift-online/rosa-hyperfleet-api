@@ -48,6 +48,11 @@ func (g *Generator) Generate() error {
 	// Filter hidden fields using the registry
 	filterHiddenFields(definitions)
 
+	// Collapse deeply-nested passthrough types into opaque objects.
+	// The public API exposes the top-level wrapper fields but treats the
+	// embedded HyperShift spec as a pass-through object.
+	collapsePassthroughTypes(definitions)
+
 	output := schemaOutput{
 		OpenAPI: "3.0.0",
 		Info: schemaInfo{
@@ -145,6 +150,20 @@ func (g *Generator) generateDefinitions(roots []*loader.Package) (map[string]api
 	return definitions, nil
 }
 
+// typeToRegistryPrefix maps Go definition type names to the dotted prefix
+// used in the FieldRegistry. The scanner stores paths like "spec.accountId"
+// (rooted at the Cluster/NodePool root type) while openapi-gen definitions
+// are keyed by the Go struct name (e.g., "ClusterSpec").
+var typeToRegistryPrefix = map[string]string{
+	"ClusterSpec":                  "spec",
+	"NodePoolSpec":                 "spec",
+	"HostedClusterSpecPassthrough": "spec.hostedCluster",
+	"NodePoolSpecPassthrough":      "spec.nodePool",
+	"ClusterConfiguration":         "",
+	"KubeletConfig":                "kubelet",
+	"MachineConfigSpec":            "machineConfig",
+}
+
 // filterHiddenFields removes fields marked as hidden in the registry from
 // all schema definitions. A field is hidden when its FieldRegistry entry has
 // Hidden == true (i.e., +k8s:openapi-gen=false).
@@ -161,7 +180,11 @@ func filterHiddenFields(definitions map[string]apiextensionsv1.JSONSchemaProps) 
 	}
 
 	for typeName, schema := range definitions {
-		pruned := pruneHiddenProperties(&schema, typeName, hiddenPaths)
+		prefix, ok := typeToRegistryPrefix[typeName]
+		if !ok {
+			continue
+		}
+		pruned := pruneHiddenProperties(&schema, prefix, hiddenPaths)
 		definitions[typeName] = *pruned
 	}
 }
@@ -174,7 +197,12 @@ func pruneHiddenProperties(schema *apiextensionsv1.JSONSchemaProps, pathPrefix s
 	}
 
 	for propName, propSchema := range schema.Properties {
-		fieldPath := pathPrefix + "." + propName
+		var fieldPath string
+		if pathPrefix == "" {
+			fieldPath = propName
+		} else {
+			fieldPath = pathPrefix + "." + propName
+		}
 		if hidden[fieldPath] {
 			delete(schema.Properties, propName)
 			// Also remove from required list
@@ -197,3 +225,65 @@ func removeRequired(schema *apiextensionsv1.JSONSchemaProps, field string) {
 		}
 	}
 }
+
+// refTargets are types whose properties are replaced with $ref pointers.
+// The key is the parent type, the value maps field name → definition name.
+var refTargets = map[string]map[string]string{
+	"ClusterSpec":                  {"hostedCluster": "HostedClusterSpecPassthrough"},
+	"NodePoolSpec":                 {"nodePool": "NodePoolSpecPassthrough"},
+	"HostedClusterSpecPassthrough": {"configuration": "ClusterConfiguration"},
+	"ClusterConfiguration":         {"kubelet": "KubeletConfig", "machineConfig": "MachineConfigSpec"},
+}
+
+// collapsePassthroughTypes replaces inlined nested type properties with
+// $ref pointers to their named definitions and marks passthrough types
+// with additionalProperties: true. Types not in refTargets have their
+// nested properties stripped to keep the spec shallow.
+func collapsePassthroughTypes(definitions map[string]apiextensionsv1.JSONSchemaProps) {
+	// Mark passthrough types as accepting additional properties
+	for _, typeName := range []string{"HostedClusterSpecPassthrough", "NodePoolSpecPassthrough"} {
+		if schema, ok := definitions[typeName]; ok {
+			schema.AdditionalProperties = &apiextensionsv1.JSONSchemaPropsOrBool{Allows: true}
+			definitions[typeName] = schema
+		}
+	}
+
+	// Replace inlined properties with $ref for all configured targets
+	for parentType, fields := range refTargets {
+		schema, ok := definitions[parentType]
+		if !ok || schema.Properties == nil {
+			continue
+		}
+		for fieldName, defName := range fields {
+			if _, exists := schema.Properties[fieldName]; exists {
+				schema.Properties[fieldName] = apiextensionsv1.JSONSchemaProps{
+					Ref: strPtr("#/definitions/" + defName),
+				}
+			}
+		}
+		definitions[parentType] = schema
+	}
+
+	// Strip remaining inlined sub-properties from passthrough type fields
+	// that aren't wired to $ref (keeps them as shallow type: object).
+	for _, typeName := range []string{"HostedClusterSpecPassthrough", "NodePoolSpecPassthrough"} {
+		schema, ok := definitions[typeName]
+		if !ok {
+			continue
+		}
+		refs := refTargets[typeName]
+		for propName, propSchema := range schema.Properties {
+			if refs != nil {
+				if _, isRef := refs[propName]; isRef {
+					continue
+				}
+			}
+			propSchema.Properties = nil
+			propSchema.Required = nil
+			schema.Properties[propName] = propSchema
+		}
+		definitions[typeName] = schema
+	}
+}
+
+func strPtr(s string) *string { return &s }

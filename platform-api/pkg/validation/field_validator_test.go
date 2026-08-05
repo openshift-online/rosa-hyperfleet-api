@@ -3,8 +3,8 @@ package validation
 import (
 	"testing"
 
+	"github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen/pkg/registry"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
-	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/registry"
 )
 
 func newTestValidator(entries map[string]registry.FieldMeta) *FieldValidator {

@@ -2257,42 +2257,54 @@ components:
 
     # Cluster Schemas
     ClusterSpec:
-      type: object
-      description: |
-        Cluster specification following the hyperfleet-operator v1alpha1.ClusterSpec
-        type. Contains a `creatorARN` and a nested `hostedCluster` field that follows
-        the HyperShift v1beta1 HostedClusterSpec schema.
+      description: ClusterSpec defines the desired state of a ROSA HCP cluster.
       properties:
-        creatorARN:
-          type: string
-          description: ARN of the user who created this cluster (auto-populated by the API)
-        hostedCluster:
-          type: object
-          description: |
-            HyperShift v1beta1 HostedClusterSpec. Key fields include:
-            - platform: Cloud provider configuration (type, aws)
-            - networking: Cluster/service/machine network CIDRs
-            - release: OpenShift release image
-            - issuerURL: OIDC issuer URL (auto-populated)
-          additionalProperties: true
-
+          deleteProtection:
+              description: DeleteProtection prevents accidental deletion when enabled.
+              type: boolean
+          displayName:
+              description: DisplayName is a human-readable name for the cluster.
+              maxLength: 256
+              type: string
+          expirationTimestamp:
+              description: ExpirationTimestamp marks when this cluster should be automatically deleted.
+              format: date-time
+              type: string
+          hostedCluster:
+              $ref: '#/components/schemas/HostedClusterSpecPassthrough'
+          properties:
+              additionalProperties:
+                  type: string
+              description: Properties are arbitrary key-value pairs for customer metadata.
+              type: object
+          tags:
+              additionalProperties:
+                  type: string
+              description: Tags are customer-defined labels for organizational purposes.
+              type: object
+      required:
+          - hostedCluster
+      type: object
     NodePoolSpec:
-      type: object
-      description: |
-        NodePool specification following the hyperfleet-operator v1alpha1.NodePoolSpec
-        type. Contains a nested `nodePool` field that follows the HyperShift v1beta1
-        NodePoolSpec schema.
+      description: NodePoolSpec defines the desired state of a NodePool.
       properties:
-        nodePool:
-          type: object
-          description: |
-            HyperShift v1beta1 NodePoolSpec. Key fields include:
-            - platform: Cloud provider configuration (type, aws with instanceType, rootVolume)
-            - replicas: Number of worker nodes (default: 2)
-            - release: OpenShift release image
-            - management: Upgrade and repair configuration
-          additionalProperties: true
-
+          autoRepair:
+              description: AutoRepair enables automatic repair of unhealthy nodes.
+              type: boolean
+          displayName:
+              description: DisplayName is a human-readable name for the node pool.
+              maxLength: 256
+              type: string
+          labels:
+              additionalProperties:
+                  type: string
+              description: Labels are customer-defined labels applied to nodes.
+              type: object
+          nodePool:
+              $ref: '#/components/schemas/NodePoolSpecPassthrough'
+      required:
+          - nodePool
+      type: object
     Cluster:
       type: object
       description: A user cluster resource
@@ -2942,6 +2954,125 @@ components:
         total:
           type: integer
 
+
+    HostedClusterSpecPassthrough:
+      additionalProperties: true
+      description: HostedClusterSpecPassthrough mirrors HostedClusterSpec from upstream HyperShift
+      properties:
+          autoNode:
+              description: autoNode specifies the configuration for automatic node provisioning and lifecycle management.
+              type: object
+          channel:
+              description: channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
+              type: string
+          configuration:
+              $ref: '#/components/schemas/ClusterConfiguration'
+          fips:
+              description: fips indicates whether this cluster's nodes will be running in FIPS mode.
+              type: boolean
+          imageContentSources:
+              description: imageContentSources specifies image mirrors that can be used by cluster
+              items:
+                  description: |-
+                      ImageContentSource specifies image mirrors that can be used by cluster nodes
+                      to pull content. For cluster workloads, if a container image registry host of
+                      the pullspec matches Source then one of the Mirrors are substituted as hosts
+                      in the pullspec and tried in order to fetch the image.
+                  properties:
+                      mirrors:
+                          description: mirrors are one or more repositories that may also contain the same images.
+                          items:
+                              maxLength: 255
+                              type: string
+                          maxItems: 255
+                          type: array
+                          x-kubernetes-list-type: set
+                      source:
+                          description: |-
+                              source is the repository that users refer to, e.g. in image pull
+                              specifications.
+                          maxLength: 255
+                          type: string
+                  required:
+                      - source
+                  type: object
+              type: array
+          operatorConfiguration:
+              description: operatorConfiguration specifies configuration for individual OCP operators in the cluster.
+              type: object
+          pausedUntil:
+              description: pausedUntil is a field that can be used to pause reconciliation on the HostedCluster controller, resulting in any change to the HostedCluster being ignored.
+              type: string
+      required:
+          - autoNode
+          - fips
+      type: object
+    NodePoolSpecPassthrough:
+      additionalProperties: true
+      description: NodePoolSpecPassthrough mirrors NodePoolSpec from upstream HyperShift
+      type: object
+    ClusterConfiguration:
+      description: |-
+          ClusterConfiguration specifies configuration for individual OCP components in the cluster.
+          This is a HyperFleet-owned mirror of hypershiftv1beta1.ClusterConfiguration that allows
+          us to add granular markers to nested fields like kubelet config.
+      properties:
+          kubelet:
+              $ref: '#/components/schemas/KubeletConfig'
+          machineConfig:
+              $ref: '#/components/schemas/MachineConfigSpec'
+      type: object
+    KubeletConfig:
+      description: KubeletConfig specifies kubelet configuration with granular markers for customer control.
+      properties:
+          containerLogMaxFiles:
+              format: int32
+              type: integer
+          containerLogMaxSize:
+              type: string
+          imageGCHighThresholdPercent:
+              format: int32
+              type: integer
+          imageGCLowThresholdPercent:
+              format: int32
+              type: integer
+          imageMinimumGCAge:
+              type: string
+          kubeReserved:
+              additionalProperties:
+                  type: string
+              type: object
+          maxPods:
+              format: int32
+              type: integer
+          podPidsLimit:
+              format: int64
+              type: integer
+          registryBurst:
+              format: int32
+              type: integer
+          registryPullQPS:
+              format: int32
+              type: integer
+          serializeImagePulls:
+              type: boolean
+          streamingConnectionIdleTimeout:
+              type: string
+          systemReserved:
+              additionalProperties:
+                  type: string
+              type: object
+      type: object
+    MachineConfigSpec:
+      description: MachineConfigSpec specifies machine-level configuration.
+      properties:
+          allowedKernelArguments:
+              items:
+                  type: string
+              type: array
+          fips:
+              type: boolean
+      type: object
   responses:
     BadRequest:
       description: Bad request

@@ -60,3 +60,4 @@ hyperfleet-operator/compactor
 
 # Codegen intermediate files
 *.passthrough.go.raw
+platform-api/openapi/generated-schemas.json

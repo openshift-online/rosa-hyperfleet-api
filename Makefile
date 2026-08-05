@@ -8,6 +8,7 @@
 	manifests generate generate-clientset verify-clientset \
 	generate-public-deepcopy setup-envtest \
 	codegen-passthrough codegen-registry codegen-verify codegen verify-codegen \
+	generate-openapi verify-openapi swagger-ui \
 	image-api image-operator image-push-api image-push-operator
 
 # ── Configuration ────────────────────────────────────────────────────────
@@ -117,6 +118,9 @@ help:
 	@echo "  codegen-registry     Generate field metadata registry from markers"
 	@echo "  codegen-verify       Verify codegen outputs compile"
 	@echo "  verify-codegen       Fail if codegen outputs are out of date"
+	@echo "  generate-openapi     Generate and merge typed schemas into OpenAPI spec"
+	@echo "  verify-openapi       Fail if OpenAPI spec is out of date with codegen"
+	@echo "  swagger-ui           Run Swagger UI locally (default port 8282)"
 	@echo "  setup-envtest        Install envtest binaries (etcd, kube-apiserver)"
 	@echo "  deps                 Download and tidy all modules"
 	@echo ""
@@ -142,6 +146,7 @@ build-api-codegen:
 	cd hack/api-codegen && go build -o ../../bin/passthrough-gen ./cmd/passthrough-gen
 	cd hack/api-codegen && go build -o ../../bin/marker-scanner ./cmd/marker-scanner
 	cd hack/api-codegen && go build -o ../../bin/openapi-gen ./cmd/openapi-gen
+	cd hack/api-codegen && go build -o ../../bin/openapi-merge ./cmd/openapi-merge
 	cd hack/api-codegen && go build -o ../../bin/conversion-gen ./cmd/conversion-gen
 	cd hack/api-codegen && go build -o ../../bin/crd-variants ./cmd/crd-variants
 	cd hack/api-codegen && go build -o ../../bin/featuregate-info ./cmd/featuregate-info
@@ -340,18 +345,43 @@ generate-public-deepcopy: codegen-passthrough $(CONTROLLER_GEN)
 codegen-registry: generate-public-deepcopy build-api-codegen
 	./bin/marker-scanner \
 		-input-dirs api/public/v2alpha1 \
-		-output-file platform-api/internal/codegen/registry/field_metadata.go \
+		-output-file hack/api-codegen/pkg/registry/field_metadata.go \
 		$(if $(VERBOSE),-verbose)
 
 codegen-verify: codegen-registry
 	cd api/public/v2alpha1 && go build ./...
-	cd platform-api && go build ./internal/codegen/...
+	cd platform-api && go build ./...
 
 codegen: codegen-verify
 
 verify-codegen: codegen
 	git diff --exit-code api/public/v2alpha1/zz_generated.deepcopy.go
-	git diff --exit-code platform-api/internal/codegen/registry/
+	git diff --exit-code hack/api-codegen/pkg/registry/
+
+OPENAPI_GENERATED ?= platform-api/openapi/generated-schemas.json
+OPENAPI_SPEC      ?= platform-api/openapi/openapi.yaml
+
+generate-openapi: codegen-registry
+	cd hack/api-codegen && go build -o ../../bin/openapi-gen ./cmd/openapi-gen
+	./bin/openapi-gen \
+		-input-dirs ./api/public/v2alpha1 \
+		-output-file $(OPENAPI_GENERATED)
+	./bin/openapi-merge \
+		-spec $(OPENAPI_SPEC) \
+		-generated $(OPENAPI_GENERATED) \
+		-schemas ClusterSpec,NodePoolSpec,HostedClusterSpecPassthrough,NodePoolSpecPassthrough,ClusterConfiguration,KubeletConfig,MachineConfigSpec
+
+verify-openapi: generate-openapi
+	git diff --exit-code $(OPENAPI_SPEC)
+
+SWAGGER_UI_PORT ?= 8282
+
+swagger-ui:
+	@echo "Swagger UI available at http://localhost:$(SWAGGER_UI_PORT)"
+	$(CONTAINER_ENGINE) run --rm -p $(SWAGGER_UI_PORT):8080 \
+		-e SWAGGER_JSON=/spec/openapi.yaml \
+		-v $(CURDIR)/$(OPENAPI_SPEC):/spec/openapi.yaml:ro \
+		swaggerapi/swagger-ui
 
 ENVTEST_BIN_DIR ?= $(shell pwd)/.envtest
 
