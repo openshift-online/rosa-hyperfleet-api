@@ -66,6 +66,50 @@ spec:
               metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
               The owning AWS account is stored as the label hyperfleet.io/account-id.
             properties:
+              controlPlaneUpgradePolicy:
+                description: ControlPlaneUpgradePolicy is the control plane upgrade
+                  policy defined by the user.
+                properties:
+                  enableMinorVersionUpgrades:
+                    description: |-
+                      EnableMinorVersionUpgrades indicates if minor version upgrades are allowed for automatic upgrades.
+                      Manual upgrades always allow it.
+                    type: boolean
+                  nextRun:
+                    description: NextRun is the time the upgrade should run for "manual"
+                      upgrade policies
+                    format: date-time
+                    type: string
+                  schedule:
+                    description: Schedule defines a cron expression that calculates
+                      the next automatic upgrade scheduling.
+                    type: string
+                  scheduleType:
+                    description: |-
+                      ScheduleType indicates if the control plane upgrade policy is "manual" and it's executed only one time or
+                      whether it is "automatic" where an expression will calculate recurrent upgrades.
+                    enum:
+                    - manual
+                    - automatic
+                    type: string
+                  updateType:
+                    description: |-
+                      UpdateType indicates if it is a control plane upgrade policy defined by the user or
+                      triggered by Red Hat for addressing critical CVEs.
+                    enum:
+                    - ControlPlane
+                    - ControlPlaneCVE
+                    type: string
+                  version:
+                    description: Version is the desired upgrade version on "manual"
+                      upgrade policies.
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: version and nextRun are required when scheduleType is manual
+                  rule: self.scheduleType != 'manual' || (has(self.version) && has(self.nextRun))
+                - message: schedule must not be set when scheduleType is manual
+                  rule: self.scheduleType != 'manual' || !has(self.schedule)
               creatorARN:
                 description: |-
                   CreatorARN is the IAM ARN of the user who created this cluster.
@@ -8655,6 +8699,18 @@ spec:
                 required:
                 - host
                 - port
+                type: object
+              controlPlaneUpgradePolicy:
+                description: ControlPlaneUpgradePolicy summarizes the control plane
+                  upgrade policy status.
+                properties:
+                  nextRun:
+                    description: |-
+                      NextRun is the time when the control plane will upgrade.
+                      When the ScheduleType is "manual" it will match with the NextRun defined by the user.
+                      When the ScheduleType is "automatic" it will be calculated from the Schedule cron expression.
+                    format: date-time
+                    type: string
                 type: object
               observedGeneration:
                 description: ObservedGeneration is the most recent generation observed

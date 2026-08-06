@@ -53,6 +53,10 @@ type ClusterSpec struct {
 	// (InfraID, DNS, PullSecret, Services, etc.) at render time.
 	// +kubebuilder:validation:Required
 	HostedCluster hypershiftv1beta1.HostedClusterSpec `json:"hostedCluster"`
+
+	// ControlPlaneUpgradePolicy is the control plane upgrade policy defined by the user.
+	// +optional
+	ControlPlaneUpgradePolicy *ControlPlaneUpgradePolicySpec `json:"controlPlaneUpgradePolicy,omitempty"`
 }
 
 // ClusterStatus defines the observed state of a Cluster.
@@ -83,6 +87,9 @@ type ClusterStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// ControlPlaneUpgradePolicy summarizes the control plane upgrade policy status.
+	ControlPlaneUpgradePolicy *ControlPlaneUpgradePolicyStatus `json:"controlPlaneUpgradePolicy,omitempty"`
 }
 
 // PlacementReference identifies the management cluster assignment.

@@ -315,6 +315,12 @@ generate-clientset: $(CLIENT_GEN) $(WIRE_GEN)
 verify-clientset: generate-clientset
 	git diff --exit-code clientset/
 
+verify-generate: generate
+	git diff --exit-code api/
+
+verify-manifests: manifests
+	git diff --exist-code hyperfleet-operator/config/crd/bases/
+
 ENVTEST_BIN_DIR ?= $(shell pwd)/.envtest
 
 setup-envtest: $(SETUP_ENVTEST)
