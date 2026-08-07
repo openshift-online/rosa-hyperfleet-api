@@ -10,7 +10,7 @@ require (
 )
 
 require (
-	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/gobuffalo/flect v1.0.3 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
