@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -39,9 +40,10 @@ type SQSClient interface {
 	DeleteMessage(ctx context.Context, in *sqs.DeleteMessageInput, opts ...func(*sqs.Options)) (*sqs.DeleteMessageOutput, error)
 }
 
-// StatusNotification is the JSON payload delivered by SNS (via SQS) after
-// kube-applier writes a status document to DynamoDB. It matches the message
-// format published by kube-applier/internal/database/statussnspublisher.
+// StatusNotification is the JSON payload delivered by EventBridge Pipes (via SQS)
+// after kube-applier writes a status document to DynamoDB. The pipe's
+// input_template extracts the partition key and table suffix from the DynamoDB
+// stream record.
 type StatusNotification struct {
 	DocumentID  string `json:"documentID"`
 	TableSuffix string `json:"tableSuffix"` // e.g. "-applydesires" or "-readdesires"
@@ -121,6 +123,21 @@ func (c *Consumer) handleMessage(ctx context.Context, body *string, receiptHandl
 
 	if notification.DocumentID == "" {
 		c.logger.Info("received SQS message with empty documentID; skipping")
+		c.deleteMessage(ctx, receiptHandle)
+		return
+	}
+
+	// Guard against misconfigured EventBridge Pipes input_template: if the pipe
+	// used jsonencode() instead of a raw string, the JSONPath placeholder is
+	// delivered literally. Detect this so the misconfiguration is obvious rather
+	// than silently dropped by the EventRouter.
+	if strings.HasPrefix(notification.DocumentID, "<") && strings.HasSuffix(notification.DocumentID, ">") {
+		c.logger.Error("documentID looks like an unresolved EventBridge JSONPath placeholder; "+
+			"check that the pipe's input_template uses a raw string (not jsonencode) and that "+
+			"the JSONPath <$.dynamodb.Keys.documentID.S> resolves against the stream record",
+			"documentID", notification.DocumentID,
+			"tableSuffix", notification.TableSuffix,
+		)
 		c.deleteMessage(ctx, receiptHandle)
 		return
 	}

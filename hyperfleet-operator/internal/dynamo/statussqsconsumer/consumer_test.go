@@ -233,6 +233,38 @@ func TestConsumer_SQSError_Retries(t *testing.T) {
 	}
 }
 
+func TestConsumer_UnresolvedPlaceholderDocumentID(t *testing.T) {
+	// If the EventBridge Pipe's input_template was built with jsonencode() instead
+	// of a raw string, the JSONPath placeholder is delivered literally as the
+	// documentID value. The consumer must detect and log this without dispatching.
+	var dispatched []string
+
+	mock := &mockSQSClient{
+		messages: []sqstypes.Message{
+			{
+				Body:          aws.String(`{"documentID":"<$.dynamodb.Keys.documentID.S>","tableSuffix":"-applydesires"}`),
+				ReceiptHandle: aws.String("rh-placeholder"),
+			},
+		},
+	}
+
+	c := New(mock, "https://sqs.test/queue", func(id string) {
+		dispatched = append(dispatched, id)
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	c.Run(ctx)
+
+	if len(dispatched) != 0 {
+		t.Errorf("expected no dispatch for placeholder documentID; got %v", dispatched)
+	}
+	// Message must still be deleted to avoid queue poison.
+	if len(mock.deleteCalls) != 1 || mock.deleteCalls[0] != "rh-placeholder" {
+		t.Errorf("expected placeholder message deleted; deleteCalls=%v", mock.deleteCalls)
+	}
+}
+
 // orderingMock lets tests verify dispatch-before-delete ordering.
 type orderingMock struct {
 	messages   []sqstypes.Message
