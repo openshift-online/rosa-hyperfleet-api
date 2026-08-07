@@ -19,26 +19,26 @@ limitations under the License.
 package fake
 
 import (
-	internalversion "github.com/openshift-online/rosa-hyperfleet-api/clientset/generated/typed/v1alpha1/internalversion"
+	public "github.com/openshift-online/rosa-hyperfleet-api/clientset/generated/typed/v1alpha1/public"
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
 )
 
-type FakeV1alpha1 struct {
+type FakeV1alpha1Public struct {
 	*testing.Fake
 }
 
-func (c *FakeV1alpha1) Clusters(namespace string) internalversion.ClusterInterface {
+func (c *FakeV1alpha1Public) Clusters(namespace string) public.ClusterInterface {
 	return newFakeClusters(c, namespace)
 }
 
-func (c *FakeV1alpha1) NodePools(namespace string) internalversion.NodePoolInterface {
+func (c *FakeV1alpha1Public) NodePools(namespace string) public.NodePoolInterface {
 	return newFakeNodePools(c, namespace)
 }
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *FakeV1alpha1) RESTClient() rest.Interface {
+func (c *FakeV1alpha1Public) RESTClient() rest.Interface {
 	var ret *rest.RESTClient
 	return ret
 }

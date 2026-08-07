@@ -10,12 +10,15 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"text/template"
 
 	"github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen/pkg/registry"
 )
+
+var clientgenMarkerRE = regexp.MustCompile(`\+genclient\b|\+wire:`)
 
 // Generator generates REST types and conversion functions from CRD types.
 type Generator struct {
@@ -34,6 +37,8 @@ type Generator struct {
 
 	knownTypes     map[string]bool
 	typeInfos      map[string]*typeInfo
+	namedTypes     map[string]*namedTypeInfo
+	constsByType   map[string][]*constEntry
 	emittedHelpers map[string]bool
 }
 
@@ -42,6 +47,18 @@ type typeInfo struct {
 	StructType *ast.StructType
 	Doc        *ast.CommentGroup
 	Fields     []*fieldInfo
+	Markers    []string
+}
+
+type namedTypeInfo struct {
+	Name       string
+	Underlying string
+	Doc        *ast.CommentGroup
+}
+
+type constEntry struct {
+	Name  string
+	Value string
 }
 
 type fieldInfo struct {
@@ -64,6 +81,8 @@ func NewGenerator(apiVersion, crdPackage string, inputDirs []string, outputDir s
 		OutputDir:      outputDir,
 		knownTypes:     make(map[string]bool),
 		typeInfos:      make(map[string]*typeInfo),
+		namedTypes:     make(map[string]*namedTypeInfo),
+		constsByType:   make(map[string][]*constEntry),
 		emittedHelpers: make(map[string]bool),
 	}
 }
@@ -128,51 +147,143 @@ func (g *Generator) parseTypes() error {
 			for _, file := range pkg.Files {
 				for _, decl := range file.Decls {
 					genDecl, ok := decl.(*ast.GenDecl)
-					if !ok || genDecl.Tok != token.TYPE {
+					if !ok {
 						continue
 					}
-					for _, spec := range genDecl.Specs {
-						typeSpec, ok := spec.(*ast.TypeSpec)
-						if !ok || !typeSpec.Name.IsExported() {
-							continue
-						}
 
-						typeName := typeSpec.Name.Name
-						g.knownTypes[typeName] = true
-
-						structType, ok := typeSpec.Type.(*ast.StructType)
-						if !ok {
-							continue
-						}
-
-						ti := &typeInfo{
-							Name:       typeName,
-							StructType: structType,
-							Doc:        genDecl.Doc,
-						}
-
-						for _, field := range structType.Fields.List {
-							if len(field.Names) == 0 {
+					switch genDecl.Tok {
+					case token.TYPE:
+						for _, spec := range genDecl.Specs {
+							typeSpec, ok := spec.(*ast.TypeSpec)
+							if !ok || !typeSpec.Name.IsExported() {
 								continue
 							}
-							for _, name := range field.Names {
-								if !name.IsExported() {
-									continue
+
+							typeName := typeSpec.Name.Name
+							g.knownTypes[typeName] = true
+
+							structType, ok := typeSpec.Type.(*ast.StructType)
+							if ok {
+								ti := &typeInfo{
+									Name:       typeName,
+									StructType: structType,
+									Doc:        genDecl.Doc,
 								}
-								fi := g.parseField(typeName, field, name)
-								if fi != nil {
-									ti.Fields = append(ti.Fields, fi)
+
+								for _, field := range structType.Fields.List {
+									if len(field.Names) == 0 {
+										continue
+									}
+									for _, name := range field.Names {
+										if !name.IsExported() {
+											continue
+										}
+										fi := g.parseField(typeName, field, name)
+										if fi != nil {
+											ti.Fields = append(ti.Fields, fi)
+										}
+									}
+								}
+
+								g.typeInfos[typeName] = ti
+								continue
+							}
+
+							if ident, ok := typeSpec.Type.(*ast.Ident); ok {
+								g.namedTypes[typeName] = &namedTypeInfo{
+									Name:       typeName,
+									Underlying: ident.Name,
+									Doc:        genDecl.Doc,
 								}
 							}
 						}
 
-						g.typeInfos[typeName] = ti
+					case token.CONST:
+						for _, spec := range genDecl.Specs {
+							valueSpec, ok := spec.(*ast.ValueSpec)
+							if !ok || len(valueSpec.Names) == 0 {
+								continue
+							}
+							constTypeName := ""
+							if valueSpec.Type != nil {
+								if ident, ok := valueSpec.Type.(*ast.Ident); ok {
+									constTypeName = ident.Name
+								}
+							}
+							if constTypeName == "" {
+								continue
+							}
+							for i, name := range valueSpec.Names {
+								if !name.IsExported() || i >= len(valueSpec.Values) {
+									continue
+								}
+								lit, ok := valueSpec.Values[i].(*ast.BasicLit)
+								if !ok {
+									continue
+								}
+								g.constsByType[constTypeName] = append(g.constsByType[constTypeName], &constEntry{
+									Name:  name.Name,
+									Value: lit.Value,
+								})
+							}
+						}
 					}
 				}
+
+				g.extractClientMarkers(file)
 			}
 		}
 	}
 	return nil
+}
+
+// extractClientMarkers scans all comment groups in a file for +genclient and
+// +wire:* markers that appear in floating comment blocks (separated by a blank
+// line from the type's doc comment). It associates each marker set with the
+// nearest following type declaration, mirroring the convention used by
+// client-gen and wire-gen.
+func (g *Generator) extractClientMarkers(file *ast.File) {
+	type typePos struct {
+		name string
+		pos  token.Pos
+	}
+	var typeDecls []typePos
+	for _, decl := range file.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok || gd.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			ts, ok := spec.(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
+			typeDecls = append(typeDecls, typePos{name: ts.Name.Name, pos: gd.Pos()})
+		}
+	}
+	sort.Slice(typeDecls, func(i, j int) bool { return typeDecls[i].pos < typeDecls[j].pos })
+
+	for _, cg := range file.Comments {
+		var markers []string
+		for _, c := range cg.List {
+			if clientgenMarkerRE.MatchString(c.Text) {
+				markers = append(markers, strings.TrimSpace(strings.TrimPrefix(c.Text, "//")))
+			}
+		}
+		if len(markers) == 0 {
+			continue
+		}
+		cgEnd := cg.End()
+		for _, td := range typeDecls {
+			if td.pos <= cgEnd {
+				continue
+			}
+			if ti, ok := g.typeInfos[td.name]; ok {
+				ti.Markers = append(ti.Markers, markers...)
+			}
+			break
+		}
+	}
 }
 
 func (g *Generator) parseField(typeName string, field *ast.Field, name *ast.Ident) *fieldInfo {
@@ -390,6 +501,8 @@ type restTypeData struct {
 	TypeName    string
 	DocComment  string
 	Fields      []restFieldData
+	Embeds      []restEmbedData
+	IsRoot      bool
 	Imports     importInfo
 	CRDPackage  string
 }
@@ -399,6 +512,11 @@ type restFieldData struct {
 	GoType  string
 	JSONTag string
 	Comment string
+}
+
+type restEmbedData struct {
+	GoType  string
+	JSONTag string
 }
 
 var restTypeTmpl = template.Must(template.New("restType").Parse(`// Code generated by conversion-gen. DO NOT EDIT.
@@ -429,6 +547,9 @@ import (
 {{ end }}
 {{ .DocComment }}
 type {{ .TypeName }} struct {
+{{- range .Embeds }}
+	{{ .GoType }} ` + "`" + `json:"{{ .JSONTag }}"` + "`" + `
+{{- end }}
 {{- range .Fields }}
 {{- if .Comment }}
 	{{ .Comment }}
@@ -436,7 +557,33 @@ type {{ .TypeName }} struct {
 	{{ .GoName }} {{ .GoType }} ` + "`" + `json:"{{ .JSONTag }}"` + "`" + `
 {{- end }}
 }
+{{ if .IsRoot }}
+// +kubebuilder:object:root=true
+type {{ .TypeName }}List struct {
+	metav1.TypeMeta ` + "`" + `json:",inline"` + "`" + `
+	metav1.ListMeta ` + "`" + `json:"metadata,omitempty"` + "`" + `
+	Items []{{ .TypeName }} ` + "`" + `json:"items"` + "`" + `
+}
+{{ end }}
 `))
+
+// restConstData feeds the constants template.
+type restConstData struct {
+	PackageName string
+	Types       []restConstTypeData
+}
+
+type restConstTypeData struct {
+	TypeName   string
+	Underlying string
+	DocComment string
+	Consts     []restConstEntryData
+}
+
+type restConstEntryData struct {
+	Name  string
+	Value string
+}
 
 func (g *Generator) generateRESTTypes() error {
 	restDir := g.restOutputDir()
@@ -446,6 +593,16 @@ func (g *Generator) generateRESTTypes() error {
 
 	// Discover resource types dynamically: types with both Spec and Status subtypes
 	resourceTypes := g.discoverResourceTypes()
+
+	// Identify root resource types (have both Spec and Status, not a sub-type)
+	rootTypes := make(map[string]bool)
+	for typeName := range g.typeInfos {
+		_, hasSpec := g.typeInfos[typeName+"Spec"]
+		_, hasStatus := g.typeInfos[typeName+"Status"]
+		if hasSpec && hasStatus && !strings.Contains(typeName, "Passthrough") {
+			rootTypes[typeName] = true
+		}
+	}
 
 	// Build the full set of types being generated as REST types (including passthrough)
 	restTypeSet := make(map[string]bool)
@@ -458,13 +615,19 @@ func (g *Generator) generateRESTTypes() error {
 		}
 	}
 
+	// Find named types referenced by REST type fields and add them to restTypeSet
+	referencedNamedTypes := g.findReferencedNamedTypes(restTypeSet)
+	for _, nt := range referencedNamedTypes {
+		restTypeSet[nt.Name] = true
+	}
+
 	for _, typeName := range resourceTypes {
 		ti, exists := g.typeInfos[typeName]
 		if !exists {
 			continue
 		}
 
-		code, err := g.renderRESTType(ti, restTypeSet)
+		code, err := g.renderRESTType(ti, restTypeSet, rootTypes[typeName])
 		if err != nil {
 			return fmt.Errorf("rendering REST type %s: %w", typeName, err)
 		}
@@ -479,7 +642,7 @@ func (g *Generator) generateRESTTypes() error {
 	for typeName := range g.typeInfos {
 		if strings.Contains(typeName, "Passthrough") {
 			ti := g.typeInfos[typeName]
-			code, err := g.renderRESTType(ti, restTypeSet)
+			code, err := g.renderRESTType(ti, restTypeSet, false)
 			if err != nil {
 				return fmt.Errorf("rendering REST type %s: %w", typeName, err)
 			}
@@ -490,7 +653,103 @@ func (g *Generator) generateRESTTypes() error {
 		}
 	}
 
+	// Generate constants file for referenced named types
+	if len(referencedNamedTypes) > 0 {
+		if err := g.generateRESTConstants(referencedNamedTypes); err != nil {
+			return fmt.Errorf("generating REST constants: %w", err)
+		}
+	}
+
 	return nil
+}
+
+// findReferencedNamedTypes returns named types (with const blocks) that are
+// referenced by fields in the REST type set.
+func (g *Generator) findReferencedNamedTypes(restTypeSet map[string]bool) []*namedTypeInfo {
+	needed := make(map[string]bool)
+	for typeName := range restTypeSet {
+		ti, ok := g.typeInfos[typeName]
+		if !ok {
+			continue
+		}
+		for _, fi := range ti.Fields {
+			if fi.Hidden {
+				continue
+			}
+			base := strings.TrimPrefix(fi.GoType, "*")
+			base = strings.TrimPrefix(base, "[]")
+			if _, isNamed := g.namedTypes[base]; isNamed {
+				if _, hasConsts := g.constsByType[base]; hasConsts {
+					needed[base] = true
+				}
+			}
+		}
+	}
+
+	result := make([]*namedTypeInfo, 0, len(needed))
+	for name := range needed {
+		result = append(result, g.namedTypes[name])
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+	return result
+}
+
+func (g *Generator) generateRESTConstants(namedTypes []*namedTypeInfo) error {
+	var types []restConstTypeData
+	for _, nt := range namedTypes {
+		docComment := ""
+		if nt.Doc != nil {
+			lines := strings.Split(strings.TrimSpace(nt.Doc.Text()), "\n")
+			var docLines []string
+			for _, line := range lines {
+				if !strings.HasPrefix(line, "//") {
+					docLines = append(docLines, "// "+line)
+				} else {
+					docLines = append(docLines, line)
+				}
+			}
+			docComment = strings.Join(docLines, "\n")
+		}
+
+		var consts []restConstEntryData
+		for _, ce := range g.constsByType[nt.Name] {
+			consts = append(consts, restConstEntryData{
+				Name:  ce.Name,
+				Value: ce.Value,
+			})
+		}
+
+		types = append(types, restConstTypeData{
+			TypeName:   nt.Name,
+			Underlying: nt.Underlying,
+			DocComment: docComment,
+			Consts:     consts,
+		})
+	}
+
+	data := restConstData{
+		PackageName: g.restPackageName(),
+		Types:       types,
+	}
+
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "// Code generated by conversion-gen. DO NOT EDIT.\n\npackage %s\n", data.PackageName)
+	for _, td := range data.Types {
+		if td.DocComment != "" {
+			fmt.Fprintf(&buf, "\n%s\n", td.DocComment)
+		} else {
+			fmt.Fprintln(&buf)
+		}
+		fmt.Fprintf(&buf, "type %s %s\n\nconst (\n", td.TypeName, td.Underlying)
+		for _, c := range td.Consts {
+			fmt.Fprintf(&buf, "\t%s %s = %s\n", c.Name, td.TypeName, c.Value)
+		}
+		fmt.Fprintln(&buf, ")")
+	}
+
+	return g.writeRESTFile("constants.go", buf.String())
 }
 
 // discoverResourceTypes finds types that form CRD resources (have matching
@@ -548,7 +807,7 @@ func (g *Generator) addReferencedTypes(typeSet map[string]bool) {
 	}
 }
 
-func (g *Generator) renderRESTType(ti *typeInfo, restTypeSet map[string]bool) (string, error) {
+func (g *Generator) renderRESTType(ti *typeInfo, restTypeSet map[string]bool, isRoot bool) (string, error) {
 	var visibleFields []restFieldData
 	var goTypes []string
 
@@ -615,12 +874,34 @@ func (g *Generator) renderRESTType(ti *typeInfo, restTypeSet map[string]bool) (s
 		docComment = fmt.Sprintf("// %s is the REST representation of %s (visible fields only)", ti.Name, ti.Name)
 	}
 
+	if isRoot {
+		docComment += "\n// +kubebuilder:object:root=true\n// +kubebuilder:resource:scope=Namespaced\n// +kubebuilder:subresource:status"
+		for _, m := range ti.Markers {
+			docComment += "\n// " + m
+		}
+	}
+
+	var embeds []restEmbedData
+	if isRoot {
+		embeds = []restEmbedData{
+			{GoType: "metav1.TypeMeta", JSONTag: ",inline"},
+			{GoType: "metav1.ObjectMeta", JSONTag: "metadata,omitempty"},
+		}
+	}
+
+	imports := g.detectImports(goTypes)
+	if isRoot {
+		imports.NeedsMetav1 = true
+	}
+
 	data := restTypeData{
 		PackageName: g.restPackageName(),
 		TypeName:    ti.Name,
 		DocComment:  docComment,
 		Fields:      visibleFields,
-		Imports:     g.detectImports(goTypes),
+		Embeds:      embeds,
+		IsRoot:      isRoot,
+		Imports:     imports,
 		CRDPackage:  g.CRDPackage,
 	}
 
@@ -830,8 +1111,10 @@ func Project{{ .Resource }}(crd *v1alpha1.{{ .Resource }}) *rest.{{ .Resource }}
 	spec := project{{ .SpecType }}(crd.Spec)
 	status := project{{ .StatusType }}(crd.Status)
 	return &rest.{{ .Resource }}{
-		Spec:   spec,
-		Status: status,
+		TypeMeta:   crd.TypeMeta,
+		ObjectMeta: crd.ObjectMeta,
+		Spec:       spec,
+		Status:     status,
 	}
 }
 

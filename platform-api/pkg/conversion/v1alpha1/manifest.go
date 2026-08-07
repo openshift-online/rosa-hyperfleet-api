@@ -21,8 +21,10 @@ func ProjectManifest(crd *v1alpha1.Manifest) *rest.Manifest {
 	spec := projectManifestSpec(crd.Spec)
 	status := projectManifestStatus(crd.Status)
 	return &rest.Manifest{
-		Spec:   spec,
-		Status: status,
+		TypeMeta:   crd.TypeMeta,
+		ObjectMeta: crd.ObjectMeta,
+		Spec:       spec,
+		Status:     status,
 	}
 }
 

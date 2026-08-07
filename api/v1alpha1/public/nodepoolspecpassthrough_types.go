@@ -8,6 +8,14 @@ import (
 
 // NodePoolSpecPassthrough mirrors NodePoolSpec from upstream HyperShift
 type NodePoolSpecPassthrough struct {
+	// clusterName is the name of the HostedCluster this NodePool belongs to.
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=mutable
+	ClusterName string `json:"clusterName"`
+	// release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=mutable
+	Release hypershiftv1beta1.Release `json:"release"`
 	// platform specifies the underlying infrastructure provider for the NodePool
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable

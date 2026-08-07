@@ -585,8 +585,7 @@ var FieldRegistry = map[string]FieldMeta{
 	},
 	"spec.hostedCluster.issuerURL": {
 		FieldPath: "spec.hostedCluster.issuerURL",
-		WriteMode: ServiceSet,
-		Hidden:    true,
+		WriteMode: Mutable,
 	},
 	"spec.hostedCluster.kubeAPIServerDNSName": {
 		FieldPath: "spec.hostedCluster.kubeAPIServerDNSName",
@@ -689,8 +688,7 @@ var FieldRegistry = map[string]FieldMeta{
 	},
 	"spec.nodePool.clusterName": {
 		FieldPath: "spec.nodePool.clusterName",
-		WriteMode: ServiceSet,
-		Hidden:    true,
+		WriteMode: Mutable,
 	},
 	"spec.nodePool.config": {
 		FieldPath: "spec.nodePool.config",
@@ -733,8 +731,7 @@ var FieldRegistry = map[string]FieldMeta{
 	},
 	"spec.nodePool.release": {
 		FieldPath: "spec.nodePool.release",
-		WriteMode: ServiceSet,
-		Hidden:    true,
+		WriteMode: Mutable,
 	},
 	"spec.nodePool.replicas": {
 		FieldPath: "spec.nodePool.replicas",

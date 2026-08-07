@@ -3,7 +3,6 @@
 package public
 
 import (
-	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -17,7 +16,7 @@ type PlacementStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Phase summarizes the placement's state: Pending or Bound.
 	// +optional
-	Phase v1alpha1.PlacementPhase `json:"phase,omitempty"`
+	Phase PlacementPhase `json:"phase,omitempty"`
 	// ObservedGeneration is the most recent generation observed by the controller.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`

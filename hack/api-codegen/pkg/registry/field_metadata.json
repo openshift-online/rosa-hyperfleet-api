@@ -564,8 +564,7 @@
   },
   {
     "fieldPath": "spec.hostedCluster.issuerURL",
-    "writeMode": "service-set",
-    "hidden": true
+    "writeMode": "mutable"
   },
   {
     "fieldPath": "spec.hostedCluster.kubeAPIServerDNSName",
@@ -668,8 +667,7 @@
   },
   {
     "fieldPath": "spec.nodePool.clusterName",
-    "writeMode": "service-set",
-    "hidden": true
+    "writeMode": "mutable"
   },
   {
     "fieldPath": "spec.nodePool.config",
@@ -712,8 +710,7 @@
   },
   {
     "fieldPath": "spec.nodePool.release",
-    "writeMode": "service-set",
-    "hidden": true
+    "writeMode": "mutable"
   },
   {
     "fieldPath": "spec.nodePool.replicas",

@@ -33,6 +33,10 @@ type HostedClusterSpecPassthrough struct {
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable
 	Etcd hypershiftv1beta1.EtcdSpec `json:"etcd"`
+	// issuerURL is an OIDC issuer URL which will be used as the issuer in all
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=mutable
+	IssuerURL string `json:"issuerURL,omitempty"`
 	// configuration specifies configuration for individual OCP components in the
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=service-set

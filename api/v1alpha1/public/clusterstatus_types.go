@@ -3,7 +3,6 @@
 package public
 
 import (
-	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -18,7 +17,7 @@ type ClusterStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Phase summarizes the cluster's lifecycle state.
 	// +optional
-	Phase v1alpha1.ClusterPhase `json:"phase,omitempty"`
+	Phase ClusterPhase `json:"phase,omitempty"`
 	// ControlPlaneEndpoint is the API server endpoint for the hosted cluster.
 	// +optional
 	ControlPlaneEndpoint hypershiftv1beta1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`

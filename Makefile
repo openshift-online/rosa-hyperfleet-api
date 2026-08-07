@@ -44,17 +44,17 @@ GINKGO           := $(abspath $(TOOLS_BIN_DIR)/ginkgo)
 # ── SDK generation ───────────────────────────────────────────────────────
 SDK_MODULE        ?= github.com/openshift-online/rosa-hyperfleet-api
 SDK_API_PKG       ?= $(SDK_MODULE)/api
-SDK_INPUT         ?= v1alpha1
+SDK_INPUT         ?= v1alpha1/public
 SDK_CLIENTSET     ?= generated
 SDK_OUTPUT_DIR    ?= $(abspath clientset)
 SDK_OUTPUT_PKG    ?= $(SDK_MODULE)/clientset
-WIRE_INPUT_DIR        ?= $(abspath api/v1alpha1)
+WIRE_INPUT_DIR        ?= $(abspath api/v1alpha1/public)
 WIRE_OUTPUT_DIR       ?= $(abspath clientset/transport)
 WIRE_OUTPUT_PKG       ?= transport
 WRAPPERS_OUTPUT_DIR   ?= $(abspath clientset/wrappers)
 WRAPPERS_OUTPUT_PKG   ?= wrappers
-TYPED_PKG_IMPORT      ?= $(SDK_MODULE)/clientset/generated/typed/v1alpha1/internalversion
-API_PKG_IMPORT        ?= $(SDK_MODULE)/api/v1alpha1
+TYPED_PKG_IMPORT      ?= $(SDK_MODULE)/clientset/generated/typed/v1alpha1/public
+API_PKG_IMPORT        ?= $(SDK_MODULE)/api/v1alpha1/public
 SDK_HEADER_FILE       ?= $(abspath hack/clientset/license-boilerplate.go.txt)
 
 # ── Code generation ───────────────────────────────────────────────────────
@@ -303,7 +303,7 @@ deps:
 # ── Code Generation ──────────────────────────────────────────────────────
 
 manifests: $(CONTROLLER_GEN)
-	cd hyperfleet-operator && $(CONTROLLER_GEN) crd:allowDangerousTypes=true paths="../api/..." output:crd:dir=config/crd/bases
+	cd hyperfleet-operator && $(CONTROLLER_GEN) crd:allowDangerousTypes=true paths="../api/v1alpha1" output:crd:dir=config/crd/bases
 
 generate: $(CONTROLLER_GEN)
 	$(CONTROLLER_GEN) object paths="./api/..."
@@ -328,6 +328,7 @@ generate-clientset: $(CLIENT_GEN) $(WIRE_GEN)
 		--output-dir "$(WRAPPERS_OUTPUT_DIR)" \
 		--output-pkg "$(WRAPPERS_OUTPUT_PKG)" \
 		--typed-pkg-import "$(TYPED_PKG_IMPORT)" \
+		--typed-client-prefix "V1alpha1Public" \
 		--api-pkg-import "$(API_PKG_IMPORT)" \
 		--go-header-file "$(SDK_HEADER_FILE)"
 

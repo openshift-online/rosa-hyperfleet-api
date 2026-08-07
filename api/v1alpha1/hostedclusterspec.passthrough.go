@@ -86,8 +86,8 @@ type HostedClusterSpecPassthrough struct {
 	// +hyperfleet:write-mode=service-set
 	SSHKey corev1.LocalObjectReference `json:"sshKey"`
 	// issuerURL is an OIDC issuer URL which will be used as the issuer in all
-	// +k8s:openapi-gen=false
-	// +hyperfleet:write-mode=service-set
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=mutable
 	IssuerURL string `json:"issuerURL,omitempty"`
 	// serviceAccountSigningKey is a local reference to a secret that must have a "key" key whose content must be the private key
 	// +k8s:openapi-gen=false
@@ -154,12 +154,12 @@ type HostedClusterSpecPassthrough struct {
 // NodePoolSpecPassthrough mirrors NodePoolSpec from upstream HyperShift
 type NodePoolSpecPassthrough struct {
 	// clusterName is the name of the HostedCluster this NodePool belongs to.
-	// +k8s:openapi-gen=false
-	// +hyperfleet:write-mode=service-set
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=mutable
 	ClusterName string `json:"clusterName"`
 	// release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
-	// +k8s:openapi-gen=false
-	// +hyperfleet:write-mode=service-set
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=mutable
 	Release hypershiftv1beta1.Release `json:"release"`
 	// platform specifies the underlying infrastructure provider for the NodePool
 	// +k8s:openapi-gen=true

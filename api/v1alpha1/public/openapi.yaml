@@ -3014,6 +3014,9 @@ components:
                   type: object
               maxItems: 50
               type: array
+          issuerURL:
+              description: issuerURL is an OIDC issuer URL which will be used as the issuer in all
+              type: string
           networking:
               description: networking specifies network configuration for the hosted cluster.
               type: object
@@ -3045,15 +3048,23 @@ components:
       additionalProperties: true
       description: NodePoolSpecPassthrough mirrors NodePoolSpec from upstream HyperShift
       properties:
+          clusterName:
+              description: clusterName is the name of the HostedCluster this NodePool belongs to.
+              type: string
           platform:
               description: platform specifies the underlying infrastructure provider for the NodePool
+              type: object
+          release:
+              description: release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
               type: object
           replicas:
               description: replicas is the desired number of nodes the pool should maintain. If unset, the controller default value is 0.
               format: int32
               type: integer
       required:
+          - clusterName
           - platform
+          - release
       type: object
     ClusterConfiguration:
       description: |-

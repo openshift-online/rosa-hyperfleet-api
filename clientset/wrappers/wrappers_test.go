@@ -21,15 +21,15 @@ import (
 	"testing"
 	"time"
 
-	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
+	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 
-	internalversion "github.com/openshift-online/rosa-hyperfleet-api/clientset/generated/typed/v1alpha1/internalversion"
+	typedclient "github.com/openshift-online/rosa-hyperfleet-api/clientset/generated/typed/v1alpha1/public"
 )
 
-// stubClusterClient is a minimal implementation of internalversion.ClusterInterface.
+// stubClusterClient is a minimal implementation of typedclient.ClusterInterface.
 // Methods that should not be called during validation tests panic to catch regressions.
 type stubClusterClient struct {
 	getFunc func(ctx context.Context, name string, opts metav1.GetOptions) (*v1alpha1.Cluster, error)
@@ -66,9 +66,9 @@ func (s *stubClusterClient) Patch(ctx context.Context, name string, pt types.Pat
 	panic("stubClusterClient.Patch called unexpectedly")
 }
 
-var _ internalversion.ClusterInterface = (*stubClusterClient)(nil)
+var _ typedclient.ClusterInterface = (*stubClusterClient)(nil)
 
-// stubNodePoolClient is a minimal implementation of internalversion.NodePoolInterface.
+// stubNodePoolClient is a minimal implementation of typedclient.NodePoolInterface.
 type stubNodePoolClient struct {
 	getFunc func(ctx context.Context, name string, opts metav1.GetOptions) (*v1alpha1.NodePool, error)
 }
@@ -104,7 +104,7 @@ func (s *stubNodePoolClient) Patch(ctx context.Context, name string, pt types.Pa
 	panic("stubNodePoolClient.Patch called unexpectedly")
 }
 
-var _ internalversion.NodePoolInterface = (*stubNodePoolClient)(nil)
+var _ typedclient.NodePoolInterface = (*stubNodePoolClient)(nil)
 
 // clusterClient helpers
 

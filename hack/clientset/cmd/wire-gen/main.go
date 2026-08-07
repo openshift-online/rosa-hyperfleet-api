@@ -94,7 +94,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 
-	internalversion "{{.TypedPkgImport}}"
+	typedclient "{{.TypedPkgImport}}"
 	v1alpha1 "{{.ApiPkgImport}}"
 )
 {{range .Types}}
@@ -117,7 +117,7 @@ type {{.Name}}Interface interface {
 }
 
 type {{.LowerName}}Client struct {
-	inner internalversion.{{.Name}}Interface
+	inner typedclient.{{.Name}}Interface
 }
 
 func (c *{{.LowerName}}Client) Create(ctx context.Context, obj *v1alpha1.{{.Name}}, opts CreateOptions) (*v1alpha1.{{.Name}}, error) {
@@ -200,8 +200,8 @@ func (c *{{.LowerName}}Client) WaitUntil(ctx context.Context, id string, conditi
 }
 {{- end}}
 {{end -}}
-// V1alpha1Interface is the platform-scoped typed client for the hyperfleet.io/v1alpha1 group.
-type V1alpha1Interface interface {
+// {{.TypedClientPrefix}}Interface is the platform-scoped typed client for the hyperfleet.io/v1alpha1 group.
+type {{.TypedClientPrefix}}Interface interface {
 	RESTClient() rest.Interface
 {{- range .Types}}
 	{{.PluralName}}(namespace string) {{.Name}}Interface
@@ -209,11 +209,11 @@ type V1alpha1Interface interface {
 }
 
 type wrappedV1alpha1 struct {
-	inner internalversion.V1alpha1Interface
+	inner typedclient.{{.TypedClientPrefix}}Interface
 }
 
-// NewV1alpha1Client wraps the generated typed client with platform-specific interfaces.
-func NewV1alpha1Client(inner internalversion.V1alpha1Interface) V1alpha1Interface {
+// New{{.TypedClientPrefix}}Client wraps the generated typed client with platform-specific interfaces.
+func New{{.TypedClientPrefix}}Client(inner typedclient.{{.TypedClientPrefix}}Interface) {{.TypedClientPrefix}}Interface {
 	return &wrappedV1alpha1{inner: inner}
 }
 
@@ -236,6 +236,7 @@ func main() {
 	headerFile := flag.String("go-header-file", "", "file whose contents are prepended to the generated output")
 	typedPkg := flag.String("typed-pkg-import", "", "[wrappers] import path of the generated typed client package")
 	apiPkg := flag.String("api-pkg-import", "", "[wrappers] import path of the CRD API types package")
+	typedClientPrefix := flag.String("typed-client-prefix", "V1alpha1", "[wrappers] group-level interface name prefix (e.g. V1alpha1 or V1alpha1Public)")
 	flag.Parse()
 
 	if *inputDir == "" || *outputDir == "" {
@@ -257,7 +258,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "wire-gen: wrappers mode requires --typed-pkg-import and --api-pkg-import")
 			os.Exit(1)
 		}
-		generateWrappers(*inputDir, *outputDir, *outputPkg, *typedPkg, *apiPkg, header)
+		generateWrappers(*inputDir, *outputDir, *outputPkg, *typedPkg, *apiPkg, *typedClientPrefix, header)
 	default:
 		fatalf("unknown mode %q; use mappings or wrappers", *mode)
 	}
@@ -328,7 +329,7 @@ func collectMappings(dir string) []fieldMapping {
 
 // ── wrappers mode ─────────────────────────────────────────────────────────────
 
-func generateWrappers(inputDir, outputDir, pkg, typedPkgImport, apiPkgImport, header string) {
+func generateWrappers(inputDir, outputDir, pkg, typedPkgImport, apiPkgImport, typedClientPrefix, header string) {
 	types := collectResourceTypes(inputDir)
 	if len(types) == 0 {
 		fatalf("no resource types with +wire:watch or +wire:wait markers found in %s", inputDir)
@@ -362,12 +363,13 @@ func generateWrappers(inputDir, outputDir, pkg, typedPkgImport, apiPkgImport, he
 
 	tmpl := template.Must(template.New("wrappers").Parse(wrappersTmpl))
 	if err := tmpl.Execute(f, map[string]any{
-		"Package":          pkg,
-		"ApiPkgImport":     apiPkgImport,
-		"TypedPkgImport":   typedPkgImport,
-		"Types":            types,
-		"AnyWait":          anyWait,
-		"AnyWatchDisabled": anyWatchDisabled,
+		"Package":           pkg,
+		"ApiPkgImport":      apiPkgImport,
+		"TypedPkgImport":    typedPkgImport,
+		"TypedClientPrefix": typedClientPrefix,
+		"Types":             types,
+		"AnyWait":           anyWait,
+		"AnyWatchDisabled":  anyWatchDisabled,
 	}); err != nil {
 		fatalf("rendering template: %v", err)
 	}

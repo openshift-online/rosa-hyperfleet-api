@@ -20,8 +20,8 @@ package fake
 
 import (
 	clientset "github.com/openshift-online/rosa-hyperfleet-api/clientset/generated"
-	v1alpha1internalversion "github.com/openshift-online/rosa-hyperfleet-api/clientset/generated/typed/v1alpha1/internalversion"
-	fakev1alpha1internalversion "github.com/openshift-online/rosa-hyperfleet-api/clientset/generated/typed/v1alpha1/internalversion/fake"
+	v1alpha1public "github.com/openshift-online/rosa-hyperfleet-api/clientset/generated/typed/v1alpha1/public"
+	fakev1alpha1public "github.com/openshift-online/rosa-hyperfleet-api/clientset/generated/typed/v1alpha1/public/fake"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
@@ -95,7 +95,7 @@ var (
 	_ testing.FakeClient  = &Clientset{}
 )
 
-// V1alpha1 retrieves the V1alpha1Client
-func (c *Clientset) V1alpha1() v1alpha1internalversion.V1alpha1Interface {
-	return &fakev1alpha1internalversion.FakeV1alpha1{Fake: &c.Fake}
+// V1alpha1Public retrieves the V1alpha1PublicClient
+func (c *Clientset) V1alpha1Public() v1alpha1public.V1alpha1PublicInterface {
+	return &fakev1alpha1public.FakeV1alpha1Public{Fake: &c.Fake}
 }

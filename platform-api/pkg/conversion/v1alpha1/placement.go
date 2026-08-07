@@ -21,8 +21,10 @@ func ProjectPlacement(crd *v1alpha1.Placement) *rest.Placement {
 	spec := projectPlacementSpec(crd.Spec)
 	status := projectPlacementStatus(crd.Status)
 	return &rest.Placement{
-		Spec:   spec,
-		Status: status,
+		TypeMeta:   crd.TypeMeta,
+		ObjectMeta: crd.ObjectMeta,
+		Spec:       spec,
+		Status:     status,
 	}
 }
 

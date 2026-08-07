@@ -21,8 +21,10 @@ func ProjectManagementCluster(crd *v1alpha1.ManagementCluster) *rest.ManagementC
 	spec := projectManagementClusterSpec(crd.Spec)
 	status := projectManagementClusterStatus(crd.Status)
 	return &rest.ManagementCluster{
-		Spec:   spec,
-		Status: status,
+		TypeMeta:   crd.TypeMeta,
+		ObjectMeta: crd.ObjectMeta,
+		Spec:       spec,
+		Status:     status,
 	}
 }
 

@@ -54,7 +54,7 @@ import (
 	hyperfleet "github.com/openshift-online/rosa-hyperfleet-api/clientset"
 	hfrest "github.com/openshift-online/rosa-hyperfleet-api/clientset/rest"
 	"github.com/openshift-online/rosa-hyperfleet-api/clientset/wrappers"
-	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
+	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	awstest "github.com/openshift-online/rosa-hyperfleet-api/test/helpers/aws"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

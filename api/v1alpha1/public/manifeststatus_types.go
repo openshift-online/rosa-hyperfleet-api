@@ -3,7 +3,6 @@
 package public
 
 import (
-	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -17,7 +16,7 @@ type ManifestStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Phase summarizes the manifest's lifecycle state.
 	// +optional
-	Phase v1alpha1.ManifestPhase `json:"phase,omitempty"`
+	Phase ManifestPhase `json:"phase,omitempty"`
 	// AppliedResources is the number of resources written as ApplyDesires.
 	// +optional
 	AppliedResources int32 `json:"appliedResources,omitempty"`

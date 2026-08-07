@@ -21,8 +21,10 @@ func ProjectNodePool(crd *v1alpha1.NodePool) *rest.NodePool {
 	spec := projectNodePoolSpec(crd.Spec)
 	status := projectNodePoolStatus(crd.Status)
 	return &rest.NodePool{
-		Spec:   spec,
-		Status: status,
+		TypeMeta:   crd.TypeMeta,
+		ObjectMeta: crd.ObjectMeta,
+		Spec:       spec,
+		Status:     status,
 	}
 }
 
