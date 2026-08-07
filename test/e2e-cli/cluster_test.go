@@ -25,7 +25,7 @@ package e2e_cli_test
 //   help, login, vpc-create, vpc-list, iam-create, iam-list, account-add,
 //   hcp-create, oidc-create, oidc-list, cluster-status, kubeconfig,
 //   nodepool-create, nodepool-list, dns-verify, nodepools-wait, nodepool-delete,
-//   hcp-patch, bundles-delete, bundles-wait, oidc-delete, iam-delete, vpc-delete
+//   hcp-patch, cluster-delete, bundles-delete, bundles-wait, oidc-delete, iam-delete, vpc-delete
 //
 // Group labels: setup, create, monitor, update, cleanup
 
@@ -798,7 +798,7 @@ var _ = Describe("ROSACTL CLI E2E Tests", Ordered, func() {
 		GinkgoWriter.Printf("Nodepool %s deletion initiated\n", nodepoolID)
 	})
 
-	It("should be able to delete the hcp cluster", Label("hcp-delete", "cleanup"), func() {
+	It("should be able to delete the hcp cluster via CLI", Label("hcp-delete", "cluster-delete", "cleanup"), func() {
 		defer recordTiming("hcp-cluster-delete")()
 		if clusterID == "" {
 			clusterID = os.Getenv("HCP_INSTANCE_ID")
@@ -806,29 +806,36 @@ var _ = Describe("ROSACTL CLI E2E Tests", Ordered, func() {
 				Skip("clusterID not set - run full Ordered suite or set HCP_INSTANCE_ID")
 			}
 		}
-		GinkgoWriter.Printf("Deleting the hcp clusterId: %s\n", clusterID)
-		response, err := customerApiClient.Delete("/api/v0/clusters/"+clusterID, customerAccountID)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(response.StatusCode).To(Equal(http.StatusAccepted))
-		GinkgoWriter.Printf("HCP cluster deleted successfully: %s\n", clusterName)
+		GinkgoWriter.Printf("Deleting HCP cluster %q (id: %s) via rosactl\n", clusterName, clusterID)
+
+		// Use cluster ID directly to avoid a name-lookup round-trip; --yes skips the confirmation prompt
+		cmd := exec.Command(ROSACTL_BIN, "cluster", "delete", clusterID,
+			"--region", region,
+			"--yes",
+		)
+		cmd.Env = append(os.Environ(), customerEnv()...)
+		output, err := cmd.CombinedOutput()
+		Expect(err).ToNot(HaveOccurred(), "rosactl cluster delete failed:\n%s", string(output))
+		GinkgoWriter.Printf("rosactl cluster delete output:\n%s\n", string(output))
+		GinkgoWriter.Printf("HCP cluster deletion initiated: %s\n", clusterName)
 	})
 
-	// it should be able to query the /cluster/id until it is deleted
-	It("should be able to query the /cluster/id until it is deleted", Label("hcp-delete", "cluster-query", "cleanup"), func() {
+	// Poll via the platform API until the cluster is no longer present
+	It("should confirm the hcp cluster is deleted", Label("hcp-delete", "cluster-delete", "cluster-query", "cleanup"), func() {
 		defer recordTiming("hcp-cluster-delete-wait")()
-		GinkgoWriter.Printf("Querying the hcp clusterId: %s\n", clusterID)
 		if clusterID == "" {
 			clusterID = os.Getenv("HCP_INSTANCE_ID")
 			if clusterID == "" {
 				Skip("clusterID not set - run full Ordered suite or set HCP_INSTANCE_ID")
 			}
 		}
+		GinkgoWriter.Printf("Waiting for HCP cluster %q (id: %s) to be fully deleted\n", clusterName, clusterID)
 		Eventually(func(g Gomega) {
 			response, err := customerApiClient.Get("/api/v0/clusters/"+clusterID, customerAccountID)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(response.StatusCode).To(Or(Equal(http.StatusNotFound), Equal(http.StatusGone)))
 		}).WithTimeout(10*time.Minute).WithPolling(30*time.Second).Should(Succeed(), "cluster should be deleted")
-		GinkgoWriter.Printf("HCP cluster deleted successfully: %s\n", clusterName)
+		GinkgoWriter.Printf("HCP cluster confirmed deleted: %s\n", clusterName)
 	})
 
 	It("should be able to delete the cluster-oidc", Label("oidc-delete", "cleanup"), func() {
