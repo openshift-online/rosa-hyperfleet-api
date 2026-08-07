@@ -47,6 +47,7 @@ var (
 	wireMarkerRE    = regexp.MustCompile(`\+wire:field=([^,\s]+),meta=([^\s]+)`)
 	watchDisabledRE = regexp.MustCompile(`\+wire:watch=disabled`)
 	waitRE          = regexp.MustCompile(`\+wire:wait\b`)
+	nonNamespacedRE = regexp.MustCompile(`\+genclient:nonNamespaced\b`)
 )
 
 // fieldMapping holds a single wire→metadata field translation.
@@ -62,6 +63,7 @@ type resourceType struct {
 	LowerName     string // e.g. "cluster"
 	WatchDisabled bool
 	Wait          bool
+	NonNamespaced bool // set when +genclient:nonNamespaced is present
 }
 
 // ── Templates ────────────────────────────────────────────────────────────────
@@ -204,7 +206,11 @@ func (c *{{.LowerName}}Client) WaitUntil(ctx context.Context, id string, conditi
 type V1alpha1Interface interface {
 	RESTClient() rest.Interface
 {{- range .Types}}
+{{- if .NonNamespaced}}
+	{{.PluralName}}() {{.Name}}Interface
+{{- else}}
 	{{.PluralName}}(namespace string) {{.Name}}Interface
+{{- end}}
 {{- end}}
 }
 
@@ -221,9 +227,15 @@ func (w *wrappedV1alpha1) RESTClient() rest.Interface {
 	return w.inner.RESTClient()
 }
 {{range .Types}}
+{{- if .NonNamespaced}}
+func (w *wrappedV1alpha1) {{.PluralName}}() {{.Name}}Interface {
+	return &{{.LowerName}}Client{inner: w.inner.{{.PluralName}}()}
+}
+{{- else}}
 func (w *wrappedV1alpha1) {{.PluralName}}(namespace string) {{.Name}}Interface {
 	return &{{.LowerName}}Client{inner: w.inner.{{.PluralName}}(namespace)}
 }
+{{- end}}
 {{end}}`
 
 // ── main ─────────────────────────────────────────────────────────────────────
@@ -416,13 +428,16 @@ func collectResourceTypes(dir string) []resourceType {
 			// For each comment group containing watch/wait markers, find the
 			// next type declaration that follows it.
 			for _, cg := range file.Comments {
-				var hasWatch, hasWait bool
+				var hasWatch, hasWait, hasNonNamespaced bool
 				for _, c := range cg.List {
 					if watchDisabledRE.MatchString(c.Text) {
 						hasWatch = true
 					}
 					if waitRE.MatchString(c.Text) {
 						hasWait = true
+					}
+					if nonNamespacedRE.MatchString(c.Text) {
+						hasNonNamespaced = true
 					}
 				}
 				if !hasWatch && !hasWait {
@@ -445,6 +460,7 @@ func collectResourceTypes(dir string) []resourceType {
 						LowerName:     strings.ToLower(name[:1]) + name[1:],
 						WatchDisabled: hasWatch,
 						Wait:          hasWait,
+						NonNamespaced: hasNonNamespaced,
 					})
 					break
 				}

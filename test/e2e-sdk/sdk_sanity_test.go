@@ -300,7 +300,7 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		Expect(subnetOut.Subnets).ToNot(BeEmpty(), "subnet %s not found", subnetID)
 		zone := *subnetOut.Subnets[0].AvailabilityZone
 
-		cluster, err := cs.HyperfleetV1alpha1().Clusters(customerAccountID).Create(ctx, &v1alpha1.Cluster{
+		cluster, err := cs.HyperfleetV1alpha1().Clusters().Create(ctx, &v1alpha1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{Name: clusterName},
 			Spec: v1alpha1.ClusterSpec{
 				HostedCluster: v1alpha1.HostedClusterSpecPassthrough{
@@ -355,7 +355,7 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		GinkgoWriter.Printf("All IAM roles trust OIDC provider %s\n", oidcProviderArn)
 
 		By("waiting for cluster Ready")
-		clusters := cs.HyperfleetV1alpha1().Clusters(customerAccountID)
+		clusters := cs.HyperfleetV1alpha1().Clusters()
 		Expect(clusters.WaitUntil(ctx, clusterID,
 			func(c *v1alpha1.Cluster) bool {
 				if c == nil {
@@ -668,7 +668,7 @@ func deleteNodepool(ctx context.Context, cs *hyperfleet.Clientset, clusterID, no
 }
 
 func deleteCluster(ctx context.Context, cs *hyperfleet.Clientset, customerAccountID, clusterID, clusterName string) error {
-	clusters := cs.HyperfleetV1alpha1().Clusters(customerAccountID)
+	clusters := cs.HyperfleetV1alpha1().Clusters()
 	if err := clusters.Delete(ctx, clusterID, wrappers.DeleteOptions{}); err != nil {
 		return fmt.Errorf("cluster delete: %w", err)
 	}
