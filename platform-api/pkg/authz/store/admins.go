@@ -90,6 +90,7 @@ func (s *AdminStore) Remove(ctx context.Context, accountID, principalARN string)
 func (s *AdminStore) IsAdmin(ctx context.Context, accountID, principalARN string) (bool, error) {
 	arnsToCheck := []string{principalARN}
 	if normalized := NormalizeAssumedRoleARN(principalARN); normalized != principalARN {
+		s.logger.Info("normalized assumed-role ARN for admin check", "original", principalARN, "normalized", normalized)
 		arnsToCheck = append(arnsToCheck, normalized)
 	}
 
@@ -157,6 +158,22 @@ func (s *AdminStore) List(ctx context.Context, accountID string) ([]*Admin, erro
 	}
 
 	return admins, nil
+}
+
+// DeleteAll removes all admins for an account. Used during account deletion
+// to prevent stale admin entries from carrying over if the account is re-provisioned.
+func (s *AdminStore) DeleteAll(ctx context.Context, accountID string) error {
+	admins, err := s.List(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("failed to list admins for deletion: %w", err)
+	}
+	for _, admin := range admins {
+		if err := s.Remove(ctx, accountID, admin.PrincipalARN); err != nil {
+			return fmt.Errorf("failed to remove admin %s: %w", admin.PrincipalARN, err)
+		}
+	}
+	s.logger.Info("all admins removed for account", "account_id", accountID, "count", len(admins))
+	return nil
 }
 
 // ListARNs returns the ARNs of all admins for an account

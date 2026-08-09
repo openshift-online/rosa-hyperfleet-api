@@ -1,18 +1,67 @@
 version: '3.8'
 
-# E2E test infrastructure for authz testing
-# Usage: podman-compose -f docker-compose.e2e.yml up -d
+# E2E test infrastructure for local authz testing with LocalStack
+# Usage: podman-compose -f hack/podman-compose.e2e-authz.yaml up -d
+#
+# Requires: LOCALSTACK_AUTH_TOKEN env var for LocalStack Pro features
+# DynamoDB is available in the free Community edition too.
 
 services:
-  dynamodb-local:
-    image: docker.io/amazon/dynamodb-local:latest
-    container_name: rosa-dynamodb-local
+  postgres:
+    image: docker.io/library/postgres:16-alpine
+    container_name: rosa-postgres
     ports:
-      - "8180:8000"
-    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: rosa
+      POSTGRES_PASSWORD: rosa
+      POSTGRES_DB: hyperfleet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rosa -d hyperfleet"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack-pro:latest
+    container_name: rosa-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN:-}
+      - SERVICES=dynamodb,iam,sts,verifiedpermissions
+      - SKIP_SIGNATURE_VALIDATION=1
+      - DEBUG=${LOCALSTACK_DEBUG:-0}
+      - EAGER_SERVICE_LOADING=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
 
   cedar-agent:
     image: docker.io/permitio/cedar-agent:latest
     container_name: rosa-cedar-agent
     ports:
       - "8181:8180"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: rosa-keycloak
+    command: start-dev --import-realm
+    ports:
+      - "8080:8080"
+      - "9000:9000"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_RELATIVE_PATH: /
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak/rosa-e2e-realm.json:/opt/keycloak/data/import/rosa-e2e-realm.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200\\|UP' <&3"]
+      interval: 5s
+      timeout: 10s
+      retries: 15
+      start_period: 30s

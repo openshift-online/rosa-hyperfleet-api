@@ -41,6 +41,7 @@ type PolicyResponse struct {
 	PolicyID    string `json:"policyId"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	CedarPolicy string `json:"policy,omitempty"`
 	CreatedAt   string `json:"createdAt"`
 }
 
@@ -167,6 +168,7 @@ func (h *AuthzHandler) CreatePolicy(w http.ResponseWriter, r *http.Request) {
 		PolicyID:    p.PolicyID,
 		Name:        p.Name,
 		Description: p.Description,
+		CedarPolicy: p.CedarPolicy,
 		CreatedAt:   p.CreatedAt,
 	}); err != nil {
 		h.logger.Error("failed to write response", "error", err)
@@ -228,6 +230,7 @@ func (h *AuthzHandler) GetPolicy(w http.ResponseWriter, r *http.Request) {
 		PolicyID:    p.PolicyID,
 		Name:        p.Name,
 		Description: p.Description,
+		CedarPolicy: p.CedarPolicy,
 		CreatedAt:   p.CreatedAt,
 	}); err != nil {
 		h.logger.Error("failed to write response", "error", err)
@@ -258,6 +261,7 @@ func (h *AuthzHandler) UpdatePolicy(w http.ResponseWriter, r *http.Request) {
 		PolicyID:    p.PolicyID,
 		Name:        p.Name,
 		Description: p.Description,
+		CedarPolicy: p.CedarPolicy,
 		CreatedAt:   p.CreatedAt,
 	}); err != nil {
 		h.logger.Error("failed to write response", "error", err)

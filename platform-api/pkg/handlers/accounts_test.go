@@ -132,8 +132,8 @@ func TestAccounts_Create_NonPrivilegedRequiresAdminArn(t *testing.T) {
 
 	var resp map[string]any
 	_ = json.NewDecoder(w.Body).Decode(&resp)
-	if resp["code"] != "missing-admin-arn" {
-		t.Errorf("expected code=missing-admin-arn, got %v", resp["code"])
+	if resp["code"] != "ACCOUNTS-MGMT-CREATE-003" {
+		t.Errorf("expected code=ACCOUNTS-MGMT-CREATE-003 (missing-admin-arn), got %v", resp["code"])
 	}
 }
 
@@ -217,7 +217,7 @@ func TestAccounts_Create_MissingAccountID(t *testing.T) {
 
 	var resp map[string]any
 	_ = json.NewDecoder(w.Body).Decode(&resp)
-	if resp["code"] != "missing-account-id" {
-		t.Errorf("expected code=missing-account-id, got %v", resp["code"])
+	if resp["code"] != "ACCOUNTS-MGMT-CREATE-002" {
+		t.Errorf("expected code=ACCOUNTS-MGMT-CREATE-002 (missing-account-id), got %v", resp["code"])
 	}
 }

@@ -2,7 +2,7 @@
 	build-hyperfleet-db build-operator build-api build-api-codegen \
 	test-hyperfleet-db test-operator test-operator-int test-api test-api-codegen test-clientset \
 	coverage-api-codegen \
-	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-zoa test-e2e-authz test-e2e-sdk \
+	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-zoa test-e2e-authz test-e2e-authz-local test-e2e-authz-local-down test-e2e-sdk \
 	e2e-authz-infra-up e2e-authz-infra-down e2e-init-db \
 	fmt vet verify verify-mod deps mod-tidy \
 	manifests generate generate-deepcopy generate-clientset verify-clientset setup-envtest \
@@ -99,6 +99,7 @@ help:
 	@echo "  test-clientset       Clientset unit tests (transport, platform)"
 	@echo "  test-integration     Integration tests: FleetDB + operator (podman)"
 	@echo "  test-e2e-authz       E2E authz (starts local infra)"
+	@echo "  test-e2e-authz-local E2E authz with LocalStack (full local flow)"
 	@echo "  test-e2e-api         E2E API"
 	@echo "  test-e2e-cli         E2E CLI"
 	@echo "  test-e2e-zoa         E2E ZOA"
@@ -251,6 +252,15 @@ e2e-init-db:
 
 test-e2e-authz: e2e-authz-infra-up
 	@./scripts/run-e2e-authz.sh
+
+test-e2e-authz-local:
+	podman-compose -f hack/podman-compose.e2e-authz.yaml up -d
+	@sleep 5
+	@DYNAMODB_ENDPOINT=http://localhost:4566 ./scripts/run-e2e-authz-local.sh
+
+test-e2e-authz-local-down:
+	podman-compose -f hack/podman-compose.e2e-authz.yaml down -v
+	@rm -f /tmp/e2e-localstack-credentials.env
 
 # ── Code Quality ─────────────────────────────────────────────────────────
 

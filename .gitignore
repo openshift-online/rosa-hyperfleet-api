@@ -32,6 +32,8 @@ vendor/
 .env
 *.local
 .claude/settings.local.json
+rosa-hyperfleet-api
+rosa-hyperfleet-api.log
 
 # Go workspace
 go.work

@@ -65,25 +65,56 @@ This creates:
 
 > **Why** `adminArn` **instead of auto-capturing the caller?** The caller is from the privileged account (599476212575), not the account being created (754250776154). There is no way to infer the correct admin ARN from the cross-account request context.
 
-
-
 ```bash
+
+# as caller supervisor
+# delete the customer account, 754250776154
+# redo configuration
 awscurl --service execute-api --region us-east-1 \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -d '{
-    "accountId": "754250776154",
-    "privileged": false,
-    "adminArn": "arn:aws:sts::754250776154:assumed-role/OrganizationAccountAccessRole"
-  }' \
-  "${API_URL}/api/v0/accounts"
+    -X DELETE \
+    "${API_URL}/api/v0/accounts/754250776154"
+
+# as caller supervisor
+# add 1st admin for 754250776154
+# note the sts -> iam
+awscurl --service execute-api --region us-east-1 \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "accountId": "754250776154",
+      "privileged": false,
+      "adminArn": "arn:aws:iam::754250776154:role/OrganizationAccountAccessRole"
+    }' \
+    "${API_URL}/api/v0/accounts"
+{"kind":"Account","accountId":"754250776154","policyStoreId":"8DFfo9GpNzftPysCb6k92S","privileged":false,"createdAt":"2026-08-09T00:46:19Z","createdBy":"arn:aws:sts::599476212575:assumed-role/OrganizationAccountAccessRole/rrp-dev-53375"}
 
 
+
+# as caller 754250776154, customer, add a new policy
+✗ awscurl --service execute-api --region us-east-1 \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "clusters-read-only",
+      "description": "Read-only access to clusters",
+      "policy": "permit(principal == ?principal, action in [ROSA::Action::\"ListClusters\", ROSA::Action::\"DescribeCluster\"], resource);"
+    }' \
+    "${API_URL}/api/v0/authz/policies"
+{"kind":"Policy","policyId":"KkfzMk9Ti8vXXoTPHDZv2K","name":"clusters-read-only","description":"Read-only access to clusters","createdAt":"2026-08-09T00:47:07Z"}
+
+
+# as caller 154, customer, add a new admin to 154
+awscurl --service execute-api --region us-east-1 \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -d '{"principalArn": "arn:aws:iam::754250776154:role/some-new-admin"}' \
+    "${API_URL}/api/v0/authz/admins"
+{"kind":"Admin","principalArn":"arn:aws:iam::754250776154:role/some-new-admin"}
 ```
 
 
 
-### Step 2: Create a Cedar policy (admin caller)
+### Step 2: Create a CedaÏter policy (admin caller)
 
 The bootstrapped admin creates Cedar policy templates. Each template defines what actions are allowed on which resource types.
 
@@ -139,6 +170,7 @@ awscurl --service execute-api --region us-east-1 \
 If the initial admin role should be governed solely by Cedar policies rather than having full admin access:
 
 ```bash
+# as caller 754250776154, delete the admin bff-sigv4-proxy-role
 awscurl --service execute-api --region us-east-1 \
   -X DELETE \
   -H "X-Amz-Account-Id: 754250776154" \

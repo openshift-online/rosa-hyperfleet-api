@@ -69,7 +69,7 @@ func (h *AccountsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !req.Privileged && req.AdminArn == "" {
-		h.writeError(w, http.StatusBadRequest, "missing-admin-arn", "adminArn is required for non-privileged accounts")
+		writeAPIError(w, ErrAccountCreateMissingAdminArn, h.logger)
 		return
 	}
 
@@ -104,14 +104,15 @@ func (h *AccountsHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(AccountResponse{
+	err = json.NewEncoder(w).Encode(AccountResponse{
 		Kind:          "Account",
 		AccountID:     account.AccountID,
 		PolicyStoreID: account.PolicyStoreID,
 		Privileged:    account.Privileged,
 		CreatedAt:     account.CreatedAt,
 		CreatedBy:     account.CreatedBy,
-	}); err != nil {
+	})
+	if err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }

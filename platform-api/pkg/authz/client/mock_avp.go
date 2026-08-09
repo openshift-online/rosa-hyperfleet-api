@@ -140,15 +140,23 @@ func (m *MockAVPClient) syncPolicies(ctx context.Context, policyStoreID string) 
 	return nil
 }
 
-// resolvePrincipal replaces ?principal in Cedar template text with the concrete principal entity.
-// It uses "principal in" so that Cedar traverses the entity hierarchy — this allows
-// group-based policies to match any principal that is a member (descendant) of the group.
-// For direct user attachments, "in" still works because `A in A` is always true in Cedar.
+// resolvePrincipal replaces the ?principal template slot in Cedar policy text
+// with a concrete principal entity. Uses "principal in" so Cedar traverses the
+// entity hierarchy — group members match via ancestry, and direct matches still
+// work because `A in A` is always true in Cedar.
+//
+// Handles both AVP template forms:
+//   - "principal == ?principal" → "principal in Entity::"id""
+//   - bare "?principal"        → "principal in Entity::"id""
 func resolvePrincipal(cedarTemplate string, principal *avptypes.EntityIdentifier) string {
 	entityType := aws.ToString(principal.EntityType)
 	entityID := aws.ToString(principal.EntityId)
-	principalEntity := fmt.Sprintf(`principal in %s::"%s"`, entityType, entityID)
-	return strings.ReplaceAll(cedarTemplate, "?principal", principalEntity)
+	principalConstraint := fmt.Sprintf(`principal in %s::"%s"`, entityType, entityID)
+
+	if strings.Contains(cedarTemplate, "principal == ?principal") {
+		return strings.ReplaceAll(cedarTemplate, "principal == ?principal", principalConstraint)
+	}
+	return strings.ReplaceAll(cedarTemplate, "?principal", principalConstraint)
 }
 
 // CreatePolicyStore returns a dummy policy store ID and initializes tracking.

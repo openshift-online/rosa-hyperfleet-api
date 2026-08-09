@@ -81,11 +81,12 @@ var (
 
 // Accounts error codes
 var (
-	ErrAccountCreateInvalidBody APIError
-	ErrAccountCreateMissingID   APIError
-	ErrAccountCreateCheckFailed APIError
-	ErrAccountCreateExists      APIError
-	ErrAccountCreateFailed      APIError
+	ErrAccountCreateInvalidBody     APIError
+	ErrAccountCreateMissingID       APIError
+	ErrAccountCreateMissingAdminArn APIError
+	ErrAccountCreateCheckFailed     APIError
+	ErrAccountCreateExists          APIError
+	ErrAccountCreateFailed          APIError
 
 	ErrAccountListFailed APIError
 
@@ -281,9 +282,10 @@ func init() {
 	// Accounts — Create
 	ErrAccountCreateInvalidBody = APIError{Code: "ACCOUNTS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
 	ErrAccountCreateMissingID = APIError{Code: "ACCOUNTS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "accountId is required"}
-	ErrAccountCreateCheckFailed = APIError{Code: "ACCOUNTS-MGMT-CREATE-003", HTTPStatus: http.StatusInternalServerError, Message: "Failed to check account status"}
-	ErrAccountCreateExists = APIError{Code: "ACCOUNTS-MGMT-CREATE-004", HTTPStatus: http.StatusConflict, Message: "Account is already enabled"}
-	ErrAccountCreateFailed = APIError{Code: "ACCOUNTS-MGMT-CREATE-005", HTTPStatus: http.StatusInternalServerError, Message: "Failed to enable account"}
+	ErrAccountCreateMissingAdminArn = APIError{Code: "ACCOUNTS-MGMT-CREATE-003", HTTPStatus: http.StatusBadRequest, Message: "adminArn is required for non-privileged accounts"}
+	ErrAccountCreateCheckFailed = APIError{Code: "ACCOUNTS-MGMT-CREATE-004", HTTPStatus: http.StatusInternalServerError, Message: "Failed to check account status"}
+	ErrAccountCreateExists = APIError{Code: "ACCOUNTS-MGMT-CREATE-005", HTTPStatus: http.StatusConflict, Message: "Account is already enabled"}
+	ErrAccountCreateFailed = APIError{Code: "ACCOUNTS-MGMT-CREATE-006", HTTPStatus: http.StatusInternalServerError, Message: "Failed to enable account"}
 
 	// Accounts — List
 	ErrAccountListFailed = APIError{Code: "ACCOUNTS-MGMT-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list accounts"}
