@@ -3,15 +3,15 @@ module github.com/openshift-online/rosa-hyperfleet-api/clientset
 go 1.26.3
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.43.2
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.30
+	github.com/aws/aws-sdk-go-v2 v1.43.4
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.34
 	github.com/openshift-online/rosa-hyperfleet-api/api v0.0.0
 	k8s.io/apimachinery v0.36.0
 	k8s.io/client-go v0.36.0
 )
 
 require (
-	github.com/aws/smithy-go v1.27.5 // indirect
+	github.com/aws/smithy-go v1.27.6 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
