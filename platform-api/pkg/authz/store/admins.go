@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -82,21 +83,55 @@ func (s *AdminStore) Remove(ctx context.Context, accountID, principalARN string)
 	return nil
 }
 
-// IsAdmin checks if a principal is an admin for an account
+// IsAdmin checks if a principal is an admin for an account.
+// It normalizes assumed-role STS ARNs to their IAM role ARN so that
+// arn:aws:sts::ACCT:assumed-role/RoleName/session matches a stored
+// arn:aws:iam::ACCT:role/RoleName entry.
 func (s *AdminStore) IsAdmin(ctx context.Context, accountID, principalARN string) (bool, error) {
-	result, err := s.dynamoClient.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: aws.String(s.tableName),
-		Key: map[string]types.AttributeValue{
-			"accountId":    &types.AttributeValueMemberS{Value: accountID},
-			"principalArn": &types.AttributeValueMemberS{Value: principalARN},
-		},
-		ProjectionExpression: aws.String("accountId"),
-	})
-	if err != nil {
-		return false, fmt.Errorf("failed to check admin status: %w", err)
+	arnsToCheck := []string{principalARN}
+	if normalized := NormalizeAssumedRoleARN(principalARN); normalized != principalARN {
+		arnsToCheck = append(arnsToCheck, normalized)
 	}
 
-	return result.Item != nil, nil
+	for _, arn := range arnsToCheck {
+		result, err := s.dynamoClient.GetItem(ctx, &dynamodb.GetItemInput{
+			TableName: aws.String(s.tableName),
+			Key: map[string]types.AttributeValue{
+				"accountId":    &types.AttributeValueMemberS{Value: accountID},
+				"principalArn": &types.AttributeValueMemberS{Value: arn},
+			},
+			ProjectionExpression: aws.String("accountId"),
+		})
+		if err != nil {
+			return false, fmt.Errorf("failed to check admin status: %w", err)
+		}
+		if result.Item != nil {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// NormalizeAssumedRoleARN converts an STS assumed-role ARN to its IAM role ARN.
+// arn:aws:sts::123456:assumed-role/MyRole/session -> arn:aws:iam::123456:role/MyRole
+func NormalizeAssumedRoleARN(arn string) string {
+	if !strings.Contains(arn, ":assumed-role/") {
+		return arn
+	}
+	parts := strings.SplitN(arn, ":", 6)
+	if len(parts) < 6 {
+		return arn
+	}
+	resource := parts[5]
+	if !strings.HasPrefix(resource, "assumed-role/") {
+		return arn
+	}
+	segments := strings.SplitN(strings.TrimPrefix(resource, "assumed-role/"), "/", 2)
+	roleName := segments[0]
+	parts[2] = "iam"
+	parts[5] = "role/" + roleName
+	return strings.Join(parts, ":")
 }
 
 // List returns all admins for an account

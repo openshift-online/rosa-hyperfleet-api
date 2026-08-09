@@ -30,6 +30,7 @@ func NewAccountsHandler(authorizer authz.Service, logger *slog.Logger) *Accounts
 type EnableAccountRequest struct {
 	AccountID  string `json:"accountId"`
 	Privileged bool   `json:"privileged"`
+	AdminArn   string `json:"adminArn,omitempty"`
 }
 
 // AccountResponse is the response for account operations
@@ -67,6 +68,11 @@ func (h *AccountsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !req.Privileged && req.AdminArn == "" {
+		h.writeError(w, http.StatusBadRequest, "missing-admin-arn", "adminArn is required for non-privileged accounts")
+		return
+	}
+
 	// Check if account already exists
 	existing, err := h.authorizer.GetAccount(ctx, req.AccountID)
 	if err != nil {
@@ -88,7 +94,17 @@ func (h *AccountsHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("account enabled", "account_id", redact(req.AccountID), "privileged", req.Privileged)
 
-	if err := api.Write(w, http.StatusCreated, AccountResponse{
+	if req.AdminArn != "" && !req.Privileged {
+		if err := h.authorizer.AddAdmin(ctx, req.AccountID, req.AdminArn, callerARN); err != nil {
+			h.logger.Error("failed to add initial admin", "error", err, "account_id", req.AccountID, "admin_arn", req.AdminArn)
+		} else {
+			h.logger.Info("initial admin added", "account_id", req.AccountID, "admin_arn", req.AdminArn)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(AccountResponse{
 		Kind:          "Account",
 		AccountID:     account.AccountID,
 		PolicyStoreID: account.PolicyStoreID,

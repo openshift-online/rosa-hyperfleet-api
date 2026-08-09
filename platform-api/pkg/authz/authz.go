@@ -192,10 +192,12 @@ func (a *authorizerImpl) Authorize(ctx context.Context, req *AuthzRequest) (bool
 
 // buildAVPRequest creates the AVP IsAuthorized request
 func (a *authorizerImpl) buildAVPRequest(req *AuthzRequest, groups []string, policyStoreID string) *verifiedpermissions.IsAuthorizedInput {
-	// Build principal
+	// Build principal — normalize STS assumed-role ARNs to IAM role ARNs
+	// so they match the IAM ARN used when attaching policies.
+	principalARN := store.NormalizeAssumedRoleARN(req.CallerARN)
 	principal := &avptypes.EntityIdentifier{
 		EntityType: aws.String("ROSA::Principal"),
-		EntityId:   aws.String(req.CallerARN),
+		EntityId:   aws.String(principalARN),
 	}
 
 	// Build action
