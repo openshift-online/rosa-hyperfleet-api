@@ -221,9 +221,18 @@ func main() {
 		sqsStatusQueueURL,
 		func(documentID string) { eventRouter.Dispatch(documentID) },
 	)
-	watchCtx, watchCancel := context.WithCancel(context.Background())
-	defer watchCancel()
-	go statusConsumer.Run(watchCtx)
+	// Derive the consumer context from signalCtx so the consumer shuts down
+	// cleanly when the manager receives a termination signal.
+	// Start the consumer only after the cache has synced so that all
+	// controllers have registered their EventRouter routes. Messages received
+	// before routes are registered would be dispatched to nobody and then
+	// deleted, losing the notification.
+	go func() {
+		if !mgr.GetCache().WaitForCacheSync(signalCtx) {
+			return
+		}
+		statusConsumer.Run(signalCtx)
+	}()
 
 	setupLog.Info("Starting pgruntime manager",
 		"sqsStatusQueueURL", sqsStatusQueueURL,

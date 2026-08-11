@@ -116,7 +116,7 @@ func (c *Consumer) handleMessage(ctx context.Context, body *string, receiptHandl
 	var notification StatusNotification
 	if err := json.Unmarshal([]byte(*body), &notification); err != nil {
 		c.logger.Error("failed to unmarshal SQS message; deleting",
-			"err", err, "body", *body)
+			"err", err)
 		c.deleteMessage(ctx, receiptHandle)
 		return
 	}
