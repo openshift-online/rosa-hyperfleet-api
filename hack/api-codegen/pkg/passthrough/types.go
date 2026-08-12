@@ -29,6 +29,10 @@ type Generator struct {
 	// FieldPrefix is the dotted path prefix for registry lookups (e.g., "spec.hostedCluster")
 	FieldPrefix string
 
+	// TypeOverrides maps upstream qualified type names to local replacements
+	// (e.g., "hypershiftv1beta1.ClusterConfiguration" → "ClusterConfiguration").
+	TypeOverrides map[string]string
+
 	// parsedFiles holds parsed AST of source files
 	parsedFiles map[string]*ast.File
 }

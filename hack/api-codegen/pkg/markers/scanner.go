@@ -56,7 +56,7 @@ func (s *MarkerScanner) scanDir(dir string) error {
 		// Skip test files and generated files
 		name := fi.Name()
 		return !strings.HasSuffix(name, "_test.go") &&
-			!strings.HasPrefix(name, "zz_generated")
+			(!strings.HasPrefix(name, "zz_generated") || name == "zz_generated.passthrough.go")
 	}, parser.ParseComments)
 
 	if err != nil {
@@ -241,12 +241,14 @@ func (s *MarkerScanner) extractMarkers(field *ast.Field, fieldPath string) *Fiel
 		meta.FeatureGateAwareWriteModes = gatedModes
 	}
 
-	// Only include in registry if at least one marker was found
-	if meta.Hidden || meta.WriteMode != "" || meta.FeatureGate != "" || len(meta.FeatureGateAwareWriteModes) > 0 {
-		return meta
+	// Only include in registry if at least one primary marker was found
+	hasPrimaryMarker := meta.Hidden || meta.WriteMode != "" || meta.FeatureGate != "" ||
+		len(meta.FeatureGateAwareWriteModes) > 0
+	if !hasPrimaryMarker {
+		return nil
 	}
 
-	return nil
+	return meta
 }
 
 // getJSONName extracts the JSON field name from struct tags

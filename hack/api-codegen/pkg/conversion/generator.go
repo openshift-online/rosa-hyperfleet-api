@@ -138,7 +138,7 @@ func (g *Generator) parseTypes() error {
 		pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
 			name := fi.Name()
 			return !strings.HasSuffix(name, "_test.go") &&
-				!strings.HasPrefix(name, "zz_generated")
+				(!strings.HasPrefix(name, "zz_generated") || name == "zz_generated.passthrough.go")
 		}, parser.ParseComments)
 		if err != nil {
 			return fmt.Errorf("parsing directory %s: %w", dir, err)
@@ -165,29 +165,7 @@ func (g *Generator) parseTypes() error {
 
 							structType, ok := typeSpec.Type.(*ast.StructType)
 							if ok {
-								ti := &typeInfo{
-									Name:       typeName,
-									StructType: structType,
-									Doc:        genDecl.Doc,
-								}
-
-								for _, field := range structType.Fields.List {
-									if len(field.Names) == 0 {
-										ti.Embeds = append(ti.Embeds, g.exprToString(field.Type))
-										continue
-									}
-									for _, name := range field.Names {
-										if !name.IsExported() {
-											continue
-										}
-										fi := g.parseField(typeName, field, name)
-										if fi != nil {
-											ti.Fields = append(ti.Fields, fi)
-										}
-									}
-								}
-
-								g.typeInfos[typeName] = ti
+								g.typeInfos[typeName] = g.parseStructType(typeName, structType, genDecl.Doc)
 								continue
 							}
 
@@ -237,6 +215,32 @@ func (g *Generator) parseTypes() error {
 		}
 	}
 	return nil
+}
+
+func (g *Generator) parseStructType(typeName string, structType *ast.StructType, doc *ast.CommentGroup) *typeInfo {
+	ti := &typeInfo{
+		Name:       typeName,
+		StructType: structType,
+		Doc:        doc,
+	}
+
+	for _, field := range structType.Fields.List {
+		if len(field.Names) == 0 {
+			ti.Embeds = append(ti.Embeds, g.exprToString(field.Type))
+			continue
+		}
+		for _, name := range field.Names {
+			if !name.IsExported() {
+				continue
+			}
+			fi := g.parseField(typeName, field, name)
+			if fi != nil {
+				ti.Fields = append(ti.Fields, fi)
+			}
+		}
+	}
+
+	return ti
 }
 
 // extractClientMarkers scans all comment groups in a file for +genclient and

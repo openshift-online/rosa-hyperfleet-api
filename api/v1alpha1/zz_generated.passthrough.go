@@ -37,7 +37,7 @@ type HostedClusterSpecPassthrough struct {
 	// +optional
 	UpdateService configv1.URL `json:"updateService,omitempty"`
 	// channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
-	// +k8s:openapi-gen=true
+	// +k8s:openapi-gen=false
 	// +hyperfleet:write-mode=service-set
 	// +optional
 	Channel string `json:"channel,omitempty"`
@@ -77,7 +77,7 @@ type HostedClusterSpecPassthrough struct {
 	// +optional
 	Autoscaling hypershiftv1beta1.ClusterAutoscaling `json:"autoscaling,omitempty"`
 	// autoNode specifies the configuration for automatic node provisioning and lifecycle management.
-	// +k8s:openapi-gen=true
+	// +k8s:openapi-gen=false
 	// +hyperfleet:write-mode=service-set
 	// +optional
 	AutoNode hypershiftv1beta1.AutoNode `json:"autoNode,omitzero"`
@@ -112,12 +112,12 @@ type HostedClusterSpecPassthrough struct {
 	// +optional
 	ServiceAccountSigningKey *corev1.LocalObjectReference `json:"serviceAccountSigningKey,omitempty"`
 	// configuration specifies configuration for individual OCP components in the
-	// +k8s:openapi-gen=true
+	// +k8s:openapi-gen=false
 	// +hyperfleet:write-mode=service-set
 	// +optional
-	Configuration *hypershiftv1beta1.ClusterConfiguration `json:"configuration,omitempty"`
+	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
 	// operatorConfiguration specifies configuration for individual OCP operators in the cluster.
-	// +k8s:openapi-gen=true
+	// +k8s:openapi-gen=false
 	// +hyperfleet:write-mode=service-set
 	// +optional
 	OperatorConfiguration *hypershiftv1beta1.OperatorConfiguration `json:"operatorConfiguration,omitempty"`
@@ -142,12 +142,12 @@ type HostedClusterSpecPassthrough struct {
 	// +optional
 	SecretEncryption *hypershiftv1beta1.SecretEncryptionSpec `json:"secretEncryption,omitempty"`
 	// fips indicates whether this cluster's nodes will be running in FIPS mode.
-	// +k8s:openapi-gen=true
+	// +k8s:openapi-gen=false
 	// +hyperfleet:write-mode=service-set
 	// +optional
 	FIPS bool `json:"fips"`
 	// pausedUntil is a field that can be used to pause reconciliation on the HostedCluster controller, resulting in any change to the HostedCluster being ignored.
-	// +k8s:openapi-gen=true
+	// +k8s:openapi-gen=false
 	// +hyperfleet:write-mode=service-set
 	// +optional
 	PausedUntil *string `json:"pausedUntil,omitempty"`

@@ -171,14 +171,19 @@ func isForwardedMarker(marker string) bool {
 	return false
 }
 
-// typeToString converts an AST type expression to a string
+// typeToString converts an AST type expression to a string, applying type overrides.
 func (g *Generator) typeToString(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.Ident:
-		// Check if this is a type from the source package that needs to be qualified
 		typeName := t.Name
 		if g.SourcePackageAlias != "" && g.isSourcePackageType(typeName) {
-			return g.SourcePackageAlias + "." + typeName
+			qualified := g.SourcePackageAlias + "." + typeName
+			if g.TypeOverrides != nil {
+				if override, ok := g.TypeOverrides[qualified]; ok {
+					return override
+				}
+			}
+			return qualified
 		}
 		return typeName
 	case *ast.StarExpr:

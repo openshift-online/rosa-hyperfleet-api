@@ -126,6 +126,41 @@ func TestGetMarkersForField_WithRegistry(t *testing.T) {
 	}
 }
 
+func TestTypeOverrides(t *testing.T) {
+	gen, err := NewGeneratorFromImportPath(
+		"github.com/openshift/hypershift/api/hypershift/v1beta1",
+		[]string{"HostedClusterSpec"},
+		make(markers.FieldRegistry),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create generator: %v", err)
+	}
+
+	gen.TypeOverrides = map[string]string{
+		"hypershiftv1beta1.ClusterConfiguration": "ClusterConfiguration",
+	}
+
+	if err := gen.LoadSourceFiles(gen.SourceDir); err != nil {
+		t.Fatalf("Failed to load source files: %v", err)
+	}
+
+	typeDef, err := gen.GenerateTypeDef("HostedClusterSpec")
+	if err != nil {
+		t.Fatalf("Failed to generate type def: %v", err)
+	}
+
+	for _, field := range typeDef.Fields {
+		if field.Name == "Configuration" {
+			want := "*ClusterConfiguration"
+			if field.Type != want {
+				t.Errorf("Configuration type = %q, want %q", field.Type, want)
+			}
+			return
+		}
+	}
+	t.Error("Configuration field not found in generated type def")
+}
+
 func TestGetMarkersForField_NoPrefix(t *testing.T) {
 	registry := markers.FieldRegistry{
 		"autoNode": markers.FieldMeta{

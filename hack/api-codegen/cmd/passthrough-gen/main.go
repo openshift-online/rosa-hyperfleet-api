@@ -1,7 +1,6 @@
 package main
 
 import (
-	_ "embed"
 	"flag"
 	"fmt"
 	"log"
@@ -12,27 +11,26 @@ import (
 	"github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen/pkg/passthrough"
 )
 
-//go:embed field_metadata.json
-var embeddedRegistry []byte
-
 func main() {
 	var (
-		sourceDir    string
-		importPath   string
-		outputDir    string
-		typeNames    string
-		registryFile string
-		packageName  string
-		fieldPrefix  string
+		sourceDir     string
+		importPath    string
+		outputDir     string
+		typeNames     string
+		registryFile  string
+		packageName   string
+		fieldPrefix   string
+		typeOverrides string
 	)
 
 	flag.StringVar(&sourceDir, "source-dir", "", "Directory containing source Go files (use this OR -import-path)")
 	flag.StringVar(&importPath, "import-path", "", "Go import path to resolve via go.mod (use this OR -source-dir)")
 	flag.StringVar(&outputDir, "output-dir", "", "Directory for generated output (required)")
 	flag.StringVar(&typeNames, "types", "", "Comma-separated list of type names to generate (required)")
-	flag.StringVar(&registryFile, "registry", "", "Path to field metadata registry (optional)")
+	flag.StringVar(&registryFile, "registry", "", "Path to field metadata registry (required)")
 	flag.StringVar(&packageName, "package", "v1alpha1", "Package name for generated code")
 	flag.StringVar(&fieldPrefix, "field-prefix", "", "Dotted path prefix for registry lookups (e.g., spec.hostedCluster)")
+	flag.StringVar(&typeOverrides, "type-overrides", "", "Comma-separated type overrides in from=to format (e.g., hypershiftv1beta1.ClusterConfiguration=ClusterConfiguration)")
 	flag.Parse()
 
 	// Validate flags
@@ -55,28 +53,19 @@ func main() {
 		types[i] = strings.TrimSpace(types[i])
 	}
 
-	// Load registry: use explicit file if provided, otherwise use embedded default
-	var registry markers.FieldRegistry
-	if registryFile != "" {
-		log.Printf("Loading field registry from: %s", registryFile)
-		var err error
-		registry, err = markers.LoadRegistryFromJSON(registryFile)
-		if err != nil {
-			log.Fatalf("Failed to load registry: %v", err)
-		}
-		log.Printf("Loaded %d field markers from registry", len(registry))
-	} else {
-		var err error
-		registry, err = markers.LoadRegistryFromJSONBytes(embeddedRegistry)
-		if err != nil {
-			log.Fatalf("Failed to load embedded registry: %v", err)
-		}
-		log.Printf("Loaded %d field markers from embedded registry", len(registry))
+	// Load registry
+	if registryFile == "" {
+		log.Fatalf("-registry flag is required (path to field_metadata.json)")
 	}
+	log.Printf("Loading field registry from: %s", registryFile)
+	registry, err := markers.LoadRegistryFromJSON(registryFile)
+	if err != nil {
+		log.Fatalf("Failed to load registry: %v", err)
+	}
+	log.Printf("Loaded %d field markers from registry", len(registry))
 
 	// Create generator
 	var gen *passthrough.Generator
-	var err error
 
 	if importPath != "" {
 		log.Printf("Resolving import path: %s", importPath)
@@ -91,6 +80,19 @@ func main() {
 
 	gen.OutputPackage = packageName
 	gen.FieldPrefix = fieldPrefix
+
+	if typeOverrides != "" {
+		overrides := make(map[string]string)
+		for _, pair := range strings.Split(typeOverrides, ",") {
+			parts := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+			if len(parts) != 2 {
+				log.Fatalf("Invalid type override format %q, expected from=to", pair)
+			}
+			overrides[parts[0]] = parts[1]
+		}
+		gen.TypeOverrides = overrides
+		log.Printf("Type overrides: %v", overrides)
+	}
 
 	// Load source files
 	log.Printf("Loading source files from: %s", gen.SourceDir)

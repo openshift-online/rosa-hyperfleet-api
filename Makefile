@@ -334,12 +334,15 @@ generate-clientset: codegen-conversion $(CLIENT_GEN) $(BRIDGE_GEN)
 verify-clientset: generate-clientset
 	git diff --exit-code clientset/
 
-codegen-passthrough: build-api-codegen
+codegen-passthrough: codegen-registry
 	cd api && ../bin/passthrough-gen \
 		-import-path github.com/openshift/hypershift/api/hypershift/v1beta1 \
 		-types HostedClusterSpec,NodePoolSpec \
 		-output-dir v1alpha1 \
-		-package v1alpha1
+		-package v1alpha1 \
+		-registry ../hack/api-codegen/pkg/registry/field_metadata.json \
+		-type-overrides "hypershiftv1beta1.ClusterConfiguration=ClusterConfiguration"
+	rm -f api/v1alpha1/zz_generated.passthrough.go.raw
 
 codegen-registry: codegen-passthrough generate-deepcopy build-api-codegen
 	./bin/marker-scanner \

@@ -376,7 +376,7 @@ func (in *HostedClusterSpecPassthrough) DeepCopyInto(out *HostedClusterSpecPasst
 	}
 	if in.Configuration != nil {
 		in, out := &in.Configuration, &out.Configuration
-		*out = new(v1beta1.ClusterConfiguration)
+		*out = new(ClusterConfiguration)
 		(*in).DeepCopyInto(*out)
 	}
 	if in.OperatorConfiguration != nil {

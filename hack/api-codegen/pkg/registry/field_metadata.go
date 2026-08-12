@@ -321,6 +321,359 @@ var FieldRegistry = map[string]FieldMeta{
 		FieldPath: "spec.expirationTimestamp",
 		WriteMode: Mutable,
 	},
+	"spec.hostedCluster.additionalTrustBundle": {
+		FieldPath: "spec.hostedCluster.additionalTrustBundle",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.auditWebhook": {
+		FieldPath: "spec.hostedCluster.auditWebhook",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.autoNode": {
+		FieldPath: "spec.hostedCluster.autoNode",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.autoscaling": {
+		FieldPath: "spec.hostedCluster.autoscaling",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.capabilities": {
+		FieldPath: "spec.hostedCluster.capabilities",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.channel": {
+		FieldPath: "spec.hostedCluster.channel",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.clusterID": {
+		FieldPath: "spec.hostedCluster.clusterID",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration": {
+		FieldPath: "spec.hostedCluster.configuration",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.apiServer": {
+		FieldPath: "spec.hostedCluster.configuration.apiServer",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.authentication": {
+		FieldPath: "spec.hostedCluster.configuration.authentication",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.featureGate": {
+		FieldPath: "spec.hostedCluster.configuration.featureGate",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.image": {
+		FieldPath: "spec.hostedCluster.configuration.image",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.ingress": {
+		FieldPath: "spec.hostedCluster.configuration.ingress",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.kubelet": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet",
+		WriteMode: ServiceSet,
+	},
+	"spec.hostedCluster.configuration.kubelet.allowedUnsafeSysctls": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.allowedUnsafeSysctls",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.kubelet.containerLogMaxFiles": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.containerLogMaxFiles",
+		WriteMode: Mutable,
+	},
+	"spec.hostedCluster.configuration.kubelet.containerLogMaxSize": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.containerLogMaxSize",
+		WriteMode: Mutable,
+	},
+	"spec.hostedCluster.configuration.kubelet.cpuManagerPolicy": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.cpuManagerPolicy",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.kubelet.cpuManagerPolicyOptions": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.cpuManagerPolicyOptions",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.kubelet.cpuManagerReconcilePeriod": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.cpuManagerReconcilePeriod",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.kubelet.evictionHard": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.evictionHard",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.kubelet.evictionSoft": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.evictionSoft",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.kubelet.evictionSoftGracePeriod": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.evictionSoftGracePeriod",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.kubelet.imageGCHighThresholdPercent": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.imageGCHighThresholdPercent",
+		WriteMode: Mutable,
+	},
+	"spec.hostedCluster.configuration.kubelet.imageGCLowThresholdPercent": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.imageGCLowThresholdPercent",
+		WriteMode: Mutable,
+	},
+	"spec.hostedCluster.configuration.kubelet.imageMinimumGCAge": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.imageMinimumGCAge",
+		WriteMode: Mutable,
+	},
+	"spec.hostedCluster.configuration.kubelet.kubeReserved": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.kubeReserved",
+		WriteMode: Immutable,
+	},
+	"spec.hostedCluster.configuration.kubelet.maxPods": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.maxPods",
+		WriteMode: Mutable,
+	},
+	"spec.hostedCluster.configuration.kubelet.memoryThrottlingFactor": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.memoryThrottlingFactor",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.kubelet.podPidsLimit": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.podPidsLimit",
+		WriteMode: Mutable,
+	},
+	"spec.hostedCluster.configuration.kubelet.registryBurst": {
+		FieldPath:   "spec.hostedCluster.configuration.kubelet.registryBurst",
+		WriteMode:   Mutable,
+		FeatureGate: "HyperFleetKubeletAdvanced",
+	},
+	"spec.hostedCluster.configuration.kubelet.registryPullQPS": {
+		FieldPath:   "spec.hostedCluster.configuration.kubelet.registryPullQPS",
+		WriteMode:   Mutable,
+		FeatureGate: "HyperFleetKubeletAdvanced",
+	},
+	"spec.hostedCluster.configuration.kubelet.serializeImagePulls": {
+		FieldPath:   "spec.hostedCluster.configuration.kubelet.serializeImagePulls",
+		WriteMode:   Mutable,
+		FeatureGate: "HyperFleetKubeletAdvanced",
+	},
+	"spec.hostedCluster.configuration.kubelet.streamingConnectionIdleTimeout": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.streamingConnectionIdleTimeout",
+		WriteMode: Mutable,
+	},
+	"spec.hostedCluster.configuration.kubelet.systemReserved": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.systemReserved",
+		WriteMode: Immutable,
+	},
+	"spec.hostedCluster.configuration.kubelet.topologyManagerPolicy": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.topologyManagerPolicy",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.kubelet.topologyManagerScope": {
+		FieldPath: "spec.hostedCluster.configuration.kubelet.topologyManagerScope",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.machineConfig": {
+		FieldPath: "spec.hostedCluster.configuration.machineConfig",
+		WriteMode: ServiceSet,
+	},
+	"spec.hostedCluster.configuration.machineConfig.allowedKernelArguments": {
+		FieldPath:   "spec.hostedCluster.configuration.machineConfig.allowedKernelArguments",
+		WriteMode:   Immutable,
+		FeatureGate: "HyperFleetMachineConfig",
+	},
+	"spec.hostedCluster.configuration.machineConfig.extensions": {
+		FieldPath: "spec.hostedCluster.configuration.machineConfig.extensions",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.machineConfig.files": {
+		FieldPath: "spec.hostedCluster.configuration.machineConfig.files",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.machineConfig.kernelArguments": {
+		FieldPath: "spec.hostedCluster.configuration.machineConfig.kernelArguments",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.machineConfig.kernelType": {
+		FieldPath: "spec.hostedCluster.configuration.machineConfig.kernelType",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.machineConfig.systemdUnits": {
+		FieldPath: "spec.hostedCluster.configuration.machineConfig.systemdUnits",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.network": {
+		FieldPath: "spec.hostedCluster.configuration.network",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.oauth": {
+		FieldPath: "spec.hostedCluster.configuration.oauth",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.proxy": {
+		FieldPath: "spec.hostedCluster.configuration.proxy",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.configuration.scheduler": {
+		FieldPath: "spec.hostedCluster.configuration.scheduler",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.controlPlaneRelease": {
+		FieldPath: "spec.hostedCluster.controlPlaneRelease",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.controllerAvailabilityPolicy": {
+		FieldPath: "spec.hostedCluster.controllerAvailabilityPolicy",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.dns": {
+		FieldPath: "spec.hostedCluster.dns",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.etcd": {
+		FieldPath: "spec.hostedCluster.etcd",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.fips": {
+		FieldPath: "spec.hostedCluster.fips",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.imageContentSources": {
+		FieldPath: "spec.hostedCluster.imageContentSources",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.infraID": {
+		FieldPath: "spec.hostedCluster.infraID",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.infrastructureAvailabilityPolicy": {
+		FieldPath: "spec.hostedCluster.infrastructureAvailabilityPolicy",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.issuerURL": {
+		FieldPath: "spec.hostedCluster.issuerURL",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.kubeAPIServerDNSName": {
+		FieldPath: "spec.hostedCluster.kubeAPIServerDNSName",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.labels": {
+		FieldPath: "spec.hostedCluster.labels",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.networking": {
+		FieldPath: "spec.hostedCluster.networking",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.nodeSelector": {
+		FieldPath: "spec.hostedCluster.nodeSelector",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.olmCatalogPlacement": {
+		FieldPath: "spec.hostedCluster.olmCatalogPlacement",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.operatorConfiguration": {
+		FieldPath: "spec.hostedCluster.operatorConfiguration",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.pausedUntil": {
+		FieldPath: "spec.hostedCluster.pausedUntil",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.platform": {
+		FieldPath: "spec.hostedCluster.platform",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.pullSecret": {
+		FieldPath: "spec.hostedCluster.pullSecret",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.release": {
+		FieldPath: "spec.hostedCluster.release",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.secretEncryption": {
+		FieldPath: "spec.hostedCluster.secretEncryption",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.serviceAccountSigningKey": {
+		FieldPath: "spec.hostedCluster.serviceAccountSigningKey",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.services": {
+		FieldPath: "spec.hostedCluster.services",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.sshKey": {
+		FieldPath: "spec.hostedCluster.sshKey",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.tolerations": {
+		FieldPath: "spec.hostedCluster.tolerations",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.hostedCluster.updateService": {
+		FieldPath: "spec.hostedCluster.updateService",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
 	"spec.internalId": {
 		FieldPath: "spec.internalId",
 		WriteMode: ServiceSet,
@@ -334,6 +687,81 @@ var FieldRegistry = map[string]FieldMeta{
 	"spec.labels": {
 		FieldPath: "spec.labels",
 		WriteMode: Mutable,
+	},
+	"spec.nodePool.arch": {
+		FieldPath: "spec.nodePool.arch",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.autoScaling": {
+		FieldPath: "spec.nodePool.autoScaling",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.clusterName": {
+		FieldPath: "spec.nodePool.clusterName",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.config": {
+		FieldPath: "spec.nodePool.config",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.management": {
+		FieldPath: "spec.nodePool.management",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.nodeDrainTimeout": {
+		FieldPath: "spec.nodePool.nodeDrainTimeout",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.nodeLabels": {
+		FieldPath: "spec.nodePool.nodeLabels",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.nodeVolumeDetachTimeout": {
+		FieldPath: "spec.nodePool.nodeVolumeDetachTimeout",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.osImageStream": {
+		FieldPath: "spec.nodePool.osImageStream",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.pausedUntil": {
+		FieldPath: "spec.nodePool.pausedUntil",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.platform": {
+		FieldPath: "spec.nodePool.platform",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.release": {
+		FieldPath: "spec.nodePool.release",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.replicas": {
+		FieldPath: "spec.nodePool.replicas",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.taints": {
+		FieldPath: "spec.nodePool.taints",
+		WriteMode: ServiceSet,
+		Hidden:    true,
+	},
+	"spec.nodePool.tuningConfig": {
+		FieldPath: "spec.nodePool.tuningConfig",
+		WriteMode: ServiceSet,
+		Hidden:    true,
 	},
 	"spec.properties": {
 		FieldPath: "spec.properties",
