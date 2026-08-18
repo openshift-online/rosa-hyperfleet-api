@@ -8,6 +8,13 @@ image:
 awsRegion: ""
 baseDomain: ""
 
+# sqsQueueUrlPrefix is the SQS queue URL prefix for the per-replica status
+# queues. The pod ordinal (derived from the StatefulSet hostname) is appended
+# to form the full queue URL, e.g.:
+#   https://sqs.us-east-1.amazonaws.com/123456789012/regional-hyperfleet-operator-2
+# Must end with a hyphen before the ordinal digit.
+sqsQueueUrlPrefix: ""
+
 postgres:
   secretName: postgres-dsn
   secretKey: dsn

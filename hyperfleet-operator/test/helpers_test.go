@@ -33,32 +33,50 @@ var _ = BeforeEach(func() {
 func purgeResources() {
 	c := mgr.GetClient()
 
-	var clusters hyperfleetv1alpha1.ClusterList
-	if err := c.List(ctx, &clusters); err == nil {
+	// Repeatedly strip finalizers and issue deletes inside the Eventually loop.
+	// A concurrent reconcile may re-add finalizers between our Update and Delete
+	// calls, so we must keep retrying until all objects are gone.
+	Eventually(func() (int, error) {
+		var clusters hyperfleetv1alpha1.ClusterList
+		if err := c.List(ctx, &clusters); err != nil {
+			return 0, err
+		}
 		for i := range clusters.Items {
 			clusters.Items[i].SetFinalizers(nil)
-			_ = c.Update(ctx, &clusters.Items[i])
-			_ = c.Delete(ctx, &clusters.Items[i])
+			if err := c.Update(ctx, &clusters.Items[i]); err != nil {
+				return 0, err
+			}
+			if err := c.Delete(ctx, &clusters.Items[i]); err != nil {
+				return 0, err
+			}
 		}
-	}
-	var nodepools hyperfleetv1alpha1.NodePoolList
-	if err := c.List(ctx, &nodepools); err == nil {
+		var nodepools hyperfleetv1alpha1.NodePoolList
+		if err := c.List(ctx, &nodepools); err != nil {
+			return 0, err
+		}
 		for i := range nodepools.Items {
 			nodepools.Items[i].SetFinalizers(nil)
-			_ = c.Update(ctx, &nodepools.Items[i])
-			_ = c.Delete(ctx, &nodepools.Items[i])
+			if err := c.Update(ctx, &nodepools.Items[i]); err != nil {
+				return 0, err
+			}
+			if err := c.Delete(ctx, &nodepools.Items[i]); err != nil {
+				return 0, err
+			}
 		}
-	}
-	var manifests hyperfleetv1alpha1.ManifestList
-	if err := c.List(ctx, &manifests); err == nil {
+		var manifests hyperfleetv1alpha1.ManifestList
+		if err := c.List(ctx, &manifests); err != nil {
+			return 0, err
+		}
 		for i := range manifests.Items {
 			manifests.Items[i].SetFinalizers(nil)
-			_ = c.Update(ctx, &manifests.Items[i])
-			_ = c.Delete(ctx, &manifests.Items[i])
+			if err := c.Update(ctx, &manifests.Items[i]); err != nil {
+				return 0, err
+			}
+			if err := c.Delete(ctx, &manifests.Items[i]); err != nil {
+				return 0, err
+			}
 		}
-	}
 
-	Eventually(func() int {
 		total := 0
 		var cl hyperfleetv1alpha1.ClusterList
 		if c.List(ctx, &cl) == nil {
@@ -72,8 +90,8 @@ func purgeResources() {
 		if c.List(ctx, &ml) == nil {
 			total += len(ml.Items)
 		}
-		return total
-	}, 5*time.Second, 50*time.Millisecond).Should(Equal(0))
+		return total, nil
+	}, 30*time.Second, 200*time.Millisecond).Should(Equal(0))
 }
 
 func scanTable(tableName string) []map[string]dynamodbtypes.AttributeValue {

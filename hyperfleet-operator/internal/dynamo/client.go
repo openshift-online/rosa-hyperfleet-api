@@ -21,8 +21,8 @@ import (
 var ErrNotFound = errors.New("desire not found")
 
 const (
-	TableSuffixApplyDesires       = "-applydesires"
-	TableSuffixReadDesires        = "-readdesires"
+	TableSuffixApplyDesires      = "-applydesires"
+	TableSuffixReadDesires       = "-readdesires"
 	TableSuffixStatusApplyDesires = "-status-applydesires"
 	TableSuffixStatusReadDesires  = "-status-readdesires"
 	attributeDocumentID           = "documentID"
@@ -66,18 +66,27 @@ type Client struct {
 
 var _ DesireClient = (*Client)(nil)
 
+// NewClient returns a Client backed by the given DynamoDB API.
 func NewClient(db dynamoAPI) *Client {
 	return &Client{db: db}
 }
 
 // UpsertApplyDesire writes an ApplyDesire spec only when content has changed.
 func (c *Client) UpsertApplyDesire(ctx context.Context, specsPrefix string, desire *ApplyDesire) (UpsertResult, error) {
-	return c.upsertDesire(ctx, specsPrefix+TableSuffixApplyDesires, desire.DocumentID, desire.Spec)
+	result, err := c.upsertDesire(ctx, specsPrefix+TableSuffixApplyDesires, desire.DocumentID, desire.Spec)
+	if err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 // UpsertReadDesire writes a ReadDesire spec only when content has changed.
 func (c *Client) UpsertReadDesire(ctx context.Context, specsPrefix string, desire *ReadDesire) (UpsertResult, error) {
-	return c.upsertDesire(ctx, specsPrefix+TableSuffixReadDesires, desire.DocumentID, desire.Spec)
+	result, err := c.upsertDesire(ctx, specsPrefix+TableSuffixReadDesires, desire.DocumentID, desire.Spec)
+	if err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 // GetApplyDesireStatus reads an ApplyDesire from the status table.
