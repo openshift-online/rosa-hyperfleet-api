@@ -121,6 +121,20 @@ type ClusterSpec struct {
 | **immutable** | Customer can set | Rejected if changed |
 | **service-set** | Platform fills it in | Rejected if present |
 
+#### Gate-Aware Write-Mode Overrides
+
+A field's write-mode can vary per customer based on feature gate enablement. The `FeatureGateAwareWriteMode` marker allows overrides on top of the base `+hyperfleet:write-mode=X`:
+
+```go
+// Base: immutable for all customers
+// Override: mutable when MyPremiumFeature gate is enabled
+// +hyperfleet:write-mode=immutable
+// +hyperfleet:validation:FeatureGateAwareWriteMode:featureGate="MyPremiumFeature",writeMode="mutable"
+ReleaseChannel string `json:"releaseChannel"`
+```
+
+When no override matches the customer's enabled gates, the base write-mode applies. See [Feature-Gated Write-Mode Design](feature-gated-write-mode-design.md) for the full proposal, examples, and implementation plan.
+
 ### Marker 3: Feature Gate (`+openshift:enable:FeatureGate=X`)
 
 Controls per-customer field entitlements. Follows the [openshift/api pattern](https://github.com/openshift/api/tree/master/tools/codegen): gates are grouped into feature sets (Default, TechPreviewNoUpgrade, DevPreviewNoUpgrade), and the tooling generates one CRD variant per feature set.
@@ -150,6 +164,8 @@ var HyperFleetFeatureGates = map[string]FeatureGateInfo{
 ```
 
 Promoting a gate (e.g., TechPreview → GA) is a one-line change followed by regeneration. Gated fields appear in the OpenAPI schema for all customers (gates are enforced on writes, not reads).
+
+Feature gates also control **write-mode variation**: a field can have different write-modes for different customers depending on which gates are enabled. This is orthogonal to visibility gating — a GA field (no `+openshift:enable:FeatureGate` marker) can still use gate-aware write-mode overrides. See [Feature-Gated Write-Mode Design](feature-gated-write-mode-design.md) for details.
 
 The Platform API resolves a customer's effective gates from two sources:
 
@@ -208,9 +224,14 @@ var FieldRegistry = map[string]FieldMeta{
     "spec.accountId":             {WriteMode: ServiceSet},
     "spec.hostedCluster.release": {WriteMode: Immutable},
     "spec.hostedCluster.etcd":    {WriteMode: Immutable, Gate: "HyperFleetEtcdConfig"},
+    "spec.releaseChannel":        {WriteMode: Immutable, GatedWriteModes: []FeatureGateWriteMode{
+        {FeatureGate: "MyPremiumFeature", WriteMode: Mutable},
+    }},
     // ...
 }
 ```
+
+Each `FieldMeta` entry can optionally include `GatedWriteModes` — a list of feature-gate-specific write-mode overrides. When present, the Platform API resolves the effective write-mode by checking the customer's enabled gates against this list (first match wins), falling back to the base `WriteMode`. See [Feature-Gated Write-Mode Design](feature-gated-write-mode-design.md) for the full data model.
 
 On every write request, the Platform API walks the fields in the request body and checks each one against this registry:
 
@@ -218,13 +239,24 @@ On every write request, the Platform API walks the fields in the request body an
 for fieldPath, value := range req.Fields() {
     meta := FieldRegistry[fieldPath]
 
+    // Gate check: does the customer have access to this field?
     if meta.Gate != "" && !customerHasGate(customer, meta.Gate) {
         // 400: field 'hostedCluster.etcd' requires gate 'HyperFleetEtcdConfig'
     }
-    if meta.WriteMode == ServiceSet {
+
+    // Resolve effective write-mode: check gate-aware overrides, fall back to base
+    effectiveMode := meta.WriteMode
+    for _, override := range meta.GatedWriteModes {
+        if customerHasGate(customer, override.FeatureGate) {
+            effectiveMode = override.WriteMode
+            break // First matching gate wins
+        }
+    }
+
+    if effectiveMode == ServiceSet {
         // 400: field 'accountId' cannot be set by customers
     }
-    if meta.WriteMode == Immutable && req.IsUpdate() && value != current.Get(fieldPath) {
+    if effectiveMode == Immutable && req.IsUpdate() && value != current.Get(fieldPath) {
         // 400: field 'name' is immutable
     }
 }
