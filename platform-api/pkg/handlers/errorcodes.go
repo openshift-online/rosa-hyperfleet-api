@@ -79,6 +79,22 @@ var (
 	ErrNodePoolValidation APIError
 )
 
+// OidcConfig error codes
+var (
+	ErrOidcConfigList APIError
+
+	ErrOidcConfigCreateInvalidBody   APIError
+	ErrOidcConfigCreateMissingFields APIError
+	ErrOidcConfigCreateFailed        APIError
+
+	ErrOidcConfigGetNotFound APIError
+	ErrOidcConfigGetFailed   APIError
+
+	ErrOidcConfigDeleteNotFound APIError
+	ErrOidcConfigDeleteFailed   APIError
+	ErrOidcConfigDeleteInUse    APIError
+)
+
 // Accounts error codes
 var (
 	ErrAccountCreateInvalidBody APIError
@@ -277,6 +293,23 @@ func init() {
 
 	// NodePool — Validation
 	ErrNodePoolValidation = APIError{Code: "NODEPOOLS-MGMT-VALIDATION-001", HTTPStatus: http.StatusUnprocessableEntity, Message: "A validation error has occurred, check the errors field for more information"}
+
+	// OidcConfig — List
+	ErrOidcConfigList = APIError{Code: "OIDCCONFIGS-MGMT-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list OIDC configs"}
+
+	// OidcConfig — Create
+	ErrOidcConfigCreateInvalidBody = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
+	ErrOidcConfigCreateMissingFields = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "Missing required fields: spec with type"}
+	ErrOidcConfigCreateFailed = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-003", HTTPStatus: http.StatusInternalServerError, Message: "Failed to create OIDC config"}
+
+	// OidcConfig — Get
+	ErrOidcConfigGetNotFound = APIError{Code: "OIDCCONFIGS-MGMT-GET-001", HTTPStatus: http.StatusNotFound, Message: "OIDC config not found"}
+	ErrOidcConfigGetFailed = APIError{Code: "OIDCCONFIGS-MGMT-GET-002", HTTPStatus: http.StatusInternalServerError, Message: "Failed to get OIDC config"}
+
+	// OidcConfig — Delete
+	ErrOidcConfigDeleteNotFound = APIError{Code: "OIDCCONFIGS-MGMT-DELETE-001", HTTPStatus: http.StatusNotFound, Message: "OIDC config not found"}
+	ErrOidcConfigDeleteFailed = APIError{Code: "OIDCCONFIGS-MGMT-DELETE-002", HTTPStatus: http.StatusInternalServerError, Message: "Failed to delete OIDC config"}
+	ErrOidcConfigDeleteInUse = APIError{Code: "OIDCCONFIGS-MGMT-DELETE-003", HTTPStatus: http.StatusConflict, Message: "Cannot delete OIDC config referenced by clusters"}
 
 	// Accounts — Create
 	ErrAccountCreateInvalidBody = APIError{Code: "ACCOUNTS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}

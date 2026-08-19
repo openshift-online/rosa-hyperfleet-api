@@ -9,7 +9,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
-
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/conversion"
+	convv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/conversion/v1alpha1"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/types"
 )
 
@@ -184,6 +185,66 @@ func NodePoolStatusFromCR(cr *hyperfleetv1alpha1.NodePool) *types.NodePoolStatus
 	return &types.NodePoolStatusResponse{
 		NodePoolID: cr.Name,
 		Status:     platform.Status,
+	}
+}
+
+// --- OidcConfig conversions ---
+
+// OidcConfigCRToPlatform converts a v1alpha1.OidcConfig CR to the platform API type.
+func OidcConfigCRToPlatform(cr *hyperfleetv1alpha1.OidcConfig) *types.OidcConfig {
+	projected := convv1alpha1.ProjectOidcConfig(cr)
+	oc := &types.OidcConfig{
+		ID:              cr.Name,
+		Generation:      cr.Generation,
+		ResourceVersion: cr.ResourceVersion,
+		Spec:            projected.Spec,
+		CreatedAt:       cr.CreationTimestamp.Time,
+		UpdatedAt:       metaTime(cr),
+	}
+
+	if phase := cr.Status.Phase; phase != "" {
+		oc.Status = &types.OidcConfigStatusInfo{
+			ObservedGeneration: cr.Status.ObservedGeneration,
+			Phase:              string(phase),
+			Thumbprint:         cr.Status.Thumbprint,
+			LastUpdateTime:     metaTime(cr),
+		}
+
+		if cr.Status.LastUsedTimestamp != nil {
+			t := cr.Status.LastUsedTimestamp.Time
+			oc.Status.LastUsedTimestamp = &t
+		}
+
+		if len(cr.Status.Conditions) > 0 {
+			oc.Status.Conditions = make([]types.Condition, 0, len(cr.Status.Conditions))
+			for _, c := range cr.Status.Conditions {
+				oc.Status.Conditions = append(oc.Status.Conditions, types.Condition{
+					Type:               c.Type,
+					Status:             string(c.Status),
+					LastTransitionTime: c.LastTransitionTime.Time,
+					Reason:             c.Reason,
+					Message:            c.Message,
+				})
+			}
+		}
+	}
+
+	return oc
+}
+
+// PlatformCreateToOidcConfigCR converts a platform OidcConfigCreateRequest into
+// a v1alpha1.OidcConfig CR. metadata.Namespace = account-<accountID>, metadata.Name = configID.
+func PlatformCreateToOidcConfigCR(configID, accountID string, req *types.OidcConfigCreateRequest) *hyperfleetv1alpha1.OidcConfig {
+	crdSpec := convv1alpha1.UnprojectOidcConfig(req.Spec, &conversion.ServiceSetFields{
+		AccountID: accountID,
+	})
+
+	return &hyperfleetv1alpha1.OidcConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configID,
+			Namespace: accountNSPrefix + accountID,
+		},
+		Spec: *crdSpec,
 	}
 }
 
