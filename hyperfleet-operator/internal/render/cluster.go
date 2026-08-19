@@ -204,6 +204,10 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (
 	} else {
 		hcSpec.Configuration.APIServer = apiServerConfiguration().APIServer
 	}
+	ingressDomain := fmt.Sprintf("apps.in.%s.%s.%s", clusterName, h4, baseDomain)
+	hcSpec.Configuration.Ingress = &configv1.IngressSpec{
+		Domain: ingressDomain,
+	}
 
 	// --- Defaults (only set if customer didn't specify) ---
 	if hcSpec.Etcd.ManagementType == "" {
@@ -257,8 +261,9 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (
 				},
 				Annotations: map[string]string{
 					hypershiftv1beta1.PodSecurityAdmissionLabelOverrideAnnotation: "privileged",
-					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:4.23-iam-auth",
+					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:managed-ingress-poc-cfcac56",
 					"hypershift.openshift.io/aws-iam-authenticator":               "true",
+					hypershiftv1beta1.ManagedIngressDNSAnnotation:                  "true",
 				},
 			},
 			Spec: *hcSpec,
