@@ -455,6 +455,10 @@
     "hidden": true
   },
   {
+    "fieldPath": "spec.installerRoleArn",
+    "writeMode": "immutable"
+  },
+  {
     "fieldPath": "spec.internalId",
     "writeMode": "service-set",
     "hidden": true
@@ -463,6 +467,10 @@
     "fieldPath": "spec.internalPoolId",
     "writeMode": "service-set",
     "hidden": true
+  },
+  {
+    "fieldPath": "spec.issuerUrl",
+    "writeMode": "immutable"
   },
   {
     "fieldPath": "spec.labels",
@@ -544,9 +552,17 @@
     "writeMode": "mutable"
   },
   {
+    "fieldPath": "spec.secretArn",
+    "writeMode": "immutable"
+  },
+  {
     "fieldPath": "spec.tags",
     "writeMode": "mutable",
     "featureGate": "HyperFleetAutoScaling"
+  },
+  {
+    "fieldPath": "spec.type",
+    "writeMode": "immutable"
   },
   {
     "fieldPath": "streamingConnectionIdleTimeout",

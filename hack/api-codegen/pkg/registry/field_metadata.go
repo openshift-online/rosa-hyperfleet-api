@@ -475,6 +475,10 @@ var FieldRegistry = map[string]FieldMeta{
 		WriteMode: ServiceSet,
 		Hidden:    true,
 	},
+	"spec.installerRoleArn": {
+		FieldPath: "spec.installerRoleArn",
+		WriteMode: Immutable,
+	},
 	"spec.internalId": {
 		FieldPath: "spec.internalId",
 		WriteMode: ServiceSet,
@@ -484,6 +488,10 @@ var FieldRegistry = map[string]FieldMeta{
 		FieldPath: "spec.internalPoolId",
 		WriteMode: ServiceSet,
 		Hidden:    true,
+	},
+	"spec.issuerUrl": {
+		FieldPath: "spec.issuerUrl",
+		WriteMode: Immutable,
 	},
 	"spec.labels": {
 		FieldPath: "spec.labels",
@@ -564,10 +572,18 @@ var FieldRegistry = map[string]FieldMeta{
 		FieldPath: "spec.properties",
 		WriteMode: Mutable,
 	},
+	"spec.secretArn": {
+		FieldPath: "spec.secretArn",
+		WriteMode: Immutable,
+	},
 	"spec.tags": {
 		FieldPath:   "spec.tags",
 		WriteMode:   Mutable,
 		FeatureGate: "HyperFleetAutoScaling",
+	},
+	"spec.type": {
+		FieldPath: "spec.type",
+		WriteMode: Immutable,
 	},
 	"streamingConnectionIdleTimeout": {
 		FieldPath: "streamingConnectionIdleTimeout",

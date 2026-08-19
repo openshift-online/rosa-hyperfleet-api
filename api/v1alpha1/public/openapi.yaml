@@ -3184,6 +3184,47 @@ components:
               maxItems: 128
               type: array
       type: object
+
+    OidcConfigSpec:
+      description: OidcConfigSpec defines the desired state of an OidcConfig.
+      properties:
+          installerRoleArn:
+              description: |-
+                  InstallerRoleArn is the ARN of the cross-account IAM role used to read the customer's secret.
+                  Required for unmanaged configs; must be empty for managed configs.
+              type: string
+          issuerUrl:
+              description: |-
+                  IssuerUrl is the OIDC issuer URL.
+                  Required for unmanaged configs; set by the controller for managed configs.
+              type: string
+          secretArn:
+              description: |-
+                  SecretArn is the ARN of the customer's Secrets Manager secret containing the RSA private key.
+                  Required for unmanaged configs; must be empty for managed configs.
+              type: string
+          type:
+              description: Type is the OIDC configuration mode.
+              enum:
+                  - managed
+                  - unmanaged
+              type: string
+      required:
+          - type
+      type: object
+      x-kubernetes-validations:
+          - message: managed type must not set secretArn or installerRoleArn
+            rule: self.type != 'managed' || (self.secretArn == '' && self.installerRoleArn == '')
+          - message: unmanaged type requires secretArn, installerRoleArn, and issuerUrl
+            rule: self.type != 'unmanaged' || (self.secretArn != '' && self.installerRoleArn != '' && self.issuerUrl != '')
+          - message: spec.type is immutable
+            rule: self.type == oldSelf.type
+          - message: spec.secretArn is immutable
+            rule: self.secretArn == oldSelf.secretArn
+          - message: spec.installerRoleArn is immutable
+            rule: self.installerRoleArn == oldSelf.installerRoleArn
+          - message: spec.issuerUrl is immutable once set
+            rule: oldSelf.issuerUrl == '' || self.issuerUrl == oldSelf.issuerUrl
   responses:
     BadRequest:
       description: Bad request
