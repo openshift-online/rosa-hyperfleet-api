@@ -237,7 +237,7 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (
 			{CIDR: mustParseCIDR("10.0.0.0/16")},
 		}
 	}
-	hcSpec.Release.Image = "quay.io/openshift-release-dev/ocp-release:5.0.0-ec.2-multi"
+	hcSpec.Release.Image = "quay.io/openshift-release-dev/ocp-release:5.0.0-ec.6-multi"
 
 	// --- Platform overrides ---
 	if hcSpec.Platform.AWS != nil {
