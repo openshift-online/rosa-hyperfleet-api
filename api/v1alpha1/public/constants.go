@@ -43,6 +43,16 @@ const (
 	NodePoolPhaseDeleting          NodePoolPhase = "Deleting"
 )
 
+// OidcConfigPhase represents the lifecycle phase of an OidcConfig.
+// +kubebuilder:validation:Enum=Pending;Ready;Error
+type OidcConfigPhase string
+
+const (
+	OidcConfigPhasePending OidcConfigPhase = "Pending"
+	OidcConfigPhaseReady   OidcConfigPhase = "Ready"
+	OidcConfigPhaseError   OidcConfigPhase = "Error"
+)
+
 // PlacementPhase represents the lifecycle phase of a Placement.
 // +kubebuilder:validation:Enum=Pending;Bound
 type PlacementPhase string

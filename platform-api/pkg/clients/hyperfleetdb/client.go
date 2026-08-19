@@ -221,6 +221,46 @@ func (c *Client) ListManagementClusters(ctx context.Context) (*hyperfleetv1alpha
 	return &list, nil
 }
 
+// --- OidcConfig operations ---
+
+// CreateOidcConfig creates an OidcConfig resource.
+// Namespace = account-<accountID>, Name = configID.
+func (c *Client) CreateOidcConfig(ctx context.Context, oc *hyperfleetv1alpha1.OidcConfig) error {
+	return c.client.Create(ctx, oc)
+}
+
+// GetOidcConfig retrieves an OidcConfig by accountID and configID.
+func (c *Client) GetOidcConfig(ctx context.Context, accountID, configID string) (*hyperfleetv1alpha1.OidcConfig, error) {
+	var oc hyperfleetv1alpha1.OidcConfig
+	err := c.client.Get(ctx, k8stypes.NamespacedName{
+		Namespace: accountNamespace(accountID),
+		Name:      configID,
+	}, &oc)
+	if err != nil {
+		return nil, err
+	}
+	return &oc, nil
+}
+
+// ListOidcConfigs lists OidcConfigs for the given account by namespace.
+func (c *Client) ListOidcConfigs(ctx context.Context, accountID string) (*hyperfleetv1alpha1.OidcConfigList, error) {
+	var list hyperfleetv1alpha1.OidcConfigList
+	err := c.client.List(ctx, &list, client.InNamespace(accountNamespace(accountID)))
+	if err != nil {
+		return nil, err
+	}
+	return &list, nil
+}
+
+// DeleteOidcConfig deletes an OidcConfig by accountID and configID.
+func (c *Client) DeleteOidcConfig(ctx context.Context, accountID, configID string) error {
+	oc, err := c.GetOidcConfig(ctx, accountID, configID)
+	if err != nil {
+		return err
+	}
+	return c.client.Delete(ctx, oc)
+}
+
 // --- Error helpers ---
 
 // IsNotFound returns true if the error is a Kubernetes 404.
@@ -245,6 +285,13 @@ func setAccountLabel(obj client.Object, accountID string) {
 }
 
 var (
-	clusterGR  = hyperfleetv1alpha1.GroupVersion.WithResource("clusters").GroupResource()
-	nodePoolGR = hyperfleetv1alpha1.GroupVersion.WithResource("nodepools").GroupResource()
+	clusterGR    = hyperfleetv1alpha1.GroupVersion.WithResource("clusters").GroupResource()
+	nodePoolGR   = hyperfleetv1alpha1.GroupVersion.WithResource("nodepools").GroupResource()
+	oidcConfigGR = hyperfleetv1alpha1.GroupVersion.WithResource("oidcconfigs").GroupResource()
 )
+
+const accountNSPrefix = "account-"
+
+func accountNamespace(accountID string) string {
+	return accountNSPrefix + accountID
+}

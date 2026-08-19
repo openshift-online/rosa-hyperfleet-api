@@ -405,7 +405,7 @@ generate-openapi: codegen-conversion
 	./bin/openapi-merge \
 		-spec $(OPENAPI_SPEC) \
 		-generated $(OPENAPI_GENERATED) \
-		-schemas ClusterSpec,NodePoolSpec,HostedClusterSpecPassthrough,NodePoolSpecPassthrough,ClusterConfiguration,KubeletConfig,MachineConfigSpec
+		-schemas ClusterSpec,NodePoolSpec,OidcConfigSpec,HostedClusterSpecPassthrough,NodePoolSpecPassthrough,ClusterConfiguration,KubeletConfig,MachineConfigSpec
 
 verify-openapi: generate-openapi
 	git diff --exit-code $(OPENAPI_SPEC)
