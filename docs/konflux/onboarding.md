@@ -15,7 +15,7 @@ See also: [Quay image tags and pinning](./quay-image-tags.md).
 
 ## Onboarding checklist (per component)
 
-Copy this checklist for each new image. **Onboarded** means every step is done and at least one PR + one `main` push build succeeded.
+Copy this checklist for each new image. **Onboarded** means steps 1–5 are complete: green PR build before merge, green `main` push build after merge, and GitOps pointed at the Konflux image.
 
 | # | Step | Where | Done when |
 |---|------|--------|-----------|
@@ -62,7 +62,7 @@ HyperFleet images and where they stand on the checklist above.
 | RRP CI runner | `rosa-hyperfleet` (`ci/Containerfile`) | Not started | Not started | — | — |
 | `rosa-hyperfleet-cli` | `rosa-hyperfleet-cli` | Not started | Not started | — | Deferred (lower priority) |
 
-**Rule for new work:** any new container image that ships to staging or production must go through this checklist before merge — no ad-hoc personal Quay repos for runtime images.
+**Rule for new work:** any new container image that ships to staging or production must complete steps 1–3 before merge and steps 4–5 before release. Do not use ad-hoc personal Quay repos for runtime images.
 
 ## Prow and Konflux responsibilities
 
@@ -83,7 +83,7 @@ This repo uses root [`renovate.json`](../../renovate.json) for MintMaker:
 - Patch/minor/digest updates: automerge when Prow + Konflux pass
 - Major updates: manual review (`major-update`, `manual-review-required`)
 
-MintMaker runs on a **~4 hour schedule**. To rerun CI on an open dep PR without waiting:
+MintMaker runs on a **~4 hour base schedule**. The `tekton` manager runs on Saturdays after 05:00 UTC. To rerun CI on an open dep PR without waiting:
 
 - Comment **`/retest`** on the PR (Konflux + Prow)
 - Add the **`rebase`** label (or use the rebase checkbox in the Renovate PR body) to refresh the branch against `main`
@@ -110,7 +110,7 @@ Post-merge pins use the plain `<sha>` tag — see [quay-image-tags.md](./quay-im
 
 | Symptom | Likely cause | Action |
 |---------|--------------|--------|
-| No Konflux check on PR | PAC not configured or GitHub App not on repo | `configure-pac` annotation on Component; confirm app install |
+| No Konflux check on PR | PAC not configured or GitHub App not on repo | Set `build.appstudio.openshift.io/request: configure-pac` on the Component; confirm app install |
 | `on-pr-*` build fails, `main` is fine | Stale Tekton task refs | Merge Konflux/MintMaker Tekton bump PRs; `/retest` open dep PRs |
 | EC (Enterprise Contract) failures | Dockerfile or base image policy | Check Konflux UI pipeline log; align with EC policy |
 | Image not pullable from RC/EKS | ImageRepository visibility / pull secret | Konflux admin or registry credentials |
