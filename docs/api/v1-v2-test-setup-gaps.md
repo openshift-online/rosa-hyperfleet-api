@@ -4,7 +4,7 @@ This document analyzes the infrastructure provisioning differences between the h
 
 ## Executive Summary
 
-The hyperfleet sanity test validates the **Platform API v2 primitive** by manually creating all AWS resources using direct SDK calls. In contrast, v1 ROSA tests use the **OCM v1 API**, which auto-provisions many resources on the backend. The **rosactl v2** tool bridges this gap by using CloudFormation to orchestrate AWS resource creation.
+The hyperfleet sanity test validates the **Platform API v2 primitive** by manually creating the AWS infrastructure resources required by the test. In contrast, v1 ROSA tests use the **OCM v1 API**, which auto-provisions many resources on the backend. The **rosactl v2** tool bridges this gap by using CloudFormation to orchestrate AWS resource creation.
 
 **Key architectural difference:** Platform API v2 is **BYO-everything** (bring your own VPC, IAM roles, OIDC, etc.), while OCM v1 API provides managed infrastructure creation.
 
