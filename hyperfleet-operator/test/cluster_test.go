@@ -2,6 +2,7 @@ package integration
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -12,6 +13,7 @@ import (
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	dynamo "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo"
+	hd "github.com/rrp-bot/rosa-hyperfleet-kube-applier/hyperfleet-dynamo/dynamodb"
 )
 
 var _ = Describe("Cluster lifecycle", func() {
@@ -160,13 +162,15 @@ var _ = Describe("Cluster lifecycle", func() {
 			TableName: aws.String(statusTable),
 			Item: map[string]dynamodbtypes.AttributeValue{
 				"documentID":         &dynamodbtypes.AttributeValueMemberS{Value: readDocID},
+				"updateTime":         &dynamodbtypes.AttributeValueMemberS{Value: time.Now().UTC().Format(time.RFC3339)},
+				"shard":              &dynamodbtypes.AttributeValueMemberS{Value: hd.ComputeShardDefault(readDocID)},
 				"status_kubeContent": &dynamodbtypes.AttributeValueMemberS{Value: string(hcJSON)},
 			},
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		// DynamoDB Local streams are not reliable enough to deliver events
-		// within test timeouts, so dispatch manually to trigger re-reconciliation.
+		// Dispatch manually as belt-and-suspenders; the GSI poller will also
+		// fire within a few seconds now that shard+updateTime are written.
 		eventRouter.Dispatch(readDocID)
 
 		By("verifying Cluster CR status is updated with HostedCluster data")
