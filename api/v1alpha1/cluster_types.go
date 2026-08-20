@@ -98,7 +98,7 @@ type ClusterSpec struct {
 // ClusterStatus defines the observed state of a Cluster.
 type ClusterStatus struct {
 	// Conditions represent the latest observations of the cluster's state.
-	// Known condition types: Synced, Available, Degraded, ControlPlaneUpgradeState.
+	// Known condition types: Synced, Available, Degraded, ControlPlaneUpgradeState, AWSManagedDNSAvailable.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -115,6 +115,11 @@ type ClusterStatus struct {
 	// Version is the running OpenShift version.
 	// +optional
 	Version string `json:"version,omitempty"`
+
+	// DNSZones contains DNS zone information for zones managed by the control plane.
+	// Populated from the HostedCluster's platform status when managed ingress DNS is enabled.
+	// +optional
+	DNSZones []hypershiftv1beta1.AWSDNSZoneStatus `json:"dnsZones,omitempty"`
 
 	// PlacementRef references the Placement that assigned this cluster to a management cluster.
 	// +optional

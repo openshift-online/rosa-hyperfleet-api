@@ -34,6 +34,7 @@ func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, rcfg RegionalConfig) 
 		awsIAMAuthConfig(clusterID, clusterName, ns, cluster.Spec.CreatorARN),
 		pullSecret(clusterID, ns),
 		apiServingCert(clusterID, clusterName, h4, zoneDomain, ns),
+		ingressServingCert(clusterID, clusterName, h4, zoneDomain, ns),
 		hc,
 		sshKey(clusterID, ns),
 	}, nil
@@ -178,6 +179,33 @@ func apiServingCert(clusterID, clusterName, h4, baseDomain, ns string) Resource 
 	}
 }
 
+func ingressServingCert(clusterID, clusterName, h4, baseDomain, ns string) Resource {
+	return Resource{
+		Group: "cert-manager.io", Version: "v1", Resource: "certificates",
+		Name: "ingress-serving-cert", Namespace: ns,
+		Object: &Certificate{
+			TypeMeta: metav1.TypeMeta{APIVersion: "cert-manager.io/v1", Kind: "Certificate"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ingress-serving-cert",
+				Namespace: ns,
+				Labels: map[string]string{
+					"hyperfleet.io/cluster-id": clusterID,
+				},
+			},
+			Spec: CertificateSpec{
+				SecretName: "ingress-serving-cert",
+				IssuerRef: CertificateIssuerRef{
+					Name: "letsencrypt-dns01",
+					Kind: "ClusterIssuer",
+				},
+				DNSNames: []string{
+					fmt.Sprintf("*.apps.in.%s.%s.%s", clusterName, h4, baseDomain),
+				},
+			},
+		},
+	}
+}
+
 func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (Resource, error) {
 	clusterID := ClusterIDFromNamespace(cluster.Namespace)
 	clusterName := cluster.Name // human-readable
@@ -203,6 +231,10 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (
 		hcSpec.Configuration = apiServerConfiguration()
 	} else {
 		hcSpec.Configuration.APIServer = apiServerConfiguration().APIServer
+	}
+	ingressDomain := fmt.Sprintf("apps.in.%s.%s.%s", clusterName, h4, baseDomain)
+	hcSpec.Configuration.Ingress = &configv1.IngressSpec{
+		Domain: ingressDomain,
 	}
 
 	// --- Defaults (only set if customer didn't specify) ---
@@ -257,8 +289,9 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (
 				},
 				Annotations: map[string]string{
 					hypershiftv1beta1.PodSecurityAdmissionLabelOverrideAnnotation: "privileged",
-					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:4.23-iam-auth",
+					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:managed-ingress-dns-a0906f3af0",
 					"hypershift.openshift.io/aws-iam-authenticator":               "true",
+					hypershiftv1beta1.ManagedIngressDNSAnnotation:                  "true",
 				},
 			},
 			Spec: *hcSpec,

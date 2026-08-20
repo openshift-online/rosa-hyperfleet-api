@@ -437,6 +437,9 @@ func (r *ClusterReconciler) updateStatusFromDynamo(ctx context.Context, cluster 
 				} `json:"history"`
 			} `json:"version"`
 			ControlPlaneEndpoint hypershiftv1beta1.APIEndpoint `json:"controlPlaneEndpoint"`
+			Platform             struct {
+				AWS *hypershiftv1beta1.AWSPlatformStatus `json:"aws,omitempty"`
+			} `json:"platform"`
 		} `json:"status"`
 	}
 	if readStatus != nil && readStatus.KubeContent != nil {
@@ -460,7 +463,7 @@ func (r *ClusterReconciler) updateStatusFromDynamo(ctx context.Context, cluster 
 
 		if readStatus != nil && readStatus.KubeContent != nil {
 			for _, cond := range hc.Status.Conditions {
-				if cond.Type == "Available" || cond.Type == "Degraded" {
+				if cond.Type == "Available" || cond.Type == "Degraded" || cond.Type == string(hypershiftv1beta1.AWSManagedDNSAvailable) {
 					meta.SetStatusCondition(&latest.Status.Conditions, cond)
 				}
 			}
@@ -469,6 +472,9 @@ func (r *ClusterReconciler) updateStatusFromDynamo(ctx context.Context, cluster 
 			}
 			if len(hc.Status.Version.History) > 0 {
 				latest.Status.Version = hc.Status.Version.History[0].Version
+			}
+			if hc.Status.Platform.AWS != nil && len(hc.Status.Platform.AWS.DNSZones) > 0 {
+				latest.Status.DNSZones = hc.Status.Platform.AWS.DNSZones
 			}
 		}
 
