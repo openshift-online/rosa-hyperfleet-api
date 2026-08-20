@@ -36,6 +36,7 @@ func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExterna
 		awsIAMAuthConfig(clusterID, clusterName, ns, cluster.Spec.CreatorARN),
 		pullSecret(clusterID, ns),
 		apiServingCert(clusterID, clusterName, baseDomain, ns),
+		ingressServingCert(clusterID, clusterName, baseDomain, ns),
 		hc,
 		sshKey(clusterID, ns),
 	}
@@ -252,6 +253,33 @@ func extractUUIDFromIssuerURL(issuerURL string) string {
 	return ""
 }
 
+func ingressServingCert(clusterID, clusterName, baseDomain, ns string) Resource {
+	return Resource{
+		Group: "cert-manager.io", Version: "v1", Resource: "certificates",
+		Name: "ingress-serving-cert", Namespace: ns,
+		Object: &Certificate{
+			TypeMeta: metav1.TypeMeta{APIVersion: "cert-manager.io/v1", Kind: "Certificate"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ingress-serving-cert",
+				Namespace: ns,
+				Labels: map[string]string{
+					"hyperfleet.io/cluster-id": clusterID,
+				},
+			},
+			Spec: CertificateSpec{
+				SecretName: "ingress-serving-cert",
+				IssuerRef: CertificateIssuerRef{
+					Name: "letsencrypt-dns01",
+					Kind: "ClusterIssuer",
+				},
+				DNSNames: []string{
+					fmt.Sprintf("*.apps.in.%s.%s", clusterName, baseDomain),
+				},
+			},
+		},
+	}
+}
+
 func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal bool, baseDomain string) (Resource, error) {
 	clusterID := ClusterIDFromNamespace(cluster.Namespace)
 	clusterName := cluster.Name // human-readable
@@ -347,7 +375,7 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 				},
 				Annotations: map[string]string{
 					hypershiftv1beta1.PodSecurityAdmissionLabelOverrideAnnotation: "privileged",
-					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:managed-ingress-poc-cfcac56",
+					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:managed-ingress-dns",
 					"hypershift.openshift.io/aws-iam-authenticator":               "true",
 					hypershiftv1beta1.ManagedIngressDNSAnnotation:                  "true",
 				},
