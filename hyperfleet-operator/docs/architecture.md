@@ -50,11 +50,13 @@ The operator is the **inverse** of kube-applier-aws:
 | **hyperfleet-operator** | writes       | reads         |
 | **kube-applier-aws**    | reads        | writes        |
 
-Per management cluster, there are 6 DynamoDB tables:
+Per management cluster, there are 4 DynamoDB tables:
 
 - `{mc}-specs-applydesires` / `{mc}-status-applydesires`
-- `{mc}-specs-deletedesires` / `{mc}-status-deletedesires`
 - `{mc}-specs-readdesires` / `{mc}-status-readdesires`
+
+Deletion of a Kubernetes resource is expressed as an `ApplyDesire` with
+`spec.type=Delete` — there is no separate `deletedesires` table.
 
 ### Document IDs
 
@@ -65,7 +67,7 @@ documentID = UUIDv5(NamespaceUUID, "{taskKey}/{group}/{version}/{resource}/{name
 ```
 
 - **NamespaceUUID**: `a3f1b2c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c` (shared with kube-applier-aws)
-- **taskKey**: `hyperfleet-operator` for Cluster/NodePool ApplyDesires, `hyperfleet-operator-read` for ReadDesires, `hyperfleet-operator-delete` for DeleteDesires, `hyperfleet-manifest/{namespace}/{name}` for Manifest (scoped per CR to prevent collisions)
+- **taskKey**: `hyperfleet-operator` for Cluster/NodePool ApplyDesires, `hyperfleet-operator-read` for ReadDesires, `hyperfleet-manifest/{namespace}/{name}` for Manifest (scoped per CR to prevent collisions)
 
 Same inputs always produce the same UUID, giving natural idempotency — re-reconciling a Cluster writes the same document IDs, updating existing rows rather than creating duplicates.
 

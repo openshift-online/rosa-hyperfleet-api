@@ -11,17 +11,17 @@ flowchart LR
         NC[NodePoolController]
         MC[ManifestController]
         ER[EventRouter]
-        SM["Stream Manager\n(1 watcher per MC table)"]
+        SM["statusstream.Manager\n(1 GSI watcher per MC table)"]
     end
 
     subgraph "DynamoDB (per MC)"
-        ST["status-readdesires\nstatus-applydesires\nstatus-deletedesires"]
+        ST["status-readdesires\nstatus-applydesires"]
     end
 
     KA[kube-applier-aws]
 
     KA -->|writes status| ST
-    ST -->|DynamoDB Stream| SM
+    ST -->|GSI two-speed poll| SM
     SM -->|"Dispatch(docID)"| ER
     ER -->|GenericEvent| CC
     ER -->|GenericEvent| NC
@@ -32,7 +32,7 @@ flowchart LR
 
 1. **kube-applier-aws** applies/deletes/reads resources on a management cluster and writes the result to the MC's DynamoDB status tables.
 
-2. **Stream Manager** runs one `Watcher` goroutine per MC per status table suffix. Each watcher polls the DynamoDB Stream (every 1s), extracts the `documentID` from each INSERT/MODIFY event, and calls `EventRouter.Dispatch(docID)`. DynamoDB Streams has no push mechanism — "tailing" a stream means polling `GetRecords` in a loop.
+2. **statusstream.Manager** runs one `hyperfleet-dynamo` `Watcher` goroutine per MC per status table suffix. Each watcher runs a two-speed engine: a fast GSI poll (default 15 s) for low-latency change detection, and a full consistent relist (default 5 m) for deletion detection and correctness. When a changed `documentID` is detected, the watcher calls `EventRouter.Dispatch(docID)`.
 
 3. **EventRouter** is a shared in-memory index mapping `documentID → {channel, CR key}`. On dispatch, it looks up the document ID and sends a `GenericEvent` into the target controller's `StatusEvents` channel (non-blocking — drops if full).
 
@@ -57,33 +57,25 @@ r.EventRouter.Deregister(docID)
 
 Each controller type has its own `StatusEvents` channel (buffered, capacity 256). All controllers share one `EventRouter` instance.
 
-## Replica limit
+## Replica scaling
 
-The operator is currently limited to **2 replicas** due to DynamoDB Streams constraints. Each stream shard can only be read by a limited number of consumers, and the stream watcher runs on every replica — scaling beyond 2 replicas risks throttling or missed events on the stream path.
-
-## Shard tracking
-
-DynamoDB splits a stream into shards that rotate over time — a parent shard closes and one or more child shards take over. The watcher tracks shards by ID and handles rotation automatically:
-
-- On startup, it adopts all open shards with `TRIM_HORIZON` (replay from the beginning of each shard).
-- When a shard closes, it triggers immediate discovery to adopt child shards.
-- Expired iterators are refreshed using the last processed sequence number.
-- If the stream ARN changes (table recreated), all shard state is reset.
-
-Controllers reconcile everything from DynamoDB on startup anyway, so the stream only needs to catch events that happen after that initial sync.
+The GSI polling approach has no consumer limit. Unlike DynamoDB Streams (which was capped at 2 concurrent consumers per shard), each `Watcher` goroutine queries the `updateTime-index` GSI independently. The operator can scale to any number of replicas without risk of throttling or missed events on the status path.
 
 ## Reliability
 
-The stream is a low-latency optimization, not the consistency guarantee. Events can be missed in edge cases:
+The watcher is a low-latency optimization, not the consistency guarantee. Events can be missed in edge cases:
 
 - **Channel full**: `EventRouter.Dispatch` is non-blocking. If a controller's channel (capacity 256) is full, the event is dropped.
-- **Registration race**: A status update can arrive on the stream before the controller has registered its document ID with EventRouter.
-- **Data trimmed**: If the watcher falls >24h behind, DynamoDB discards old records and the watcher skips ahead.
+- **Registration race**: A status update can arrive before the controller has registered its document ID with EventRouter.
 
-None of these cause permanent state loss. Every successful reconcile returns `RequeueAfter: 5m` as a safety net — the controller re-reads status directly from DynamoDB. Active waiting states (no placement yet, delete pending) use `RequeueAfter: 5s`. So a missed stream event delays the reaction by at most 5 minutes, it doesn't lose state.
+None of these cause permanent state loss. Every successful reconcile returns `RequeueAfter: 5m` as a safety net — the controller re-reads status directly from DynamoDB. Active waiting states (no placement yet, delete pending) use `RequeueAfter: 5s`. So a missed poll event delays the reaction by at most 5 minutes; it doesn't lose state.
+
+Deletions from the status tables are detected by the full relist (5 m) rather than the fast poll. The watcher calls `OnChange(docID, nil)` when an item disappears.
 
 ## Writing and reading specs
 
-Use `UpsertApplyDesire`, `UpsertDeleteDesire`, or `UpsertReadDesire` to write specs. The DynamoDB client keeps an in-memory hash cache per desire — if the spec hasn't changed, the write is skipped entirely (no DynamoDB call). Use `DeleteDesireSpec` to remove a spec row (always remove ApplyDesires before writing DeleteDesires).
+Use `UpsertApplyDesire` or `UpsertReadDesire` to write specs. The DynamoDB client keeps an in-memory hash cache per desire — if the spec hasn't changed, the write is skipped entirely (no DynamoDB call). Use `DeleteDesireSpec` to remove a spec row.
 
-Use `GetApplyDesireStatus` / `GetDeleteDesireStatus` / `GetReadDesireStatus` for consistent reads. Use `CheckApplyDesireStatuses` / `CheckDeleteDesireStatuses` to check whether kube-applier has processed your specs — these compare `ObservedDesireUpdateTime` against the spec's `updateTime` to ignore stale statuses.
+Deletion of a Kubernetes resource is expressed as an `ApplyDesire` with `spec.type=Delete` — there is no separate `DeleteDesire` type or `deletedesires` table.
+
+Use `GetApplyDesireStatus` / `GetReadDesireStatus` for consistent reads. Use `CheckApplyDesireStatuses` to check whether kube-applier has processed your specs — these compare `ObservedDesireUpdateTime` against the spec's `updateTime` to ignore stale statuses.

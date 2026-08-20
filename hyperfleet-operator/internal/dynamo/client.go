@@ -15,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	hd "github.com/rrp-bot/rosa-hyperfleet-kube-applier/hyperfleet-dynamo/dynamodb"
 )
 
 // ErrNotFound is returned when a desire item does not exist in DynamoDB.
@@ -196,6 +198,7 @@ func (c *Client) putDesireWithHash(ctx context.Context, table, documentID string
 		attributeDocumentID: &dynamodbtypes.AttributeValueMemberS{Value: documentID},
 		"version":           &dynamodbtypes.AttributeValueMemberN{Value: "1"},
 		"updateTime":        &dynamodbtypes.AttributeValueMemberS{Value: updateTime.Format(time.RFC3339)},
+		"shard":             &dynamodbtypes.AttributeValueMemberS{Value: hd.ComputeShardDefault(documentID)},
 		"spec":              &dynamodbtypes.AttributeValueMemberM{Value: specAttrs},
 	}
 

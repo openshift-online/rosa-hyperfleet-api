@@ -3,7 +3,6 @@ package integration
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -15,7 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodbstreams"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	hyperfleetdb "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db"
@@ -33,6 +31,7 @@ import (
 	dynamo "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo/statusstream"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/render"
+	hd "github.com/rrp-bot/rosa-hyperfleet-kube-applier/hyperfleet-dynamo/dynamodb"
 )
 
 const (
@@ -64,14 +63,14 @@ func TestIntegration(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	logf.SetLogger(zap.New(zap.WriteTo(os.Stderr), zap.UseDevMode(true)))
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	containerTool := os.Getenv("CONTAINER_TOOL")
 	if containerTool == "" {
 		containerTool = "podman"
 	}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	logger := logf.Log.WithName("statusstream-test")
 
 	// ── Postgres ──
 
@@ -209,21 +208,20 @@ var _ = BeforeSuite(func() {
 		return mgr.GetCache().WaitForCacheSync(ctx)
 	}, 10*time.Second, 100*time.Millisecond).Should(BeTrue(), "pgruntime cache did not sync")
 
-	// ── DynamoDB Streams ──
+	// ── DynamoDB status stream watchers ──
 
 	By("starting DynamoDB status stream watchers")
-	streamsClient := dynamodbstreams.NewFromConfig(aws.Config{
-		Region:       "us-east-1",
-		Credentials:  credentials.NewStaticCredentialsProvider("test", "test", "test"),
-		BaseEndpoint: aws.String(fmt.Sprintf("http://127.0.0.1:%s", ddbPort)),
-	})
 	streamMgr := statusstream.NewManager(
 		dynamoDBCli,
-		streamsClient,
 		mgr.GetClient(),
 		[]string{dynamo.TableSuffixStatusApplyDesires, dynamo.TableSuffixStatusReadDesires},
-		func(documentID string) { eventRouter.Dispatch(documentID) },
-		logger.With("component", "statusstream"),
+		func(documentID string, _ hd.Item) { eventRouter.Dispatch(documentID) },
+		logger.WithName("watcher"),
+		hd.Options{
+			PollInterval:      3 * time.Second,
+			RelistInterval:    10 * time.Second,
+			MaxLookbackWindow: 10 * time.Second,
+		},
 	)
 	go streamMgr.Run(ctx, 5*time.Second)
 
@@ -275,6 +273,8 @@ var _ = BeforeSuite(func() {
 					}
 					statusItem := map[string]dynamodbtypes.AttributeValue{
 						"documentID": docID,
+						"updateTime": &dynamodbtypes.AttributeValueMemberS{Value: time.Now().UTC().Format(time.RFC3339)},
+						"shard":      &dynamodbtypes.AttributeValueMemberS{Value: hd.ComputeShardDefault(docID.(*dynamodbtypes.AttributeValueMemberS).Value)},
 						"status":     &dynamodbtypes.AttributeValueMemberM{Value: statusAttrs},
 					}
 					_, _ = dynamoDBCli.PutItem(ctx, &dynamodb.PutItemInput{
@@ -318,13 +318,15 @@ var _ = BeforeSuite(func() {
 					if !ok {
 						continue
 					}
-					_, _ = dynamoDBCli.PutItem(ctx, &dynamodb.PutItemInput{
-						TableName: aws.String(statusTable),
-						Item: map[string]dynamodbtypes.AttributeValue{
-							"documentID":         docID,
-							"status_kubeContent": &dynamodbtypes.AttributeValueMemberS{Value: string(completedJob)},
-						},
-					})
+				_, _ = dynamoDBCli.PutItem(ctx, &dynamodb.PutItemInput{
+					TableName: aws.String(statusTable),
+					Item: map[string]dynamodbtypes.AttributeValue{
+						"documentID":         docID,
+						"updateTime":         &dynamodbtypes.AttributeValueMemberS{Value: time.Now().UTC().Format(time.RFC3339)},
+						"shard":              &dynamodbtypes.AttributeValueMemberS{Value: hd.ComputeShardDefault(docID.(*dynamodbtypes.AttributeValueMemberS).Value)},
+						"status_kubeContent": &dynamodbtypes.AttributeValueMemberS{Value: string(completedJob)},
+					},
+				})
 				}
 			}
 		}
@@ -369,6 +371,14 @@ func createTables(db *dynamodb.Client) {
 						AttributeName: aws.String("documentID"),
 						AttributeType: dynamodbtypes.ScalarAttributeTypeS,
 					},
+					{
+						AttributeName: aws.String("shard"),
+						AttributeType: dynamodbtypes.ScalarAttributeTypeS,
+					},
+					{
+						AttributeName: aws.String("updateTime"),
+						AttributeType: dynamodbtypes.ScalarAttributeTypeS,
+					},
 				},
 				KeySchema: []dynamodbtypes.KeySchemaElement{
 					{
@@ -376,13 +386,19 @@ func createTables(db *dynamodb.Client) {
 						KeyType:       dynamodbtypes.KeyTypeHash,
 					},
 				},
+				GlobalSecondaryIndexes: []dynamodbtypes.GlobalSecondaryIndex{
+					{
+						IndexName: aws.String("updateTime-index"),
+						KeySchema: []dynamodbtypes.KeySchemaElement{
+							{AttributeName: aws.String("shard"), KeyType: dynamodbtypes.KeyTypeHash},
+							{AttributeName: aws.String("updateTime"), KeyType: dynamodbtypes.KeyTypeRange},
+						},
+						Projection: &dynamodbtypes.Projection{
+							ProjectionType: dynamodbtypes.ProjectionTypeAll,
+						},
+					},
+				},
 				BillingMode: dynamodbtypes.BillingModePayPerRequest,
-			}
-			if prefix == mc+"-status" {
-				input.StreamSpecification = &dynamodbtypes.StreamSpecification{
-					StreamEnabled:  aws.Bool(true),
-					StreamViewType: dynamodbtypes.StreamViewTypeNewAndOldImages,
-				}
 			}
 			_, err := db.CreateTable(context.Background(), input)
 			Expect(err).NotTo(HaveOccurred(), "create table %s", tableName)
