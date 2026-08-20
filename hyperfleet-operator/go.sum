@@ -172,6 +172,8 @@ github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0t
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/rrp-bot/rosa-hyperfleet-kube-applier v0.0.0-20260716171749-c71c7549f8db h1:B2TcZMSBzIq1Jf3R3qJHG6UytQxsk31bdLyAVFg5Oyw=
 github.com/rrp-bot/rosa-hyperfleet-kube-applier v0.0.0-20260716171749-c71c7549f8db/go.mod h1:fQG90W6c4XJ2SrpWo5gy64AeHHP2W8XI5/VQ5z+MGsY=
+github.com/rrp-bot/rosa-hyperfleet-kube-applier/hyperfleet-dynamo v0.0.0-20260820134740-bf332419c3e8 h1:hT4dbUKsYxdbsQtYucfWPoBRfyEkYQr2lCRy/WRqIbc=
+github.com/rrp-bot/rosa-hyperfleet-kube-applier/hyperfleet-dynamo v0.0.0-20260820134740-bf332419c3e8/go.mod h1:bGXjwh14aW64S+tYSFZ23lxzt+cSOn6FfAdkJUzVfAQ=
 github.com/spf13/pflag v1.0.10 h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=
 github.com/spf13/pflag v1.0.10/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
