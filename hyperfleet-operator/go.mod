@@ -16,7 +16,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.36.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/onsi/ginkgo/v2 v2.27.4
+	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.42.1
 	github.com/openshift-online/rosa-hyperfleet-api/api v0.0.0
 	github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db v0.0.0

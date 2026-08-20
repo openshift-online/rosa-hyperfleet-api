@@ -20,7 +20,7 @@ require (
 	github.com/go-redis/redis_rate/v10 v10.0.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
-	github.com/onsi/ginkgo/v2 v2.28.1
+	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/openshift-online/rosa-hyperfleet-api/api v0.0.0
 	github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen v0.0.0-00010101000000-000000000000
 	github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db v0.0.0
