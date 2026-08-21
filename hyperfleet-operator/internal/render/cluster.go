@@ -295,7 +295,7 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (
 				},
 				Annotations: map[string]string{
 					hypershiftv1beta1.PodSecurityAdmissionLabelOverrideAnnotation: "privileged",
-					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:managed-ingress-dns-e5091c18cb",
+					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:managed-ingress-dns-81078e27b1",
 					"hypershift.openshift.io/aws-iam-authenticator":               "true",
 				},
 			},
