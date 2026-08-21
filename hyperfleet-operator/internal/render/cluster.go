@@ -274,7 +274,7 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (
 		hcSpec.Platform.AWS.ManagedDNS = &hypershiftv1beta1.AWSManagedDNSSpec{
 			IngressDomainPrefix: "in",
 			Delegation: hypershiftv1beta1.AWSManagedDNSDelegationSpec{
-				NSDelegation: hypershiftv1beta1.NSDelegationManual,
+				NSDelegation: hypershiftv1beta1.NSDelegationExternalDNS,
 			},
 		}
 	}
