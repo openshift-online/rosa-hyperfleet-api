@@ -90,7 +90,7 @@ spec:
                         min:
                           description: |-
                             min is the minimum number of nodes to maintain in the pool.
-                            Can be set to 0 for scale-from-zero for AWS platform.
+                            Can be set to 0 for scale-from-zero for AWS and Azure platforms.
                             Must be >= 0 and <= .Max.
                           format: int32
                           minimum: 0
@@ -331,6 +331,25 @@ spec:
                                 is chosen based on the NodePool release payload image.
                               maxLength: 255
                               type: string
+                            cpuOptions:
+                              description: |-
+                                cpuOptions specifies CPU configuration for EC2 instances.
+                                Supported on C8i, M8i, and R8i instance families.
+                                When omitted, AWS defaults are used (nested virtualization is not enabled).
+                                To revert to default behavior after setting cpuOptions, remove the entire
+                                cpuOptions field rather than clearing individual sub-fields.
+                              minProperties: 1
+                              properties:
+                                nestedVirtualizationPolicy:
+                                  description: |-
+                                    nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+                                    Supported on C8i, M8i, and R8i instance families.
+                                    When omitted, nested virtualization is not enabled (AWS default behavior).
+                                  enum:
+                                    - Enabled
+                                    - Disabled
+                                  type: string
+                              type: object
                             imageType:
                               description: |-
                                 imageType specifies the type of image to use for node instances.
@@ -466,36 +485,51 @@ spec:
                               type: object
                             resourceTags:
                               description: |-
-                                resourceTags is an optional list of additional tags to apply to AWS node
-                                instances. Changes to this field will be propagated in-place to AWS EC2 instances and their initial EBS volumes.
-                                Volumes created by the storage operator and attached to instances after they are created do not get these tags applied.
-
-                                These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
-                                These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
+                                resourceTags is a list of additional tags to apply to AWS resources created
+                                for the NodePool. Changes to this field will be propagated in-place to AWS
+                                EC2 instances and their initial EBS volumes. Volumes created by the storage
+                                operator and attached to instances after they are created do not get these
+                                tags applied.
+                                These are merged with HostedCluster-level tags. By default, HostedCluster
+                                tags take precedence when both specify the same key. To allow a NodePool
+                                tag to override a specific HostedCluster tag, set overridePolicy to "Allow"
+                                on the HostedCluster tag.
+                                Tags that only exist at the NodePool level (no conflict) are always applied.
+                                These take precedence over tags defined out of band (i.e., tags added
+                                manually or by other tools outside of HyperShift) in AWS in case of
+                                conflicts.
 
                                 See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
                                 information on tagging AWS resources. AWS supports a maximum of 50 tags per
                                 resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
                                 for the user.
                               items:
-                                description: AWSResourceTag is a tag to apply to AWS resources created for the cluster.
+                                description: |-
+                                  AWSNodePoolResourceTag is a tag to apply to AWS resources created for a
+                                  NodePool. These tags are merged with HostedCluster-level tags. By default,
+                                  HostedCluster tags take precedence when both specify the same key. To allow
+                                  a NodePool tag to override a specific HostedCluster tag, set overridePolicy
+                                  to "Allow" on the HostedCluster tag.
                                 properties:
                                   key:
-                                    description: key is the key of the tag.
+                                    description: |-
+                                      key is the key of the tag.
+                                      Must be between 1 and 128 characters and may only contain letters, digits,
+                                      spaces, and the characters _ . : / = + - @
                                     maxLength: 128
                                     minLength: 1
-                                    pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                     type: string
                                   value:
                                     description: |-
                                       value is the value of the tag.
+                                      Must be between 1 and 256 characters and may only contain letters, digits,
+                                      spaces, and the characters _ . : / = + - @
 
                                       Some AWS service do not support empty values. Since tags are added to
                                       resources in many services, the length of the tag value must meet the
                                       requirements of all services.
                                     maxLength: 256
                                     minLength: 1
-                                    pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                     type: string
                                 required:
                                   - key
@@ -980,7 +1014,8 @@ spec:
                                       - Contain only lowercase letters, digits, underscores, or hyphens
                                       - End with a lowercase letter or digit (not a hyphen or underscore)
                                       - Be 1-63 characters long
-                                      GCP reserves the 'goog' prefix for system labels.
+                                      GCP reserves the 'goog' prefix for system labels, with the exception of
+                                      'goog-partner-solution' which Google requires for partner attribution tracking.
                                       See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
                                     maxLength: 63
                                     minLength: 1
@@ -1081,14 +1116,22 @@ spec:
                                     description: |-
                                       name specify the network attached to the nodes
                                       it is a value with the format "[namespace]/[name]" to reference the
-                                      multus network attachment definition
-                                    maxLength: 255
+                                      multus network attachment definition, where namespace and name consist
+                                      only of lowercase alphanumeric characters and hyphens, and start and
+                                      end with alphanumeric characters
+                                      MaxLength=55: KubeVirt requires Interface.Name to be a DNS label (max 63 chars).
+                                      The generated name is "iface{N}_{namespace}-{name}" where N≤20 (MaxItems),
+                                      giving a max prefix of "iface20_" (8 chars), leaving 55 chars for namespace/name.
+                                    maxLength: 55
                                     type: string
                                 required:
                                   - name
                                 type: object
                               maxItems: 20
                               type: array
+                              x-kubernetes-list-map-keys:
+                                - name
+                              x-kubernetes-list-type: map
                             attachDefaultNetwork:
                               default: true
                               description: |-

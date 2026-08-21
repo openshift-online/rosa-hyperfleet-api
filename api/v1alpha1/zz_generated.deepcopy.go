@@ -225,6 +225,13 @@ func (in *ClusterStatus) DeepCopyInto(out *ClusterStatus) {
 		}
 	}
 	out.ControlPlaneEndpoint = in.ControlPlaneEndpoint
+	if in.DNSZones != nil {
+		in, out := &in.DNSZones, &out.DNSZones
+		*out = make([]v1beta1.AWSDNSZoneStatus, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.PlacementRef != nil {
 		in, out := &in.PlacementRef, &out.PlacementRef
 		*out = new(PlacementReference)

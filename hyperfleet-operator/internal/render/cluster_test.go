@@ -110,8 +110,8 @@ func TestClusterResourcesWithOidcConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
-	if got := len(resources); got != 8 {
-		t.Fatalf("expected 8 resources, got %d", got)
+	if got := len(resources); got != 9 {
+		t.Fatalf("expected 9 resources, got %d", got)
 	}
 
 	last := resources[len(resources)-1]
