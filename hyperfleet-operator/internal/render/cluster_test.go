@@ -65,8 +65,8 @@ func TestClusterResourcesCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
-	if got := len(resources); got != 7 {
-		t.Errorf("expected 7 resources, got %d", got)
+	if got := len(resources); got != 8 {
+		t.Errorf("expected 8 resources, got %d", got)
 	}
 }
 
@@ -85,6 +85,7 @@ func TestClusterResourcesTypes(t *testing.T) {
 		{"configmaps", "aws-iam-auth-config"},
 		{"externalsecrets", "pull-secret"},
 		{"certificates", "api-serving-cert"},
+		{"certificates", "ingress-serving-cert"},
 		{"hostedclusters", "my-cluster"},
 		{"secrets", "ssh-key"},
 	}

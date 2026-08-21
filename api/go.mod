@@ -2,7 +2,7 @@ module github.com/openshift-online/rosa-hyperfleet-api/api
 
 go 1.26.3
 
-replace github.com/openshift/hypershift/api => github.com/typeid/hypershift/api v0.0.0-20260819141349-cfcac56c4a4b
+replace github.com/openshift/hypershift/api => github.com/typeid/hypershift/api v0.0.0-20260820220744-efc243a1adf8
 
 require (
 	github.com/openshift/api v0.0.0-20260715165912-72066cc9718b

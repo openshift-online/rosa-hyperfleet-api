@@ -5,7 +5,7 @@ go 1.26.3
 replace (
 	github.com/openshift-online/rosa-hyperfleet-api/api => ../api
 	github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db => ../hyperfleet-db
-	github.com/openshift/hypershift/api => github.com/typeid/hypershift/api v0.0.0-20260819141349-cfcac56c4a4b
+	github.com/openshift/hypershift/api => github.com/typeid/hypershift/api v0.0.0-20260820220744-efc243a1adf8
 )
 
 require (

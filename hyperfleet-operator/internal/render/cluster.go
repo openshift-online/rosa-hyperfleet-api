@@ -271,6 +271,12 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (
 	if hcSpec.Platform.AWS != nil {
 		hcSpec.Platform.AWS.EndpointAccess = hypershiftv1beta1.PublicAndPrivate
 		hcSpec.Platform.AWS.ResourceTags = appendSystemTags(hcSpec.Platform.AWS.ResourceTags, clusterID)
+		hcSpec.Platform.AWS.ManagedDNS = &hypershiftv1beta1.AWSManagedDNSSpec{
+			IngressDomainPrefix: "in",
+			Delegation: hypershiftv1beta1.AWSManagedDNSDelegationSpec{
+				NSDelegation: hypershiftv1beta1.NSDelegationManual,
+			},
+		}
 	}
 
 	return Resource{
@@ -289,9 +295,8 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (
 				},
 				Annotations: map[string]string{
 					hypershiftv1beta1.PodSecurityAdmissionLabelOverrideAnnotation: "privileged",
-					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:managed-ingress-dns-a0906f3af0",
+					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:managed-ingress-dns-efc243a1ad",
 					"hypershift.openshift.io/aws-iam-authenticator":               "true",
-					hypershiftv1beta1.ManagedIngressDNSAnnotation:                  "true",
 				},
 			},
 			Spec: *hcSpec,
