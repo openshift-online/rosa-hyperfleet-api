@@ -1060,5 +1060,36 @@
     "hidden": true,
     "ownerType": "NodePool",
     "ownerGVK": "hyperfleet.io/v1alpha1.NodePool"
+  },
+  {
+    "fieldPath": "spec.accountId",
+    "writeMode": "service-set",
+    "hidden": true,
+    "ownerType": "OidcConfig",
+    "ownerGVK": "hyperfleet.io/v1alpha1.OidcConfig"
+  },
+  {
+    "fieldPath": "spec.installerRoleArn",
+    "writeMode": "immutable",
+    "ownerType": "OidcConfig",
+    "ownerGVK": "hyperfleet.io/v1alpha1.OidcConfig"
+  },
+  {
+    "fieldPath": "spec.issuerUrl",
+    "writeMode": "immutable",
+    "ownerType": "OidcConfig",
+    "ownerGVK": "hyperfleet.io/v1alpha1.OidcConfig"
+  },
+  {
+    "fieldPath": "spec.secretArn",
+    "writeMode": "immutable",
+    "ownerType": "OidcConfig",
+    "ownerGVK": "hyperfleet.io/v1alpha1.OidcConfig"
+  },
+  {
+    "fieldPath": "spec.type",
+    "writeMode": "immutable",
+    "ownerType": "OidcConfig",
+    "ownerGVK": "hyperfleet.io/v1alpha1.OidcConfig"
   }
 ]

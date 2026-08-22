@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -42,6 +43,7 @@ import (
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/controller"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo/statusstream"
+	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/oidc"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/render"
 )
 
@@ -53,6 +55,8 @@ func main() {
 	var awsRegion string
 	var baseDomain string
 	var maxConcurrentReconciles int
+	var oidcS3Bucket string
+	var oidcIssuerBaseURL string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -60,6 +64,8 @@ func main() {
 	flag.StringVar(&baseDomain, "base-domain", "", "DNS base domain for hosted clusters (required).")
 	flag.IntVar(&maxConcurrentReconciles, "max-concurrent-reconciles", 10,
 		"Maximum number of concurrent reconciles per controller.")
+	flag.StringVar(&oidcS3Bucket, "oidc-s3-bucket", "", "S3 bucket for OIDC discovery documents and JWKS (required).")
+	flag.StringVar(&oidcIssuerBaseURL, "oidc-issuer-base-url", "", "Base URL for OIDC issuers, e.g. CloudFront distribution URL (required).")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -73,6 +79,18 @@ func main() {
 	}
 	if baseDomain == "" {
 		setupLog.Error(nil, "--base-domain is required")
+		os.Exit(1)
+	}
+	if oidcS3Bucket == "" {
+		setupLog.Error(nil, "--oidc-s3-bucket is required")
+		os.Exit(1)
+	}
+	if oidcIssuerBaseURL == "" {
+		setupLog.Error(nil, "--oidc-issuer-base-url is required")
+		os.Exit(1)
+	}
+	if parsed, err := url.Parse(oidcIssuerBaseURL); err != nil || !parsed.IsAbs() || parsed.Scheme != "https" || parsed.Host == "" {
+		setupLog.Error(err, "--oidc-issuer-base-url must be an absolute HTTPS URL", "value", oidcIssuerBaseURL)
 		os.Exit(1)
 	}
 
@@ -184,6 +202,19 @@ func main() {
 		MaxConcurrentReconciles: maxConcurrentReconciles,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "manifest")
+		os.Exit(1)
+	}
+	oidcClient := oidc.NewAWSClient(awsCfg, oidc.Config{
+		S3Bucket:      oidcS3Bucket,
+		IssuerBaseURL: oidcIssuerBaseURL,
+	})
+	if err := (&controller.OidcConfigReconciler{
+		Client:                  mgr.GetClient(),
+		Scheme:                  mgr.GetScheme(),
+		OIDC:                    oidcClient,
+		MaxConcurrentReconciles: maxConcurrentReconciles,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "oidcconfig")
 		os.Exit(1)
 	}
 

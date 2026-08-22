@@ -159,6 +159,7 @@ func (g *Generator) generateDefinitions(roots []*loader.Package) (map[string]api
 var typeToRegistryPrefix = map[string]string{
 	"ClusterSpec":                  "spec",
 	"NodePoolSpec":                 "spec",
+	"OidcConfigSpec":               "spec",
 	"HostedClusterSpecPassthrough": "spec.hostedCluster",
 	"NodePoolSpecPassthrough":      "spec.nodePool",
 	"ClusterConfiguration":         "",

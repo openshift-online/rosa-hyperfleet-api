@@ -36,6 +36,10 @@ func (c *FakeV1alpha1Public) NodePools(namespace string) public.NodePoolInterfac
 	return newFakeNodePools(c, namespace)
 }
 
+func (c *FakeV1alpha1Public) OidcConfigs() public.OidcConfigInterface {
+	return newFakeOidcConfigs(c)
+}
+
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
 func (c *FakeV1alpha1Public) RESTClient() rest.Interface {

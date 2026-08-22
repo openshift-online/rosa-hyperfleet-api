@@ -1092,4 +1092,37 @@ var FieldRegistry = TypedFieldRegistry{
 			OwnerGVK:  "hyperfleet.io/v1alpha1.NodePool",
 		},
 	},
+	"OidcConfig": {
+		"spec.accountId": {
+			FieldPath: "spec.accountId",
+			WriteMode: ServiceSet,
+			Hidden:    true,
+			OwnerType: "OidcConfig",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.OidcConfig",
+		},
+		"spec.installerRoleArn": {
+			FieldPath: "spec.installerRoleArn",
+			WriteMode: Immutable,
+			OwnerType: "OidcConfig",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.OidcConfig",
+		},
+		"spec.issuerUrl": {
+			FieldPath: "spec.issuerUrl",
+			WriteMode: Immutable,
+			OwnerType: "OidcConfig",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.OidcConfig",
+		},
+		"spec.secretArn": {
+			FieldPath: "spec.secretArn",
+			WriteMode: Immutable,
+			OwnerType: "OidcConfig",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.OidcConfig",
+		},
+		"spec.type": {
+			FieldPath: "spec.type",
+			WriteMode: Immutable,
+			OwnerType: "OidcConfig",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.OidcConfig",
+		},
+	},
 }

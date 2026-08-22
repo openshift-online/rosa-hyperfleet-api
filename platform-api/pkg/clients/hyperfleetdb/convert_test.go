@@ -2,9 +2,11 @@ package hyperfleetdb
 
 import (
 	"testing"
+	"time"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/types"
@@ -138,6 +140,50 @@ func TestNodePoolCRToPlatform_LabelsEmpty(t *testing.T) {
 
 	if len(np.Spec.NodePool.NodeLabels) != 0 {
 		t.Errorf("NodeLabels = %v, want empty", np.Spec.NodePool.NodeLabels)
+	}
+}
+
+func TestClusterCRToPlatform_UpdatedAtReflectsLatestCondition(t *testing.T) {
+	created := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	older := created.Add(1 * time.Hour)
+	newer := created.Add(2 * time.Hour)
+
+	cr := &hyperfleetv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			CreationTimestamp: metav1.NewTime(created),
+		},
+		Status: hyperfleetv1alpha1.ClusterStatus{
+			Phase: hyperfleetv1alpha1.ClusterPhaseReady,
+			Conditions: []metav1.Condition{
+				{Type: "Synced", Status: metav1.ConditionTrue, LastTransitionTime: metav1.NewTime(older)},
+				{Type: "Available", Status: metav1.ConditionTrue, LastTransitionTime: metav1.NewTime(newer)},
+			},
+		},
+	}
+
+	cluster := ClusterCRToPlatform(cr)
+
+	if !cluster.UpdatedAt.Equal(newer) {
+		t.Errorf("UpdatedAt = %v, want %v (latest condition transition)", cluster.UpdatedAt, newer)
+	}
+	if cluster.Status == nil || !cluster.Status.LastUpdateTime.Equal(newer) {
+		t.Errorf("Status.LastUpdateTime = %v, want %v", cluster.Status.LastUpdateTime, newer)
+	}
+}
+
+func TestClusterCRToPlatform_UpdatedAtFallsBackToCreationTimestamp(t *testing.T) {
+	created := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	cr := &hyperfleetv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			CreationTimestamp: metav1.NewTime(created),
+		},
+	}
+
+	cluster := ClusterCRToPlatform(cr)
+
+	if !cluster.UpdatedAt.Equal(created) {
+		t.Errorf("UpdatedAt = %v, want %v (creation timestamp fallback)", cluster.UpdatedAt, created)
 	}
 }
 

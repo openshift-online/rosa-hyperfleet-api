@@ -35,4 +35,9 @@ var defaultMappings = map[string][]FieldMapping{
 		{Bridge: "name", Meta: "name"},
 		{Bridge: "resource_version", Meta: "resourceVersion"},
 	},
+	"oidcconfigs": {
+		{Bridge: "generation", Meta: "generation"},
+		{Bridge: "id", Meta: "name"},
+		{Bridge: "resource_version", Meta: "resourceVersion"},
+	},
 }

@@ -47,6 +47,7 @@ func New(cfg *config.Config, dbClient *hyperfleetdb.Client, logger *slog.Logger)
 	mgmtClusterHandler := apphandlers.NewManagementClusterHandler(dbClient, logger)
 	clusterHandler := apphandlers.NewClusterHandler(dbClient, cfg.Regional.OIDCIssuerBaseURL, cfg.Regional.DefaultClusterExpiration, logger)
 	nodePoolHandler := apphandlers.NewNodePoolHandler(dbClient, logger)
+	oidcConfigHandler := apphandlers.NewOidcConfigHandler(dbClient, logger)
 
 	// Create legacy authorization middleware (for non-authz routes)
 	authMiddleware := middleware.NewAuthorization(cfg.AllowedAccounts, logger)
@@ -224,6 +225,19 @@ func New(cfg *config.Config, dbClient *hyperfleetdb.Client, logger *slog.Logger)
 	nodePoolRouter.HandleFunc("/{id}", nodePoolHandler.Update).Methods(http.MethodPut)
 	nodePoolRouter.HandleFunc("/{id}", nodePoolHandler.Delete).Methods(http.MethodDelete)
 	nodePoolRouter.HandleFunc("/{id}/status", nodePoolHandler.GetStatus).Methods(http.MethodGet)
+
+	// OidcConfig routes (user-facing, require authz)
+	oidcConfigRouter := apiRouter.PathPrefix("/api/v0/oidc_configs").Subrouter()
+	if authzMiddleware != nil {
+		oidcConfigRouter.Use(privilegedMiddleware.CheckPrivileged)
+		oidcConfigRouter.Use(authzMiddleware.Authorize)
+	} else {
+		oidcConfigRouter.Use(authMiddleware.RequireAllowedAccount)
+	}
+	oidcConfigRouter.HandleFunc("", oidcConfigHandler.List).Methods(http.MethodGet)
+	oidcConfigRouter.HandleFunc("", oidcConfigHandler.Create).Methods(http.MethodPost)
+	oidcConfigRouter.HandleFunc("/{id}", oidcConfigHandler.Get).Methods(http.MethodGet)
+	oidcConfigRouter.HandleFunc("/{id}", oidcConfigHandler.Delete).Methods(http.MethodDelete)
 
 	// ZOA Trusted Actions routes (privileged)
 	var zoaReconciler *zoa.Reconciler
