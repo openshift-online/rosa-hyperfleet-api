@@ -19,8 +19,7 @@
           "attributes": {
             "tags": {
               "type": "Record",
-              "attributes": {},
-              "additionalAttributes": true
+              "attributes": {}
             }
           }
         }
@@ -38,8 +37,7 @@
             },
             "tags": {
               "type": "Record",
-              "attributes": {},
-              "additionalAttributes": true
+              "attributes": {}
             }
           }
         }
@@ -54,8 +52,7 @@
             },
             "tags": {
               "type": "Record",
-              "attributes": {},
-              "additionalAttributes": true
+              "attributes": {}
             }
           }
         }
@@ -73,8 +70,7 @@
             },
             "tags": {
               "type": "Record",
-              "attributes": {},
-              "additionalAttributes": true
+              "attributes": {}
             }
           }
         }

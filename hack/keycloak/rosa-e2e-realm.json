@@ -1,0 +1,138 @@
+{
+  "realm": "rosa-e2e",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 3600,
+  "ssoSessionMaxLifespan": 86400,
+  "roles": {
+    "realm": [
+      {
+        "name": "rosa-supervisor",
+        "description": "Supervisor role with full access to all accounts"
+      },
+      {
+        "name": "rosa-admin",
+        "description": "Account admin role"
+      },
+      {
+        "name": "rosa-user",
+        "description": "Regular user role"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "rosa-api",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "rosa-e2e-secret",
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": true,
+      "protocol": "openid-connect",
+      "redirectUris": ["http://localhost:8000/*"],
+      "webOrigins": ["http://localhost:8000"],
+      "attributes": {
+        "access.token.lifespan": "3600"
+      },
+      "protocolMappers": [
+        {
+          "name": "account-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "aws_account_id",
+            "claim.name": "aws_account_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "caller-arn-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "caller_arn",
+            "claim.name": "caller_arn",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "realm-role-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "realm_roles",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "multivalued": "true",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "supervisor",
+      "enabled": true,
+      "email": "supervisor@rosa-e2e.local",
+      "firstName": "E2E",
+      "lastName": "Supervisor",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "supervisor-password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["rosa-supervisor"],
+      "attributes": {
+        "aws_account_id": ["000000000000"],
+        "caller_arn": ["arn:aws:iam::000000000000:role/SupervisorRole"]
+      }
+    },
+    {
+      "username": "customer-admin",
+      "enabled": true,
+      "email": "admin@customer.local",
+      "firstName": "Customer",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin-password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["rosa-admin"],
+      "attributes": {
+        "aws_account_id": ["111111111111"],
+        "caller_arn": ["arn:aws:iam::111111111111:role/CustomerAdminRole"]
+      }
+    },
+    {
+      "username": "customer-user",
+      "enabled": true,
+      "email": "user@customer.local",
+      "firstName": "Customer",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "user-password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["rosa-user"],
+      "attributes": {
+        "aws_account_id": ["111111111111"],
+        "caller_arn": ["arn:aws:iam::111111111111:role/CustomerUserRole"]
+      }
+    }
+  ]
+}

@@ -26,6 +26,7 @@ DYNAMODB_ENDPOINT=http://localhost:8180 \
 CEDAR_AGENT_ENDPOINT=http://localhost:8181 \
 AUTHZ_ENABLED=true \
     "$BINARY" serve \
+        --postgres-dsn="postgres://rosa:rosa@localhost:5432/hyperfleet?sslmode=disable" \
         --log-level=debug \
         --log-format=text > "$LOGFILE" 2>&1 &
 echo $! > "$PIDFILE"
@@ -51,4 +52,4 @@ if ! curl -sf "$READY_URL" > /dev/null 2>&1; then
 fi
 
 echo "Running authz E2E tests..."
-E2E_BASE_URL="$BASE_URL" ginkgo -v --focus="Authz" ./test/e2e
+E2E_BASE_URL="$BASE_URL" ginkgo -v --focus="Authz" ./test/e2e-api

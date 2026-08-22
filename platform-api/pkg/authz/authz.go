@@ -162,8 +162,10 @@ func (a *authorizerImpl) Authorize(ctx context.Context, req *AuthzRequest) (bool
 		return true, nil
 	}
 
-	// Get user's group memberships
-	groups, err := a.memberStore.GetUserGroups(ctx, req.AccountID, req.CallerARN)
+	// Get user's group memberships — normalize ARN so STS assumed-role ARNs
+	// match the IAM role ARN stored when the member was added.
+	normalizedARN := store.NormalizeAssumedRoleARN(req.CallerARN)
+	groups, err := a.memberStore.GetUserGroups(ctx, req.AccountID, normalizedARN)
 	if err != nil {
 		return false, fmt.Errorf("failed to get user groups: %w", err)
 	}
@@ -192,10 +194,15 @@ func (a *authorizerImpl) Authorize(ctx context.Context, req *AuthzRequest) (bool
 
 // buildAVPRequest creates the AVP IsAuthorized request
 func (a *authorizerImpl) buildAVPRequest(req *AuthzRequest, groups []string, policyStoreID string) *verifiedpermissions.IsAuthorizedInput {
-	// Build principal
+	// Build principal — normalize STS assumed-role ARNs to IAM role ARNs
+	// so they match the IAM ARN used when attaching policies.
+	principalARN := store.NormalizeAssumedRoleARN(req.CallerARN)
+	if principalARN != req.CallerARN {
+		a.logger.Info("normalized assumed-role ARN for Cedar evaluation", "original", req.CallerARN, "normalized", principalARN)
+	}
 	principal := &avptypes.EntityIdentifier{
 		EntityType: aws.String("ROSA::Principal"),
-		EntityId:   aws.String(req.CallerARN),
+		EntityId:   aws.String(principalARN),
 	}
 
 	// Build action
@@ -391,6 +398,12 @@ func (a *authorizerImpl) DisableAccount(ctx context.Context, accountID string) e
 		if err != nil {
 			a.logger.Warn("failed to delete policy store", "error", err, "policy_store_id", account.PolicyStoreID)
 		}
+	}
+
+	// Clean up all admins for this account so stale entries don't carry over
+	// if the account is re-provisioned with a different adminArn.
+	if err := a.adminStore.DeleteAll(ctx, accountID); err != nil {
+		a.logger.Warn("failed to clean up admins during account deletion", "error", err, "account_id", accountID)
 	}
 
 	return a.accountStore.Delete(ctx, accountID)
