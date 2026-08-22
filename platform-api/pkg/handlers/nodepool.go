@@ -10,11 +10,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 
+	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
-	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/types"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/validation"
 )
 
@@ -64,9 +64,9 @@ func (h *NodePoolHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodepools := make([]*types.NodePool, 0, len(list.Items))
+	nodepools := make([]*public.NodePool, 0, len(list.Items))
 	for i := range list.Items {
-		nodepools = append(nodepools, hyperfleetdb.NodePoolCRToPlatform(&list.Items[i]))
+		nodepools = append(nodepools, hyperfleetdb.InternalToPublicNodePool(&list.Items[i]))
 	}
 
 	total := len(nodepools)
@@ -90,45 +90,57 @@ func (h *NodePoolHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Create handles POST /api/v0/nodepools
+// Request body: public.NodePool (K8s-native). Name comes from metadata.name;
+// cluster association comes from metadata.namespace (the cluster UUID).
 func (h *NodePoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
 
-	var req types.NodePoolCreateRequest
+	var req public.NodePool
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, ErrNodePoolCreateInvalidBody, h.logger)
 		return
 	}
 
-	if req.Name == "" || req.ClusterID == "" || req.Spec == nil {
+	if req.Name == "" || req.Namespace == "" {
 		writeAPIError(w, ErrNodePoolCreateMissingFields, h.logger)
 		return
 	}
 
-	if errs := h.validator.ValidateCreate(req.Spec, featuregate.Default); errs != nil {
+	// Namespace must be the exact canonical form "cluster-<uuid>" (lowercase).
+	// Parse the suffix and round-trip through uuid.String() to reject non-canonical
+	// forms (e.g. uppercase) that would pass uuid.Parse but fail GetCluster lookup.
+	clusterIDRaw := hyperfleetdb.ClusterIDFromNamespace(req.Namespace)
+	parsedUUID, err := uuid.Parse(clusterIDRaw)
+	if err != nil || req.Namespace != hyperfleetdb.ClusterNSPrefix+parsedUUID.String() {
+		writeAPIError(w, ErrNodePoolCreateInvalidNamespace, h.logger)
+		return
+	}
+	clusterID := parsedUUID.String()
+
+	if errs := h.validator.ValidateCreate(&req.Spec, featuregate.Default); errs != nil {
 		writeAPIError(w, ErrNodePoolValidation.WithErrors(errs), h.logger)
 		return
 	}
 
-	if _, err := h.db.GetCluster(ctx, accountID, req.ClusterID); err != nil {
+	if _, err := h.db.GetCluster(ctx, accountID, clusterID); err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrNodePoolCreateClusterNotFound, h.logger)
 			return
 		}
-		h.logger.Error("failed to verify cluster exists", "error", err, "account_id", accountID, "cluster_id", req.ClusterID)
+		h.logger.Error("failed to verify cluster exists", "error", err, "account_id", accountID, "cluster_id", clusterID)
 		writeAPIError(w, ErrNodePoolCreateClusterCheck, h.logger)
 		return
 	}
 
-	h.logger.Info("creating nodepool", "account_id", accountID, "cluster_id", req.ClusterID, "nodepool_name", req.Name)
+	h.logger.Info("creating nodepool", "account_id", accountID, "cluster_id", clusterID, "nodepool_name", req.Name)
 
+	// internalPoolID is a platform-assigned UUID stored as a service-set field.
+	// The public-facing UID (used by SDK callers) is the NodePool name, set by
+	// InternalToPublicNodePool from cr.Name.
 	internalPoolID := uuid.New().String()
-	cr, err := hyperfleetdb.PlatformCreateToNodePoolCR(accountID, internalPoolID, &req)
-	if err != nil {
-		h.logger.Error("failed to convert nodepool spec", "error", err, "account_id", accountID)
-		writeAPIError(w, ErrNodePoolCreateInvalidSpec, h.logger)
-		return
-	}
+	cr := hyperfleetdb.PublicToInternalNodePool(&req, accountID, clusterID, internalPoolID)
 
 	if err := h.db.CreateNodePool(ctx, accountID, cr); err != nil {
 		h.logger.Error("failed to create nodepool", "error", err, "account_id", accountID)
@@ -140,7 +152,7 @@ func (h *NodePoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := api.Write(w, http.StatusCreated, hyperfleetdb.NodePoolCRToPlatform(cr)); err != nil {
+	if err := api.Write(w, http.StatusCreated, hyperfleetdb.InternalToPublicNodePool(cr)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }
@@ -164,11 +176,13 @@ func (h *NodePoolHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := api.Write(w, http.StatusOK, hyperfleetdb.NodePoolCRToPlatform(cr)); err != nil {
+	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicNodePool(cr)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }
 
+// Update handles PUT /api/v0/nodepools/{id}
+// Request body: public.NodePool (K8s-native). Only spec fields are merged; metadata is ignored.
 func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
@@ -181,14 +195,9 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req types.NodePoolUpdateRequest
+	var req public.NodePool
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeAPIError(w, ErrNodePoolUpdateInvalidBody, h.logger)
-		return
-	}
-
-	if req.Spec == nil {
-		writeAPIError(w, ErrNodePoolUpdateMissingFields, h.logger)
 		return
 	}
 
@@ -205,7 +214,7 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if errs := h.validator.ValidateUpdate(req.Spec, &cr.Spec, featuregate.Default); errs != nil {
+	if errs := h.validator.ValidateUpdate(&req.Spec, &cr.Spec, featuregate.Default); errs != nil {
 		writeAPIError(w, ErrNodePoolValidation.WithErrors(errs), h.logger)
 		return
 	}
@@ -218,6 +227,12 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject absent spec (nil) and empty spec object ({}) — both are no-ops
+	// that indicate a malformed request rather than a deliberate partial update.
+	if len(envelope.Spec) == 0 || string(envelope.Spec) == "{}" {
+		writeAPIError(w, ErrNodePoolUpdateMissingFields, h.logger)
+		return
+	}
 	if err := hyperfleetdb.MergeSpecJSON(&cr.Spec, envelope.Spec); err != nil {
 		h.logger.Error("failed to merge nodepool spec", "error", err)
 		writeAPIError(w, ErrNodePoolUpdateInvalidSpec, h.logger)
@@ -230,7 +245,7 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := api.Write(w, http.StatusOK, hyperfleetdb.NodePoolCRToPlatform(cr)); err != nil {
+	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicNodePool(cr)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }
@@ -283,7 +298,7 @@ func (h *NodePoolHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := api.Write(w, http.StatusOK, hyperfleetdb.NodePoolStatusFromCR(cr)); err != nil {
+	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicNodePool(cr)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -47,13 +48,14 @@ func TestInfoHandler_MissingEnvVar(t *testing.T) {
 		t.Errorf("expected status 503, got %d", w.Code)
 	}
 
-	var result map[string]string
+	var result map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if result["code"] != ErrInfoRegionalAccountUnavailable.Code {
-		t.Errorf("expected code=regional-account-unavailable, got %s", result["code"])
+	msg, _ := result["message"].(string)
+	if !strings.Contains(msg, ErrInfoRegionalAccountUnavailable.Code) {
+		t.Errorf("expected message to contain %s, got %q", ErrInfoRegionalAccountUnavailable.Code, msg)
 	}
 }
 
@@ -69,12 +71,13 @@ func TestInfoHandler_MalformedARN(t *testing.T) {
 		t.Errorf("expected status 503, got %d", w.Code)
 	}
 
-	var result map[string]string
+	var result map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if result["code"] != ErrInfoRegionalAccountUnavailable.Code {
-		t.Errorf("expected code=regional-account-unavailable, got %s", result["code"])
+	msg, _ := result["message"].(string)
+	if !strings.Contains(msg, ErrInfoRegionalAccountUnavailable.Code) {
+		t.Errorf("expected message to contain %s, got %q", ErrInfoRegionalAccountUnavailable.Code, msg)
 	}
 }

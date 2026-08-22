@@ -140,10 +140,6 @@ type PlacementReference struct {
 
 // +genclient
 // +genclient:nonNamespaced
-// +bridge:field=name,meta=name
-// +bridge:field=id,meta=uid
-// +bridge:field=resource_version,meta=resourceVersion
-// +bridge:field=generation,meta=generation
 // +bridge:watch=disabled
 // +bridge:wait
 // +kubebuilder:object:root=true

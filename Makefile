@@ -317,12 +317,6 @@ generate-clientset: codegen-conversion $(CLIENT_GEN) $(BRIDGE_GEN)
 		--output-pkg "$(SDK_OUTPUT_PKG)" \
 		--go-header-file "$(SDK_HEADER_FILE)"
 	$(BRIDGE_GEN) \
-		--mode bridge \
-		--input-dir "$(BRIDGE_INPUT_DIR)" \
-		--output-dir "$(BRIDGE_OUTPUT_DIR)" \
-		--output-pkg "$(BRIDGE_OUTPUT_PKG)" \
-		--go-header-file "$(SDK_HEADER_FILE)"
-	$(BRIDGE_GEN) \
 		--mode platform \
 		--input-dir "$(BRIDGE_INPUT_DIR)" \
 		--output-dir "$(PLATFORM_OUTPUT_DIR)" \
@@ -450,6 +444,12 @@ clean:
 	rm -rf bin/
 	rm -f coverage.out coverage.html
 	rm -rf test-results/
+
+clean-test-containers:
+	@$(CONTAINER_ENGINE) ps -a --format "{{.Names}}" \
+	  | grep -E "^pgctl-" \
+	  | xargs -r $(CONTAINER_ENGINE) rm -f \
+	  && echo "test containers removed" || true
 
 # ── All ──────────────────────────────────────────────────────────────────
 

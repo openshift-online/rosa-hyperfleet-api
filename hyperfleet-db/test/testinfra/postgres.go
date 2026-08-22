@@ -6,15 +6,21 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db/internal/schema"
 )
+
+// postgresReadyTimeout is the maximum time to wait for Postgres to accept connections
+// after the container starts. 2 minutes covers cold image pulls and slow container init.
+const postgresReadyTimeout = 2 * time.Minute
 
 var podmanEnv = sync.OnceValue(func() []string {
 	home := os.Getenv("HOME")
@@ -41,8 +47,9 @@ func podmanCmd(args ...string) *exec.Cmd {
 }
 
 type TestDB struct {
-	ConnStr   string
-	container string
+	ConnStr     string
+	container   string
+	stopSignals func() // unregisters the signal handler goroutine on normal Stop()
 }
 
 func StartPostgres(t testing.TB) *TestDB {
@@ -142,7 +149,7 @@ func freePort(t testing.TB) int {
 func waitForPostgres(t testing.TB, connStr string) {
 	t.Helper()
 	ctx := context.Background()
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(postgresReadyTimeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
 		conn, err := pgx.Connect(ctx, connStr)
@@ -162,7 +169,7 @@ func waitForPostgres(t testing.TB, connStr string) {
 	}
 	// show container logs on failure
 	out, _ := podmanCmd("logs", extractContainer(connStr)).CombinedOutput()
-	t.Fatalf("postgres not ready after 30s: %v\nlogs:\n%s", lastErr, out)
+	t.Fatalf("postgres not ready after %s: %v\nlogs:\n%s", postgresReadyTimeout, lastErr, out)
 }
 
 // StartPostgresForTestMain is for use in TestMain where testing.TB is not available.
@@ -207,6 +214,31 @@ func StartPostgresForTestMain() *TestDB {
 
 	connStr := fmt.Sprintf("postgres://test:test@localhost:%d/pgctl_test?sslmode=disable", port)
 
+	// Stop the container on SIGTERM or SIGINT so --rm removes it even when
+	// the test binary is interrupted. SIGKILL cannot be caught, but this
+	// covers `go test -timeout` (which sends SIGTERM) and Ctrl-C.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		sig, ok := <-sigCh
+		if !ok {
+			return // closed by stopSignals on normal teardown
+		}
+		if err := podmanCmd("stop", container).Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "testinfra: stop container %s: %v\n", container, err)
+		}
+		// Re-raise so the process terminates with the correct signal after cleanup.
+		signal.Reset(sig)
+		p, err := os.FindProcess(os.Getpid())
+		if err != nil || p.Signal(sig) != nil {
+			os.Exit(1)
+		}
+	}()
+	stopSignals := func() {
+		signal.Stop(sigCh)
+		close(sigCh)
+	}
+
 	waitForPostgresNoT(connStr)
 
 	ctx := context.Background()
@@ -220,10 +252,13 @@ func StartPostgresForTestMain() *TestDB {
 	}
 	_ = conn.Close(ctx)
 
-	return &TestDB{ConnStr: connStr, container: container}
+	return &TestDB{ConnStr: connStr, container: container, stopSignals: stopSignals}
 }
 
 func (db *TestDB) Stop() {
+	if db.stopSignals != nil {
+		db.stopSignals()
+	}
 	_ = podmanCmd("stop", db.container).Run()
 }
 
@@ -239,7 +274,7 @@ func freePortNoT() int {
 
 func waitForPostgresNoT(connStr string) {
 	ctx := context.Background()
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(postgresReadyTimeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
 		conn, err := pgx.Connect(ctx, connStr)
@@ -257,7 +292,7 @@ func waitForPostgresNoT(connStr string) {
 		}
 		return
 	}
-	panic(fmt.Sprintf("postgres not ready after 30s: %v", lastErr))
+	panic(fmt.Sprintf("postgres not ready after %s: %v", postgresReadyTimeout, lastErr))
 }
 
 func extractContainer(connStr string) string {

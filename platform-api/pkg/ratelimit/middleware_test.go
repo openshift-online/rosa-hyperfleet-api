@@ -318,21 +318,16 @@ func TestMiddleware_429ResponseFormat(t *testing.T) {
 		t.Fatalf("failed to decode body: %v", err)
 	}
 
-	if body["kind"] != "Error" {
-		t.Errorf("expected kind=Error, got %v", body["kind"])
+	if body["kind"] != "Status" {
+		t.Errorf("expected kind=Status, got %v", body["kind"])
 	}
-	if body["code"] != errRateLimit.Code {
-		t.Errorf("expected code=%s, got %v", errRateLimit.Code, body["code"])
+	msg, _ := body["message"].(string)
+	if !strings.Contains(msg, errRateLimit.Code) {
+		t.Errorf("expected message to contain code %s, got %q", errRateLimit.Code, msg)
 	}
-	reason, _ := body["reason"].(string)
-	if reason == "" {
-		t.Fatal("expected non-empty reason")
-	}
-	if !strings.Contains(reason, "429") {
-		t.Errorf("reason should contain status code 429, got %q", reason)
-	}
-	if !strings.Contains(reason, "GET") || !strings.Contains(reason, "default") {
-		t.Errorf("reason should contain method and route pattern, got %q", reason)
+	// reason field is now the metav1.StatusReason category, not the message text
+	if body["reason"] != "TooManyRequests" {
+		t.Errorf("expected reason=TooManyRequests, got %v", body["reason"])
 	}
 	if _, hasDetails := body["details"]; hasDetails {
 		t.Error("response should not contain details object")

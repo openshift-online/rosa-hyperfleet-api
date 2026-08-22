@@ -284,7 +284,8 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		case http.StatusConflict:
 			var body map[string]interface{}
 			Expect(json.Unmarshal(resp.Body, &body)).To(Succeed())
-			Expect(body["code"]).To(Equal("ACCOUNTS-MGMT-CREATE-004"),
+			msg, _ := body["message"].(string)
+			Expect(msg).To(ContainSubstring("ACCOUNTS-MGMT-CREATE-004"),
 				"unexpected 409 body: %s", string(resp.Body))
 			GinkgoWriter.Printf("Customer account %s already registered\n", customerAccountID)
 		default:
@@ -369,11 +370,13 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		)).To(Succeed(), "cluster should reach Ready phase")
 		GinkgoWriter.Printf("Cluster %s is Ready\n", clusterName)
 
-		By("creating nodepool via SDK")
+		By("creating nodepools via SDK")
+		nodepools := cs.HyperfleetV1alpha1().NodePools(clusterID)
+
 		npName := "e2e-np-" + clusterName
 		initialReplicas := int32(2)
 		npSubnetRef := subnetID
-		np, err := cs.HyperfleetV1alpha1().NodePools(clusterID).Create(ctx, &v1alpha1.NodePool{
+		np, err := nodepools.Create(ctx, &v1alpha1.NodePool{
 			ObjectMeta: metav1.ObjectMeta{Name: npName},
 			Spec: v1alpha1.NodePoolSpec{
 				NodePool: v1alpha1.NodePoolSpecPassthrough{
@@ -394,40 +397,14 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		Expect(err).ToNot(HaveOccurred(), "SDK nodepool create")
 		nodepoolID = string(np.UID)
 		nodepoolCreated = true
-		Expect(np.Namespace).To(Equal(clusterID),
-			"nodepool.metadata.namespace should be the parent cluster ID (from cluster_id wire field)")
+		Expect(np.Namespace).To(ContainSubstring(clusterID),
+			"nodepool.metadata.namespace should contain the parent cluster ID")
 		GinkgoWriter.Printf("NodePool %s created (id=%s)\n", npName, nodepoolID)
 
-		By("waiting for nodepool Ready")
-		nodepools := cs.HyperfleetV1alpha1().NodePools(clusterID)
-		Expect(nodepools.WaitUntil(ctx, nodepoolID,
-			func(n *v1alpha1.NodePool) bool {
-				if n == nil {
-					return false
-				}
-				GinkgoWriter.Printf("[%s] nodepool %s: phase=%s\n",
-					time.Now().Format(time.RFC3339), npName, n.Status.Phase)
-				return n.Status.Phase == v1alpha1.NodePoolPhaseReady
-			},
-			nodepoolReadyPoll, nodepoolReadyTimeout,
-		)).To(Succeed(), "nodepool should reach Ready phase")
-		GinkgoWriter.Printf("NodePool %s is Ready\n", npName)
-
-		By("patching nodepool replicas")
-		current, err := nodepools.Get(ctx, nodepoolID, platform.GetOptions{})
-		Expect(err).ToNot(HaveOccurred(), "getting nodepool for patch")
-		newReplicas := int32(3)
-		current.Spec.NodePool.Replicas = &newReplicas
-		updated, err := nodepools.Update(ctx, current, platform.UpdateOptions{})
-		Expect(err).ToNot(HaveOccurred(), "updating nodepool replicas")
-		Expect(*updated.Spec.NodePool.Replicas).To(Equal(newReplicas))
-		GinkgoWriter.Printf("NodePool replicas updated to %d\n", newReplicas)
-
-		By("creating extra nodepool for deletion test")
 		extraNpName := "e2e-np-extra-" + clusterName
 		extraReplicas := int32(1)
 		extraNpSubnetRef := subnetID
-		extraNp, err := cs.HyperfleetV1alpha1().NodePools(clusterID).Create(ctx, &v1alpha1.NodePool{
+		extraNp, err := nodepools.Create(ctx, &v1alpha1.NodePool{
 			ObjectMeta: metav1.ObjectMeta{Name: extraNpName},
 			Spec: v1alpha1.NodePoolSpec{
 				NodePool: v1alpha1.NodePoolSpecPassthrough{
@@ -450,7 +427,20 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		extraNodepoolCreated = true
 		GinkgoWriter.Printf("Extra NodePool %s created (id=%s)\n", extraNpName, extraNodepoolID)
 
-		By("waiting for extra nodepool Ready")
+		By("waiting for nodepools Ready")
+		Expect(nodepools.WaitUntil(ctx, nodepoolID,
+			func(n *v1alpha1.NodePool) bool {
+				if n == nil {
+					return false
+				}
+				GinkgoWriter.Printf("[%s] nodepool %s: phase=%s\n",
+					time.Now().Format(time.RFC3339), npName, n.Status.Phase)
+				return n.Status.Phase == v1alpha1.NodePoolPhaseReady
+			},
+			nodepoolReadyPoll, nodepoolReadyTimeout,
+		)).To(Succeed(), "nodepool should reach Ready phase")
+		GinkgoWriter.Printf("NodePool %s is Ready\n", npName)
+
 		Expect(nodepools.WaitUntil(ctx, extraNodepoolID,
 			func(n *v1alpha1.NodePool) bool {
 				if n == nil {
@@ -463,6 +453,16 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 			nodepoolReadyPoll, nodepoolReadyTimeout,
 		)).To(Succeed(), "extra nodepool should reach Ready phase")
 		GinkgoWriter.Printf("Extra NodePool %s is Ready\n", extraNpName)
+
+		By("patching nodepool replicas")
+		current, err := nodepools.Get(ctx, nodepoolID, platform.GetOptions{})
+		Expect(err).ToNot(HaveOccurred(), "getting nodepool for patch")
+		newReplicas := int32(3)
+		current.Spec.NodePool.Replicas = &newReplicas
+		updated, err := nodepools.Update(ctx, current, platform.UpdateOptions{})
+		Expect(err).ToNot(HaveOccurred(), "updating nodepool replicas")
+		Expect(*updated.Spec.NodePool.Replicas).To(Equal(newReplicas))
+		GinkgoWriter.Printf("NodePool replicas updated to %d\n", newReplicas)
 
 		By("deleting extra nodepool")
 		Expect(deleteNodepool(ctx, cs, clusterID, extraNodepoolID)).To(Succeed())

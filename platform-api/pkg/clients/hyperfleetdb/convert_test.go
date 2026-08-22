@@ -3,173 +3,350 @@ package hyperfleetdb
 import (
 	"testing"
 
-	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"k8s.io/utils/ptr"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/types"
+	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
+	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 )
 
-func TestPlatformCreateToNodePoolCR_SetsAccountLabel(t *testing.T) {
-	req := &types.NodePoolCreateRequest{
-		ClusterID: "test-cluster-id",
-		Name:      "my-nodepool",
-		Spec: &hyperfleetv1alpha1.NodePoolSpec{
-			NodePool: hyperfleetv1alpha1.NodePoolSpecPassthrough{
-				Platform: hypershiftv1beta1.NodePoolPlatform{
-					Type: hypershiftv1beta1.AWSPlatform,
-					AWS: &hypershiftv1beta1.AWSNodePoolPlatform{
-						InstanceType: "m6a.xlarge",
-					},
-				},
-			},
+const (
+	testClusterID    = "550e8400-e29b-41d4-a716-446655440000"
+	testAccountID    = "account-123"
+	testClusterName  = "test-cluster"
+	testNodePoolName = "test-nodepool"
+)
+
+// --- Cluster conversion tests ---
+
+func TestPublicToInternalCluster_SetsMetadata(t *testing.T) {
+	pub := &public.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testClusterName,
+		},
+		Spec: public.ClusterSpec{
+			DisplayName: "Test Cluster",
 		},
 	}
 
-	np, err := PlatformCreateToNodePoolCR("acct-123", "pool-uuid-1", req)
-	if err != nil {
-		t.Fatalf("PlatformCreateToNodePoolCR: %v", err)
-	}
+	result := PublicToInternalCluster(pub, testAccountID, testClusterID)
 
-	if got := np.Labels["hyperfleet.io/account-id"]; got != "acct-123" {
-		t.Errorf("account-id label = %q, want %q", got, "acct-123")
-	}
-
-	if got := np.Namespace; got != "cluster-test-cluster-id" {
-		t.Errorf("namespace = %q, want %q", got, "cluster-test-cluster-id")
-	}
-
-	if got := np.Spec.AccountID; got != "acct-123" {
-		t.Errorf("spec.AccountID = %q, want %q", got, "acct-123")
-	}
-
-	if got := np.Spec.InternalPoolID; got != "pool-uuid-1" {
-		t.Errorf("spec.InternalPoolID = %q, want %q", got, "pool-uuid-1")
-	}
+	require.NotNil(t, result)
+	assert.Equal(t, testClusterName, result.Name)
+	assert.Equal(t, clusterNamespace(testClusterID), result.Namespace)
+	assert.Equal(t, types.UID(testClusterID), result.UID)
+	assert.Equal(t, testAccountID, result.Labels["hyperfleet.io/account-id"])
 }
 
-func TestNodePoolCRToPlatform_AutoRepair(t *testing.T) {
-	tests := []struct {
-		name       string
-		autoRepair *bool
-		wantTop    *bool
-		wantMgmt   bool
-	}{
-		{
-			name:       "nil defaults to true in passthrough",
-			autoRepair: nil,
-			wantTop:    nil,
-			wantMgmt:   true,
-		},
-		{
-			name:       "explicit true propagates to passthrough",
-			autoRepair: ptr.To(true),
-			wantTop:    ptr.To(true),
-			wantMgmt:   true,
-		},
-		{
-			name:       "explicit false propagates to passthrough",
-			autoRepair: ptr.To(false),
-			wantTop:    ptr.To(false),
-			wantMgmt:   false,
-		},
+func TestPublicToInternalCluster_InjectsServiceSetFields(t *testing.T) {
+	pub := &public.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: testClusterName},
+		Spec:       public.ClusterSpec{DisplayName: "Test Cluster"},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cr := &hyperfleetv1alpha1.NodePool{
-				Spec: hyperfleetv1alpha1.NodePoolSpec{
-					AutoRepair: tt.autoRepair,
-				},
-			}
-			np := NodePoolCRToPlatform(cr)
+	result := PublicToInternalCluster(pub, testAccountID, testClusterID)
 
-			if tt.wantTop == nil {
-				if np.Spec.AutoRepair != nil {
-					t.Errorf("Spec.AutoRepair = %v, want nil", *np.Spec.AutoRepair)
-				}
-			} else {
-				if np.Spec.AutoRepair == nil {
-					t.Fatalf("Spec.AutoRepair = nil, want %v", *tt.wantTop)
-				}
-				if *np.Spec.AutoRepair != *tt.wantTop {
-					t.Errorf("Spec.AutoRepair = %v, want %v", *np.Spec.AutoRepair, *tt.wantTop)
-				}
-			}
-
-			if np.Spec.NodePool.Management.AutoRepair != tt.wantMgmt {
-				t.Errorf("Spec.NodePool.Management.AutoRepair = %v, want %v",
-					np.Spec.NodePool.Management.AutoRepair, tt.wantMgmt)
-			}
-		})
-	}
+	require.NotNil(t, result)
+	assert.Equal(t, testAccountID, result.Spec.AccountID)
+	assert.Equal(t, testClusterID, result.Spec.InternalID)
 }
 
-func TestNodePoolCRToPlatform_Labels(t *testing.T) {
-	labels := map[string]string{"env": "staging", "team": "platform"}
+func TestPublicToInternalCluster_NilInput(t *testing.T) {
+	result := PublicToInternalCluster(nil, testAccountID, testClusterID)
+	assert.Nil(t, result)
+}
 
+func TestInternalToPublicCluster_FiltersServiceSetFields(t *testing.T) {
+	cr := &hyperfleetv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testClusterName,
+			Namespace: clusterNamespace(testClusterID),
+			UID:       types.UID(testClusterID),
+			Labels:    map[string]string{"hyperfleet.io/account-id": testAccountID},
+		},
+		Spec: hyperfleetv1alpha1.ClusterSpec{
+			AccountID:   testAccountID,
+			InternalID:  testClusterID,
+			DisplayName: "Test Cluster",
+		},
+	}
+
+	result := InternalToPublicCluster(cr)
+
+	require.NotNil(t, result)
+	assert.Equal(t, testClusterName, result.Name)
+	assert.Equal(t, "Test Cluster", result.Spec.DisplayName)
+	// Service-set fields absent from public type (filtered by JSON roundtrip)
+}
+
+func TestInternalToPublicCluster_NilInput(t *testing.T) {
+	result := InternalToPublicCluster(nil)
+	assert.Nil(t, result)
+}
+
+func TestClusterRoundTrip(t *testing.T) {
+	original := &public.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: testClusterName},
+		Spec:       public.ClusterSpec{DisplayName: "Test Cluster"},
+	}
+
+	internal := PublicToInternalCluster(original, testAccountID, testClusterID)
+	require.NotNil(t, internal)
+
+	result := InternalToPublicCluster(internal)
+	require.NotNil(t, result)
+
+	assert.Equal(t, original.Spec.DisplayName, result.Spec.DisplayName)
+	assert.Equal(t, original.Name, result.Name)
+}
+
+// --- NodePool conversion tests ---
+
+func TestPublicToInternalNodePool_SetsMetadata(t *testing.T) {
+	pub := &public.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: testNodePoolName},
+		Spec:       public.NodePoolSpec{DisplayName: "Test NodePool"},
+	}
+
+	// NodePool internalPoolID is tied to its name (cr.Name used as both ID and Name)
+	result := PublicToInternalNodePool(pub, testAccountID, testClusterID, testNodePoolName)
+
+	require.NotNil(t, result)
+	assert.Equal(t, testNodePoolName, result.Name)
+	assert.Equal(t, clusterNamespace(testClusterID), result.Namespace)
+	assert.Equal(t, testAccountID, result.Labels["hyperfleet.io/account-id"])
+}
+
+func TestPublicToInternalNodePool_InjectsServiceSetFields(t *testing.T) {
+	pub := &public.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: testNodePoolName},
+		Spec:       public.NodePoolSpec{DisplayName: "Test NodePool"},
+	}
+
+	result := PublicToInternalNodePool(pub, testAccountID, testClusterID, testNodePoolName)
+
+	require.NotNil(t, result)
+	assert.Equal(t, testAccountID, result.Spec.AccountID)
+	assert.Equal(t, testNodePoolName, result.Spec.InternalPoolID)
+}
+
+func TestPublicToInternalNodePool_SyncsAutoRepairToPassthrough(t *testing.T) {
+	autoRepair := true
+	pub := &public.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: testNodePoolName},
+		Spec: public.NodePoolSpec{
+			AutoRepair: &autoRepair,
+			Labels:     map[string]string{"env": "test"},
+		},
+	}
+
+	result := PublicToInternalNodePool(pub, testAccountID, testClusterID, testNodePoolName)
+
+	require.NotNil(t, result)
+	assert.Equal(t, true, result.Spec.NodePool.Management.AutoRepair)
+	assert.Equal(t, map[string]string{"env": "test"}, result.Spec.NodePool.NodeLabels)
+}
+
+func TestPublicToInternalNodePool_DefaultsAutoRepairToTrue(t *testing.T) {
+	pub := &public.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: testNodePoolName},
+		Spec:       public.NodePoolSpec{DisplayName: "Test NodePool"},
+	}
+
+	result := PublicToInternalNodePool(pub, testAccountID, testClusterID, testNodePoolName)
+
+	require.NotNil(t, result)
+	// Matches operator default behavior
+	assert.Equal(t, true, result.Spec.NodePool.Management.AutoRepair)
+}
+
+func TestPublicToInternalNodePool_NilInput(t *testing.T) {
+	result := PublicToInternalNodePool(nil, testAccountID, testClusterID, testNodePoolName)
+	assert.Nil(t, result)
+}
+
+func TestInternalToPublicNodePool_FiltersServiceSetFields(t *testing.T) {
 	cr := &hyperfleetv1alpha1.NodePool{
-		Spec: hyperfleetv1alpha1.NodePoolSpec{
-			Labels: labels,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testNodePoolName,
+			Namespace: clusterNamespace(testClusterID),
+			Labels:    map[string]string{"hyperfleet.io/account-id": testAccountID},
 		},
-	}
-	np := NodePoolCRToPlatform(cr)
-
-	if len(np.Spec.NodePool.NodeLabels) != len(labels) {
-		t.Fatalf("NodeLabels len = %d, want %d", len(np.Spec.NodePool.NodeLabels), len(labels))
-	}
-	for k, v := range labels {
-		if np.Spec.NodePool.NodeLabels[k] != v {
-			t.Errorf("NodeLabels[%q] = %q, want %q", k, np.Spec.NodePool.NodeLabels[k], v)
-		}
-	}
-}
-
-func TestNodePoolCRToPlatform_LabelsEmpty(t *testing.T) {
-	cr := &hyperfleetv1alpha1.NodePool{
 		Spec: hyperfleetv1alpha1.NodePoolSpec{
-			Labels: nil,
+			AccountID:      testAccountID,
+			InternalPoolID: testNodePoolName,
+			DisplayName:    "Test NodePool",
+			AutoRepair:     ptrBool(true),
+			Labels:         map[string]string{"env": "test"},
 			NodePool: hyperfleetv1alpha1.NodePoolSpecPassthrough{
-				NodeLabels: map[string]string{"stale": "value"},
-			},
-		},
-	}
-	np := NodePoolCRToPlatform(cr)
-
-	if len(np.Spec.NodePool.NodeLabels) != 0 {
-		t.Errorf("NodeLabels = %v, want empty", np.Spec.NodePool.NodeLabels)
-	}
-}
-
-func TestPlatformCreateToClusterCR_SetsAccountLabel(t *testing.T) {
-	req := &types.ClusterCreateRequest{
-		Name: "my-cluster",
-		Spec: &hyperfleetv1alpha1.ClusterSpec{
-			HostedCluster: hyperfleetv1alpha1.HostedClusterSpecPassthrough{
-				Platform: hypershiftv1beta1.PlatformSpec{
-					Type: hypershiftv1beta1.AWSPlatform,
-					AWS: &hypershiftv1beta1.AWSPlatformSpec{
-						Region: "us-east-1",
-					},
-				},
+				Management: hypershiftv1beta1.NodePoolManagement{AutoRepair: true},
+				NodeLabels: map[string]string{"env": "test"},
 			},
 		},
 	}
 
-	cr, err := PlatformCreateToClusterCR("cluster-uuid", "acct-456", req)
-	if err != nil {
-		t.Fatalf("PlatformCreateToClusterCR: %v", err)
+	result := InternalToPublicNodePool(cr)
+
+	require.NotNil(t, result)
+	assert.Equal(t, testNodePoolName, result.Name)
+	// Service-set fields absent; user-visible fields present
+	require.NotNil(t, result.Spec.AutoRepair)
+	assert.Equal(t, true, *result.Spec.AutoRepair)
+	assert.Equal(t, map[string]string{"env": "test"}, result.Spec.Labels)
+}
+
+func TestInternalToPublicNodePool_NilInput(t *testing.T) {
+	result := InternalToPublicNodePool(nil)
+	assert.Nil(t, result)
+}
+
+func TestNodePoolRoundTrip(t *testing.T) {
+	autoRepair := true
+	original := &public.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: testNodePoolName},
+		Spec: public.NodePoolSpec{
+			DisplayName: "Test NodePool",
+			AutoRepair:  &autoRepair,
+			Labels:      map[string]string{"env": "test"},
+		},
 	}
 
-	if got := cr.Labels["hyperfleet.io/account-id"]; got != "acct-456" {
-		t.Errorf("account-id label = %q, want %q", got, "acct-456")
+	internal := PublicToInternalNodePool(original, testAccountID, testClusterID, testNodePoolName)
+	require.NotNil(t, internal)
+
+	// Passthrough synced correctly
+	assert.Equal(t, true, internal.Spec.NodePool.Management.AutoRepair)
+	assert.Equal(t, original.Spec.Labels, internal.Spec.NodePool.NodeLabels)
+
+	result := InternalToPublicNodePool(internal)
+	require.NotNil(t, result)
+
+	require.NotNil(t, result.Spec.AutoRepair)
+	assert.Equal(t, *original.Spec.AutoRepair, *result.Spec.AutoRepair)
+	assert.Equal(t, original.Spec.Labels, result.Spec.Labels)
+}
+
+// --- enrichMetadata tests ---
+
+func TestEnrichMetadata_SetsFields(t *testing.T) {
+	meta := &metav1.ObjectMeta{Name: "res"}
+
+	enrichMetadata(meta, testClusterID, testClusterID, testAccountID)
+
+	assert.Equal(t, clusterNamespace(testClusterID), meta.Namespace)
+	assert.Equal(t, types.UID(testClusterID), meta.UID)
+	assert.Equal(t, testAccountID, meta.Labels["hyperfleet.io/account-id"])
+}
+
+func TestEnrichMetadata_PreservesExistingLabels(t *testing.T) {
+	meta := &metav1.ObjectMeta{
+		Name:   "res",
+		Labels: map[string]string{"app": "test"},
 	}
 
-	if got := cr.Spec.AccountID; got != "acct-456" {
-		t.Errorf("spec.AccountID = %q, want %q", got, "acct-456")
+	enrichMetadata(meta, testClusterID, testClusterID, testAccountID)
+
+	assert.Equal(t, "test", meta.Labels["app"])
+	assert.Equal(t, testAccountID, meta.Labels["hyperfleet.io/account-id"])
+}
+
+// --- Input mutation regression tests ---
+
+// TestPublicToInternalCluster_DoesNotMutateInput verifies that conversion leaves
+// pub.ObjectMeta and its labels unchanged. The test catches mutation because
+// enrichMetadata injects "hyperfleet.io/account-id" — if pub.Labels were modified
+// in-place that key would appear in pub.Labels after the call.
+func TestPublicToInternalCluster_DoesNotMutateInput(t *testing.T) {
+	pub := &public.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testClusterName,
+			Namespace: "",
+			Labels:    map[string]string{"user-key": "user-val"},
+		},
 	}
 
-	if got := cr.Spec.InternalID; got != "cluster-uuid" {
-		t.Errorf("spec.InternalID = %q, want %q", got, "cluster-uuid")
+	cr := PublicToInternalCluster(pub, testAccountID, testClusterID)
+
+	// CRD must carry the enriched metadata
+	assert.Equal(t, clusterNamespace(testClusterID), cr.Namespace)
+	assert.Equal(t, testAccountID, cr.Labels["hyperfleet.io/account-id"])
+
+	// pub.ObjectMeta must be unchanged
+	assert.Equal(t, "", pub.Namespace)
+	assert.Equal(t, types.UID(""), pub.UID)
+	_, hasAccountLabel := pub.Labels["hyperfleet.io/account-id"]
+	assert.False(t, hasAccountLabel, "pub.Labels must not be mutated by conversion")
+	assert.Equal(t, "user-val", pub.Labels["user-key"])
+}
+
+// TestPublicToInternalNodePool_DoesNotMutateInput verifies that conversion leaves
+// pub.ObjectMeta and its labels unchanged.
+func TestPublicToInternalNodePool_DoesNotMutateInput(t *testing.T) {
+	pub := &public.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testNodePoolName,
+			Namespace: "",
+			Labels:    map[string]string{"user-key": "user-val"},
+		},
+	}
+
+	np := PublicToInternalNodePool(pub, testAccountID, testClusterID, testNodePoolName)
+
+	// CRD must carry the enriched metadata
+	assert.Equal(t, clusterNamespace(testClusterID), np.Namespace)
+	assert.Equal(t, testAccountID, np.Labels["hyperfleet.io/account-id"])
+
+	// pub.ObjectMeta must be unchanged
+	assert.Equal(t, "", pub.Namespace)
+	assert.Equal(t, types.UID(""), pub.UID)
+	_, hasAccountLabel := pub.Labels["hyperfleet.io/account-id"]
+	assert.False(t, hasAccountLabel, "pub.Labels must not be mutated by conversion")
+	assert.Equal(t, "user-val", pub.Labels["user-key"])
+}
+
+// --- syncNodePoolPassthrough tests ---
+
+func TestSyncNodePoolPassthrough_SyncsAutoRepairAndLabels(t *testing.T) {
+	autoRepair := true
+	spec := &hyperfleetv1alpha1.NodePoolSpec{
+		AutoRepair: &autoRepair,
+		Labels:     map[string]string{"env": "test"},
+	}
+
+	syncNodePoolPassthrough(spec, spec.AutoRepair, spec.Labels)
+
+	assert.Equal(t, true, spec.NodePool.Management.AutoRepair)
+	assert.Equal(t, spec.Labels, spec.NodePool.NodeLabels)
+}
+
+func TestSyncNodePoolPassthrough_DefaultsAutoRepairWhenNil(t *testing.T) {
+	spec := &hyperfleetv1alpha1.NodePoolSpec{}
+
+	syncNodePoolPassthrough(spec, nil, nil)
+
+	assert.Equal(t, true, spec.NodePool.Management.AutoRepair)
+}
+
+func TestSyncNodePoolPassthrough_NilSpec(t *testing.T) {
+	// Must not panic
+	syncNodePoolPassthrough(nil, nil, nil)
+}
+
+// --- namespace helpers ---
+
+func TestNamespaceRoundTrip(t *testing.T) {
+	for _, id := range []string{testClusterID, "00000000-0000-0000-0000-000000000000"} {
+		ns := clusterNamespace(id)
+		assert.Equal(t, id, clusterIDFromNamespace(ns), "clusterID not preserved through namespace roundtrip")
 	}
 }
+
+func TestNamespaceLength(t *testing.T) {
+	ns := clusterNamespace(testClusterID)
+	assert.LessOrEqual(t, len(ns), 63, "namespace exceeds K8s 63-char limit")
+}
+
+func ptrBool(b bool) *bool { return &b }

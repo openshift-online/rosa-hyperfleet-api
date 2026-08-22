@@ -127,10 +127,27 @@ type {{.Name}}Interface interface {
 }
 
 type {{.LowerName}}Client struct {
+{{- if .NonNamespaced}}
 	inner typedclient.{{.Name}}Interface
+{{- else}}
+	inner     typedclient.{{.Name}}Interface
+	namespace string // parent namespace passed to {{.PluralName}}(namespace)
+{{- end}}
 }
 
 func (c *{{.LowerName}}Client) Create(ctx context.Context, obj *v1alpha1.{{.Name}}, opts CreateOptions) (*v1alpha1.{{.Name}}, error) {
+{{- if .NonNamespaced}}{{else}}
+	// Always enforce the client namespace in the body so the handler can derive the
+	// parent resource ID. The SigV4 transport strips /namespaces/{value}/ from the
+	// URL before it reaches the server, making the body the only carrier.
+	// A caller-supplied namespace that differs from the client namespace is replaced
+	// rather than silently passed through.
+	if c.namespace != "" && obj.Namespace != c.namespace {
+		routed := obj.DeepCopy()
+		routed.Namespace = c.namespace
+		return c.inner.Create(ctx, routed, metav1.CreateOptions{})
+	}
+{{- end}}
 	return c.inner.Create(ctx, obj, metav1.CreateOptions{})
 }
 
@@ -241,7 +258,7 @@ func (w *wrappedV1alpha1) {{.PluralName}}() {{.Name}}Interface {
 }
 {{- else}}
 func (w *wrappedV1alpha1) {{.PluralName}}(namespace string) {{.Name}}Interface {
-	return &{{.LowerName}}Client{inner: w.inner.{{.PluralName}}(namespace)}
+	return &{{.LowerName}}Client{inner: w.inner.{{.PluralName}}(namespace), namespace: namespace}
 }
 {{- end}}
 {{end}}`

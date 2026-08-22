@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/authz"
@@ -114,14 +115,15 @@ func TestAdminCheck_RequireAdmin_NonAdminCaller(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&errorResp); err != nil {
 		t.Fatalf("failed to decode error response: %v", err)
 	}
-	if errorResp["kind"] != "Error" {
-		t.Errorf("expected kind=Error, got %v", errorResp["kind"])
+	if errorResp["kind"] != "Status" {
+		t.Errorf("expected kind=Status, got %v", errorResp["kind"])
 	}
-	if errorResp["code"] != ErrNotAdmin.Code {
-		t.Errorf("expected code=%s, got %v", ErrNotAdmin.Code, errorResp["code"])
+	msg, _ := errorResp["message"].(string)
+	if !strings.Contains(msg, ErrNotAdmin.Code) {
+		t.Errorf("expected message to contain %s, got %q", ErrNotAdmin.Code, msg)
 	}
-	if errorResp["reason"] != "This operation requires admin privileges" {
-		t.Errorf("expected reason='This operation requires admin privileges', got %v", errorResp["reason"])
+	if !strings.Contains(msg, "This operation requires admin privileges") {
+		t.Errorf("expected message to contain reason, got %q", msg)
 	}
 	if contentType := w.Header().Get("Content-Type"); contentType != "application/json" {
 		t.Errorf("expected Content-Type application/json, got %s", contentType)
@@ -189,8 +191,9 @@ func TestAdminCheck_RequireAdmin_MissingCallerARN(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&errorResp); err != nil {
 		t.Fatalf("failed to decode error response: %v", err)
 	}
-	if errorResp["code"] != ErrMissingCallerARN.Code {
-		t.Errorf("expected code=%s, got %v", ErrMissingCallerARN.Code, errorResp["code"])
+	msg, _ := errorResp["message"].(string)
+	if !strings.Contains(msg, ErrMissingCallerARN.Code) {
+		t.Errorf("expected message to contain %s, got %q", ErrMissingCallerARN.Code, msg)
 	}
 }
 
@@ -228,8 +231,9 @@ func TestAdminCheck_RequireAdmin_IsAdminError(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&errorResp); err != nil {
 		t.Fatalf("failed to decode error response: %v", err)
 	}
-	if errorResp["code"] != ErrAdminCheckFailed.Code {
-		t.Errorf("expected code=%s, got %v", ErrAdminCheckFailed.Code, errorResp["code"])
+	msg, _ := errorResp["message"].(string)
+	if !strings.Contains(msg, ErrAdminCheckFailed.Code) {
+		t.Errorf("expected message to contain %s, got %q", ErrAdminCheckFailed.Code, msg)
 	}
 }
 
@@ -259,7 +263,8 @@ func TestAdminCheck_RequireAdmin_MissingAccountID(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&errorResp); err != nil {
 		t.Fatalf("failed to decode error response: %v", err)
 	}
-	if errorResp["code"] != ErrMissingAccountID.Code {
-		t.Errorf("expected code=%s, got %v", ErrMissingAccountID.Code, errorResp["code"])
+	msg, _ := errorResp["message"].(string)
+	if !strings.Contains(msg, ErrMissingAccountID.Code) {
+		t.Errorf("expected message to contain %s, got %q", ErrMissingAccountID.Code, msg)
 	}
 }

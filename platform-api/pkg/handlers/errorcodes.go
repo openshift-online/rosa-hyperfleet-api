@@ -53,13 +53,14 @@ var (
 var (
 	ErrNodePoolList APIError
 
-	ErrNodePoolCreateInvalidBody     APIError
-	ErrNodePoolCreateMissingFields   APIError
-	ErrNodePoolCreateNameConflict    APIError
-	ErrNodePoolCreateClusterNotFound APIError
-	ErrNodePoolCreateClusterCheck    APIError
-	ErrNodePoolCreateInvalidSpec     APIError
-	ErrNodePoolCreateFailed          APIError
+	ErrNodePoolCreateInvalidBody      APIError
+	ErrNodePoolCreateMissingFields    APIError
+	ErrNodePoolCreateInvalidNamespace APIError
+	ErrNodePoolCreateNameConflict     APIError
+	ErrNodePoolCreateClusterNotFound  APIError
+	ErrNodePoolCreateClusterCheck     APIError
+	ErrNodePoolCreateInvalidSpec      APIError
+	ErrNodePoolCreateFailed           APIError
 
 	ErrNodePoolGetNotFound APIError
 	ErrNodePoolGetFailed   APIError
@@ -208,6 +209,13 @@ var (
 // Info error codes
 var ErrInfoRegionalAccountUnavailable APIError
 
+// Router fallback error codes — returned when gorilla/mux finds no matching
+// route or method so that the response format matches api.WriteError output.
+var (
+	ErrRouteNotFound         APIError
+	ErrRouteMethodNotAllowed APIError
+)
+
 func init() {
 	// Cluster — List
 	ErrClusterList = APIError{Code: "CLUSTERS-MGMT-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list clusters"}
@@ -249,12 +257,13 @@ func init() {
 
 	// NodePool — Create
 	ErrNodePoolCreateInvalidBody = APIError{Code: "NODEPOOLS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrNodePoolCreateMissingFields = APIError{Code: "NODEPOOLS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "Missing required fields: name, cluster_id, and spec"}
+	ErrNodePoolCreateMissingFields = APIError{Code: "NODEPOOLS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "Missing required fields: metadata.name and metadata.namespace"}
 	ErrNodePoolCreateNameConflict = APIError{Code: "NODEPOOLS-MGMT-CREATE-003", HTTPStatus: http.StatusConflict, Message: "NodePool already exists"}
 	ErrNodePoolCreateClusterNotFound = APIError{Code: "NODEPOOLS-MGMT-CREATE-004", HTTPStatus: http.StatusNotFound, Message: "Referenced cluster not found"}
 	ErrNodePoolCreateClusterCheck = APIError{Code: "NODEPOOLS-MGMT-CREATE-005", HTTPStatus: http.StatusInternalServerError, Message: "Failed to validate cluster reference"}
 	ErrNodePoolCreateInvalidSpec = APIError{Code: "NODEPOOLS-MGMT-CREATE-006", HTTPStatus: http.StatusBadRequest, Message: "Invalid nodepool spec"}
 	ErrNodePoolCreateFailed = APIError{Code: "NODEPOOLS-MGMT-CREATE-007", HTTPStatus: http.StatusInternalServerError, Message: "Failed to create nodepool"}
+	ErrNodePoolCreateInvalidNamespace = APIError{Code: "NODEPOOLS-MGMT-CREATE-008", HTTPStatus: http.StatusBadRequest, Message: "metadata.namespace must be a valid cluster namespace (cluster-<uuid>)"}
 
 	// NodePool — Get
 	ErrNodePoolGetNotFound = APIError{Code: "NODEPOOLS-MGMT-GET-001", HTTPStatus: http.StatusNotFound, Message: "NodePool not found"}
@@ -407,4 +416,8 @@ func init() {
 
 	// Info
 	ErrInfoRegionalAccountUnavailable = APIError{Code: "INFO-001", HTTPStatus: http.StatusServiceUnavailable, Message: "regional account ID is not configured"}
+
+	// Router fallbacks
+	ErrRouteNotFound = APIError{Code: "ROUTE-001", HTTPStatus: http.StatusNotFound, Message: "route not found"}
+	ErrRouteMethodNotAllowed = APIError{Code: "ROUTE-002", HTTPStatus: http.StatusMethodNotAllowed, Message: "method not allowed"}
 }

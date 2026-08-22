@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -66,16 +67,16 @@ func TestAuthorization_RequireAllowedAccount_NotAllowed(t *testing.T) {
 		t.Fatalf("failed to decode error response: %v", err)
 	}
 
-	if errorResp["kind"] != "Error" {
-		t.Errorf("expected kind=Error, got %v", errorResp["kind"])
+	if errorResp["kind"] != "Status" {
+		t.Errorf("expected kind=Status, got %v", errorResp["kind"])
 	}
 
-	if errorResp["code"] != ErrAccountNotAllowed.Code {
-		t.Errorf("expected code=%s, got %v", ErrAccountNotAllowed.Code, errorResp["code"])
+	msg, _ := errorResp["message"].(string)
+	if !strings.Contains(msg, ErrAccountNotAllowed.Code) {
+		t.Errorf("expected message to contain %s, got %q", ErrAccountNotAllowed.Code, msg)
 	}
-
-	if errorResp["reason"] != "account not allowed" {
-		t.Errorf("expected reason='account not allowed', got %v", errorResp["reason"])
+	if !strings.Contains(msg, "account not allowed") {
+		t.Errorf("expected message to contain reason, got %q", msg)
 	}
 
 	if contentType := w.Header().Get("Content-Type"); contentType != "application/json" {
@@ -110,16 +111,16 @@ func TestAuthorization_RequireAllowedAccount_MissingAccountID(t *testing.T) {
 		t.Fatalf("failed to decode error response: %v", err)
 	}
 
-	if errorResp["kind"] != "Error" {
-		t.Errorf("expected kind=Error, got %v", errorResp["kind"])
+	if errorResp["kind"] != "Status" {
+		t.Errorf("expected kind=Status, got %v", errorResp["kind"])
 	}
 
-	if errorResp["code"] != ErrMissingAccountID.Code {
-		t.Errorf("expected code=%s, got %v", ErrMissingAccountID.Code, errorResp["code"])
+	msg, _ := errorResp["message"].(string)
+	if !strings.Contains(msg, ErrMissingAccountID.Code) {
+		t.Errorf("expected message to contain %s, got %q", ErrMissingAccountID.Code, msg)
 	}
-
-	if errorResp["reason"] != "Account ID header is required" {
-		t.Errorf("expected reason='Account ID header is required', got %v", errorResp["reason"])
+	if !strings.Contains(msg, "Account ID header is required") {
+		t.Errorf("expected message to contain reason, got %q", msg)
 	}
 }
 
@@ -153,8 +154,9 @@ func TestAuthorization_RequireAllowedAccount_EmptyAccountID(t *testing.T) {
 		t.Fatalf("failed to decode error response: %v", err)
 	}
 
-	if errorResp["code"] != ErrMissingAccountID.Code {
-		t.Errorf("expected code=%s, got %v", ErrMissingAccountID.Code, errorResp["code"])
+	msg, _ := errorResp["message"].(string)
+	if !strings.Contains(msg, ErrMissingAccountID.Code) {
+		t.Errorf("expected message to contain %s, got %q", ErrMissingAccountID.Code, msg)
 	}
 }
 
@@ -387,8 +389,9 @@ func TestAuthorization_RequireAllowedAccount_TwentyAccounts(t *testing.T) {
 			t.Fatalf("failed to decode error response: %v", err)
 		}
 
-		if errorResp["code"] != ErrAccountNotAllowed.Code {
-			t.Errorf("expected code=%s, got %v", ErrAccountNotAllowed.Code, errorResp["code"])
+		msg, _ := errorResp["message"].(string)
+		if !strings.Contains(msg, ErrAccountNotAllowed.Code) {
+			t.Errorf("expected message to contain %s, got %q", ErrAccountNotAllowed.Code, msg)
 		}
 	})
 }
@@ -435,16 +438,16 @@ func TestAuthorization_WriteError(t *testing.T) {
 				t.Fatalf("failed to decode error response: %v", err)
 			}
 
-			if errorResp["kind"] != "Error" {
-				t.Errorf("expected kind=Error, got %v", errorResp["kind"])
+			if errorResp["kind"] != "Status" {
+				t.Errorf("expected kind=Status, got %v", errorResp["kind"])
 			}
 
-			if errorResp["code"] != tt.expectedCode {
-				t.Errorf("expected code=%s, got %v", tt.expectedCode, errorResp["code"])
+			msg, _ := errorResp["message"].(string)
+			if !strings.Contains(msg, tt.expectedCode) {
+				t.Errorf("expected message to contain code %s, got %q", tt.expectedCode, msg)
 			}
-
-			if errorResp["reason"] != tt.expectedReason {
-				t.Errorf("expected reason=%s, got %v", tt.expectedReason, errorResp["reason"])
+			if !strings.Contains(msg, tt.expectedReason) {
+				t.Errorf("expected message to contain reason %s, got %q", tt.expectedReason, msg)
 			}
 		})
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
@@ -113,76 +114,128 @@ func TestWrite_ContentType(t *testing.T) {
 	}
 }
 
-func TestWrite_KindIsError(t *testing.T) {
+// TestWrite_KindIsStatus verifies the response is a metav1.Status envelope.
+func TestWrite_KindIsStatus(t *testing.T) {
 	w := write(base)
 	resp := decode(t, w)
-	if resp["kind"] != "Error" {
-		t.Fatalf("expected kind=Error, got %v", resp["kind"])
+	if resp["kind"] != "Status" {
+		t.Fatalf("expected kind=Status, got %v", resp["kind"])
+	}
+	if resp["apiVersion"] != "v1" {
+		t.Fatalf("expected apiVersion=v1, got %v", resp["apiVersion"])
+	}
+	if resp["status"] != "Failure" {
+		t.Fatalf("expected status=Failure, got %v", resp["status"])
 	}
 }
 
-func TestWrite_CodeAndReason(t *testing.T) {
+func TestWrite_MessageContainsCode(t *testing.T) {
 	w := write(base)
 	resp := decode(t, w)
-	if resp["code"] != "TEST-001" {
-		t.Fatalf("unexpected code: %v", resp["code"])
+	msg, _ := resp["message"].(string)
+	if !strings.Contains(msg, "TEST-001") {
+		t.Fatalf("expected message to contain code TEST-001, got %q", msg)
 	}
-	if resp["reason"] != "something went wrong" {
-		t.Fatalf("unexpected reason: %v", resp["reason"])
+	if !strings.Contains(msg, "something went wrong") {
+		t.Fatalf("expected message to contain reason, got %q", msg)
+	}
+}
+
+func TestWrite_ReasonMapsFromHTTPStatus(t *testing.T) {
+	cases := []struct {
+		httpStatus int
+		wantReason string
+	}{
+		{http.StatusBadRequest, "BadRequest"},
+		{http.StatusNotFound, "NotFound"},
+		{http.StatusConflict, "Conflict"},
+		{http.StatusUnprocessableEntity, "Invalid"},
+		{http.StatusTooManyRequests, "TooManyRequests"},
+	}
+	for _, tc := range cases {
+		w := write(api.APIError{Code: "X", HTTPStatus: tc.httpStatus, Message: "m"})
+		resp := decode(t, w)
+		if resp["reason"] != tc.wantReason {
+			t.Errorf("status %d: reason=%v, want %q", tc.httpStatus, resp["reason"], tc.wantReason)
+		}
+	}
+}
+
+func TestWrite_CodeField(t *testing.T) {
+	w := write(api.APIError{Code: "X", HTTPStatus: http.StatusNotFound, Message: "m"})
+	resp := decode(t, w)
+	if resp["code"] != float64(http.StatusNotFound) {
+		t.Fatalf("expected code=%d, got %v", http.StatusNotFound, resp["code"])
 	}
 }
 
 // --- Write: plain error (no exported fields) ---
 
-func TestWrite_PlainError_ReasonFromError(t *testing.T) {
+func TestWrite_PlainError_MessageFromError(t *testing.T) {
 	e := api.APIError{Code: "TEST-001", HTTPStatus: http.StatusNotFound, Message: "not found", Reason: "cluster %q not found"}
 	w := write(e.WithReason("abc"))
 	resp := decode(t, w)
-	if resp["reason"] != `cluster "abc" not found` {
-		t.Fatalf("unexpected reason: %v", resp["reason"])
+	msg, _ := resp["message"].(string)
+	if !strings.Contains(msg, `cluster "abc" not found`) {
+		t.Fatalf("unexpected message: %v", msg)
 	}
 }
 
-func TestWrite_PlainError_ErrorsFieldSuppressed(t *testing.T) {
+func TestWrite_PlainError_NoDetails(t *testing.T) {
 	e := api.APIError{Code: "TEST-001", HTTPStatus: http.StatusBadRequest, Message: "bad", Reason: "%w"}
 	w := write(e.WithReason(errors.New("oops")))
 	resp := decode(t, w)
-	if _, ok := resp["errors"]; ok {
-		t.Fatal("errors field must be suppressed for plain errors")
+	if resp["details"] != nil {
+		t.Fatal("details must be absent for plain errors")
 	}
 }
 
 // --- Write: structured error (exported fields) ---
 
-func TestWrite_StructuredError_ReasonIsStatic(t *testing.T) {
+func TestWrite_StructuredError_StaticMessagePreserved(t *testing.T) {
 	def := base.WithErrors(&structuredError{Field: "foo", Detail: "too long"})
 	w := write(def)
 	resp := decode(t, w)
-	if resp["reason"] != "something went wrong" {
-		t.Fatalf("expected static reason, got %v", resp["reason"])
+	msg, _ := resp["message"].(string)
+	if !strings.Contains(msg, "something went wrong") {
+		t.Fatalf("expected static message, got %v", msg)
 	}
 }
 
-func TestWrite_StructuredError_ErrorsFieldPresent(t *testing.T) {
-	def := base.WithErrors(&structuredError{Field: "foo", Detail: "too long"})
+func TestWrite_StructuredError_CausesInDetails(t *testing.T) {
+	type fieldErr struct {
+		Field  string `json:"field"`
+		Detail string `json:"detail"`
+	}
+	errs := []fieldErr{{Field: "name", Detail: "required"}}
+	def := base.WithErrors(errs)
 	w := write(def)
 	resp := decode(t, w)
-	if resp["errors"] == nil {
-		t.Fatal("expected errors field to be present for structured errors")
+
+	details, ok := resp["details"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected details object, got %v", resp["details"])
 	}
-	errs := resp["errors"].(map[string]any)
-	if errs["field"] != "foo" {
-		t.Fatalf("unexpected errors.field: %v", errs["field"])
+	causes, ok := details["causes"].([]any)
+	if !ok || len(causes) == 0 {
+		t.Fatalf("expected causes in details, got %v", details)
+	}
+	cause := causes[0].(map[string]any)
+	if cause["field"] != "name" {
+		t.Errorf("cause.field = %v, want name", cause["field"])
+	}
+	if cause["message"] != "required" {
+		t.Errorf("cause.message = %v, want required", cause["message"])
 	}
 }
 
 // --- Write: no errors ---
 
-func TestWrite_NoErrors_NoErrorsField(t *testing.T) {
+func TestWrite_NoErrors_NoDetails(t *testing.T) {
 	w := write(base)
 	resp := decode(t, w)
-	if _, ok := resp["errors"]; ok {
-		t.Fatal("errors field must be absent when not set")
+	if resp["details"] != nil {
+		t.Fatal("details must be absent when not set")
 	}
 }
 
@@ -190,42 +243,37 @@ func TestWrite_NoErrors_NoErrorsField(t *testing.T) {
 
 func TestWrite_ResponseFormat(t *testing.T) {
 	cases := []struct {
-		name       string
-		def        api.APIError
-		wantStatus int
-		wantKind   string
-		wantCode   string
-		wantReason string
-		wantErrors any      // nil means field must be absent
-		forbidden  []string // keys that must not appear in the response
+		name            string
+		def             api.APIError
+		wantStatus      int
+		wantReason      string
+		wantMsgContains string
+		wantDetails     bool
+		forbidden       []string
 	}{
 		{
-			name:       "static message no errors",
-			def:        api.APIError{Code: "A-001", HTTPStatus: http.StatusBadRequest, Message: "bad request"},
-			wantStatus: http.StatusBadRequest,
-			wantKind:   "Error",
-			wantCode:   "A-001",
-			wantReason: "bad request",
-			forbidden:  []string{"HTTPStatus", "http_status", "Reason", "Format"},
+			name:            "static message no errors",
+			def:             api.APIError{Code: "A-001", HTTPStatus: http.StatusBadRequest, Message: "bad request"},
+			wantStatus:      http.StatusBadRequest,
+			wantReason:      "BadRequest",
+			wantMsgContains: "A-001",
+			forbidden:       []string{"HTTPStatus", "http_status", "Reason", "Format"},
 		},
 		{
-			name:       "plain error derives reason and suppresses errors field",
-			def:        api.APIError{Code: "A-002", HTTPStatus: http.StatusNotFound, Message: "default", Reason: "item %q not found"}.WithReason("xyz"),
-			wantStatus: http.StatusNotFound,
-			wantKind:   "Error",
-			wantCode:   "A-002",
-			wantReason: `item "xyz" not found`,
-			forbidden:  []string{"HTTPStatus", "http_status", "Reason", "Format"},
+			name:            "plain error derives message and no details",
+			def:             api.APIError{Code: "A-002", HTTPStatus: http.StatusNotFound, Message: "default", Reason: "item %q not found"}.WithReason("xyz"),
+			wantStatus:      http.StatusNotFound,
+			wantReason:      "NotFound",
+			wantMsgContains: `item "xyz" not found`,
 		},
 		{
-			name:       "structured error keeps static reason and exposes errors",
-			def:        api.APIError{Code: "A-003", HTTPStatus: http.StatusUnprocessableEntity, Message: "validation failed"}.WithErrors(&structuredError{Field: "name", Detail: "required"}),
-			wantStatus: http.StatusUnprocessableEntity,
-			wantKind:   "Error",
-			wantCode:   "A-003",
-			wantReason: "validation failed",
-			wantErrors: map[string]any{"field": "name", "detail": "required"},
-			forbidden:  []string{"HTTPStatus", "http_status", "Reason", "Format"},
+			name:            "structured error exposes causes in details",
+			def:             api.APIError{Code: "A-003", HTTPStatus: http.StatusUnprocessableEntity, Message: "validation failed"}.WithErrors(&structuredError{Field: "name", Detail: "required"}),
+			wantStatus:      http.StatusUnprocessableEntity,
+			wantReason:      "Invalid",
+			wantMsgContains: "validation failed",
+			wantDetails:     true,
+			forbidden:       []string{"HTTPStatus", "http_status", "Format"},
 		},
 	}
 
@@ -239,24 +287,27 @@ func TestWrite_ResponseFormat(t *testing.T) {
 
 			resp := decode(t, w)
 
-			if resp["kind"] != tc.wantKind {
-				t.Errorf("kind: got %v, want %q", resp["kind"], tc.wantKind)
+			if resp["kind"] != "Status" {
+				t.Errorf("kind: got %v, want Status", resp["kind"])
 			}
-			if resp["code"] != tc.wantCode {
-				t.Errorf("code: got %v, want %q", resp["code"], tc.wantCode)
+			if resp["apiVersion"] != "v1" {
+				t.Errorf("apiVersion: got %v, want v1", resp["apiVersion"])
+			}
+			if resp["status"] != "Failure" {
+				t.Errorf("status field: got %v, want Failure", resp["status"])
 			}
 			if resp["reason"] != tc.wantReason {
 				t.Errorf("reason: got %v, want %q", resp["reason"], tc.wantReason)
 			}
-
-			if tc.wantErrors == nil {
-				if _, ok := resp["errors"]; ok {
-					t.Errorf("errors: expected absent, got %v", resp["errors"])
-				}
-			} else {
-				if resp["errors"] == nil {
-					t.Error("errors: expected present, got absent")
-				}
+			msg, _ := resp["message"].(string)
+			if tc.wantMsgContains != "" && !strings.Contains(msg, tc.wantMsgContains) {
+				t.Errorf("message %q missing %q", msg, tc.wantMsgContains)
+			}
+			if tc.wantDetails && resp["details"] == nil {
+				t.Error("details: expected present, got absent")
+			}
+			if !tc.wantDetails && resp["details"] != nil {
+				t.Errorf("details: expected absent, got %v", resp["details"])
 			}
 
 			for _, key := range tc.forbidden {

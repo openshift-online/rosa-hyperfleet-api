@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ErrInternalMarshal is written when response serialization fails before any
@@ -17,10 +19,13 @@ func init() {
 		Message:    "internal server error",
 	}
 	var err error
-	fallbackBody, err = json.Marshal(struct {
-		Kind string `json:"kind"`
-		APIError
-	}{Kind: "Error", APIError: ErrInternalMarshal})
+	fallbackBody, err = json.Marshal(metav1.Status{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Status"},
+		Status:   metav1.StatusFailure,
+		Message:  ErrInternalMarshal.Code + ": " + ErrInternalMarshal.Message,
+		Reason:   metav1.StatusReasonInternalError,
+		Code:     http.StatusInternalServerError,
+	})
 	if err != nil {
 		panic("api: failed to marshal fallback error body: " + err.Error())
 	}

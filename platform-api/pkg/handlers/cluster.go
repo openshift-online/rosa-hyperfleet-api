@@ -12,11 +12,11 @@ import (
 	"github.com/gorilla/mux"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
-	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/types"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/validation"
 )
 
@@ -74,16 +74,16 @@ func (h *ClusterHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clusters := make([]*types.Cluster, 0, len(list.Items))
+	clusters := make([]*public.Cluster, 0, len(list.Items))
 	for i := range list.Items {
-		clusters = append(clusters, hyperfleetdb.ClusterCRToPlatform(&list.Items[i]))
+		clusters = append(clusters, hyperfleetdb.InternalToPublicCluster(&list.Items[i]))
 	}
 
 	total := len(clusters)
 
 	// Apply offset/limit pagination in-memory.
 	if offset >= len(clusters) {
-		clusters = []*types.Cluster{}
+		clusters = []*public.Cluster{}
 	} else {
 		end := min(offset+limit, len(clusters))
 		clusters = clusters[offset:end]
@@ -102,17 +102,19 @@ func (h *ClusterHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v0/clusters
+// Request body: public.Cluster (K8s-native). Name comes from metadata.name;
+// accountID is taken from the authenticated identity (middleware), not from the body.
 func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
 
-	var req types.ClusterCreateRequest
+	var req public.Cluster
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, ErrClusterCreateInvalidBody, h.logger)
 		return
 	}
 
-	if req.Name == "" || req.Spec == nil {
+	if req.Name == "" {
 		writeAPIError(w, ErrClusterCreateMissingFields, h.logger)
 		return
 	}
@@ -122,7 +124,7 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if errs := h.validator.ValidateCreate(req.Spec, featuregate.Default); errs != nil {
+	if errs := h.validator.ValidateCreate(&req.Spec, featuregate.Default); errs != nil {
 		writeAPIError(w, ErrClusterValidation.WithErrors(errs), h.logger)
 		return
 	}
@@ -140,30 +142,26 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if callerARN := middleware.GetCallerARN(ctx); callerARN != "" {
-		req.Spec.CreatorARN = callerARN
-	}
-
 	clusterID := h.generateID()
 
 	const maxHash4Retries = 5
 	for attempt := 0; attempt < maxHash4Retries; attempt++ {
 		h.logger.Info("creating cluster", "account_id", accountID, "cluster_name", req.Name, "cluster_id", clusterID)
 
-		cr, err := hyperfleetdb.PlatformCreateToClusterCR(clusterID, accountID, &req)
-		if err != nil {
-			h.logger.Error("failed to convert cluster spec", "error", err, "account_id", accountID)
-			writeAPIError(w, ErrClusterCreateInvalidSpec, h.logger)
-			return
-		}
-
-		if h.defaultClusterExpiration > 0 && cr.Spec.ExpirationTimestamp == nil {
+		if h.defaultClusterExpiration > 0 && req.Spec.ExpirationTimestamp == nil {
 			expiry := metav1.NewTime(time.Now().Add(h.defaultClusterExpiration))
-			cr.Spec.ExpirationTimestamp = &expiry
+			req.Spec.ExpirationTimestamp = &expiry
 		}
 
 		if h.oidcIssuerBaseURL != "" {
-			cr.Spec.HostedCluster.IssuerURL = h.oidcIssuerBaseURL + "/" + clusterID
+			req.Spec.HostedCluster.IssuerURL = h.oidcIssuerBaseURL + "/" + clusterID
+		}
+
+		cr := hyperfleetdb.PublicToInternalCluster(&req, accountID, clusterID)
+
+		// Set service-set fields on the internal CRD (not visible in public request/response)
+		if callerARN := middleware.GetCallerARN(ctx); callerARN != "" {
+			cr.Spec.CreatorARN = callerARN
 		}
 
 		if err := h.db.CreateCluster(ctx, accountID, cr); err != nil {
@@ -180,8 +178,7 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		cluster := hyperfleetdb.ClusterCRToPlatform(cr)
-		if err := api.Write(w, http.StatusCreated, cluster); err != nil {
+		if err := api.Write(w, http.StatusCreated, hyperfleetdb.InternalToPublicCluster(cr)); err != nil {
 			h.logger.Error("failed to write response", "error", err)
 		}
 		return
@@ -208,12 +205,13 @@ func (h *ClusterHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := api.Write(w, http.StatusOK, hyperfleetdb.ClusterCRToPlatform(cr)); err != nil {
+	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicCluster(cr)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }
 
-// Update handles PUT /api/v0/clusters/{id}
+// Update handles PUT/PATCH /api/v0/clusters/{id}
+// Request body: public.Cluster (K8s-native). Only spec fields are merged; metadata is ignored.
 func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
@@ -226,14 +224,9 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req types.ClusterUpdateRequest
+	var req public.Cluster
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeAPIError(w, ErrClusterUpdateInvalidBody, h.logger)
-		return
-	}
-
-	if req.Spec == nil {
-		writeAPIError(w, ErrClusterUpdateMissingFields, h.logger)
 		return
 	}
 
@@ -250,7 +243,7 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if errs := h.validator.ValidateUpdate(req.Spec, &cr.Spec, featuregate.Default); errs != nil {
+	if errs := h.validator.ValidateUpdate(&req.Spec, &cr.Spec, featuregate.Default); errs != nil {
 		writeAPIError(w, ErrClusterValidation.WithErrors(errs), h.logger)
 		return
 	}
@@ -266,10 +259,12 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := hyperfleetdb.MergeSpecJSON(&cr.Spec, envelope.Spec); err != nil {
-		h.logger.Error("failed to merge cluster spec", "error", err)
-		writeAPIError(w, ErrClusterUpdateInvalidSpec, h.logger)
-		return
+	if len(envelope.Spec) > 0 {
+		if err := hyperfleetdb.MergeSpecJSON(&cr.Spec, envelope.Spec); err != nil {
+			h.logger.Error("failed to merge cluster spec", "error", err)
+			writeAPIError(w, ErrClusterUpdateInvalidSpec, h.logger)
+			return
+		}
 	}
 
 	if err := h.db.UpdateCluster(ctx, cr); err != nil {
@@ -278,7 +273,7 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := api.Write(w, http.StatusOK, hyperfleetdb.ClusterCRToPlatform(cr)); err != nil {
+	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicCluster(cr)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }
@@ -333,7 +328,7 @@ func (h *ClusterHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := api.Write(w, http.StatusOK, hyperfleetdb.ClusterStatusFromCR(cr)); err != nil {
+	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicCluster(cr)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }
