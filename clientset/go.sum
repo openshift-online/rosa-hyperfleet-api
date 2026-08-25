@@ -51,6 +51,8 @@ github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee h1:W5t00kpgFd
 github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
+github.com/openshift-online/rosa-hyperfleet-api/api v0.1.7 h1:FMfuFEPUaXXxbHQiXnPKUlrps4bfeZB4wrSUeO7ysyg=
+github.com/openshift-online/rosa-hyperfleet-api/api v0.1.7/go.mod h1:wLNKyreMacFyDUr+3BwjB3eNifpnMIXI6qxu9sQigA0=
 github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80 h1:r0S/yoZAI0iWo1JvoIijaIgWGWf/izg4WiV7Wrtz16k=
 github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80/go.mod h1:pyVjK0nZ4sRs4fuQVQ4rubsJdahI1PB94LnQ8sGdvxo=
 github.com/openshift/hypershift/api v0.0.0-20260625052409-9acec4759a16 h1:QDSh3vkKYq7Fn9utYGlAJadkTdyaRl9IY7Cr6cNDAow=
