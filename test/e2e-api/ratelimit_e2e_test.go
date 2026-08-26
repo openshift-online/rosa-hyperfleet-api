@@ -161,7 +161,7 @@ var _ = Describe("Rate Limiting", Ordered, Label("ratelimit"), func() {
 		var body map[string]interface{}
 		err = json.Unmarshal(rateLimitedResp.Body, &body)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(body["kind"]).To(Equal("Status"))
+		Expect(body["kind"]).To(Equal("Error"))
 		Expect(body["reason"]).To(Equal("TooManyRequests"))
 		Expect(body["message"]).To(ContainSubstring("RATE-LIMIT-001"))
 	})
