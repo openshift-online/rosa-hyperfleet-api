@@ -78,7 +78,8 @@ var _ = Describe("Manifest Controller", func() {
 				NamespacedName: types.NamespacedName{Namespace: testNS, Name: manifestName},
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue()) //nolint:staticcheck
+			// Finalizer write emits a watch event that re-enqueues; no explicit requeue needed.
+			Expect(result.RequeueAfter).To(BeZero())
 
 			var updated hyperfleetv1alpha1.Manifest
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: manifestName}, &updated)).To(Succeed())

@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -88,7 +89,8 @@ func (r *PlacementReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 		if err := r.Create(ctx, &placement); err != nil {
 			if apierrors.IsAlreadyExists(err) {
-				return ctrl.Result{Requeue: true}, nil
+				// The Create failed, so no watch event is emitted; requeue explicitly.
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 			}
 			return ctrl.Result{}, fmt.Errorf("create placement: %w", err)
 		}

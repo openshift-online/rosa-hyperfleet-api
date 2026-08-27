@@ -91,7 +91,8 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			}
 			return ctrl.Result{}, fmt.Errorf("add finalizer: %w", err)
 		}
-		return ctrl.Result{Requeue: true}, nil
+		// The finalizer update emits a watch event that re-enqueues this object.
+		return ctrl.Result{}, nil
 	}
 
 	// Delete the cluster if it has expired.

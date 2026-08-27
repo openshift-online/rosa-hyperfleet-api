@@ -83,7 +83,8 @@ func (r *ManifestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := r.Update(ctx, &hfm); err != nil {
 			return ctrl.Result{}, fmt.Errorf("add finalizer: %w", err)
 		}
-		return ctrl.Result{Requeue: true}, nil
+		// The finalizer update emits a watch event that re-enqueues this object.
+		return ctrl.Result{}, nil
 	}
 
 	mc := hfm.Spec.ManagementCluster

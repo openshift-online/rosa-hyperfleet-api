@@ -81,7 +81,8 @@ var _ = Describe("Cluster Controller", func() {
 				NamespacedName: types.NamespacedName{Namespace: testNS, Name: clusterName},
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue()) //nolint:staticcheck
+			// Finalizer write emits a watch event that re-enqueues; no explicit requeue needed.
+			Expect(result.RequeueAfter).To(BeZero())
 
 			var updated hyperfleetv1alpha1.Cluster
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName}, &updated)).To(Succeed())
