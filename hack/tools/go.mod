@@ -240,7 +240,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	honnef.co/go/tools v0.8.0 // indirect
+	honnef.co/go/tools v0.8.1 // indirect
 	k8s.io/api v0.36.0 // indirect
 	k8s.io/apiextensions-apiserver v0.36.0 // indirect
 	k8s.io/apimachinery v0.36.0 // indirect
