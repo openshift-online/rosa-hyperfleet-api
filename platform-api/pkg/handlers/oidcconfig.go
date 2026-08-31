@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 
-	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
@@ -92,7 +91,8 @@ func (h *OidcConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v0/oidc_configs
-// Request body: public.OidcConfig (K8s-native). Spec.Type is required.
+// Request body: public.OidcConfig (K8s-native). issuerUrl, secretArn, and
+// installerRoleArn are all required.
 func (h *OidcConfigHandler) Create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
@@ -109,40 +109,13 @@ func (h *OidcConfigHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reject absent spec (nil) and empty spec object ({}) — spec.type is required.
-	var envelope struct {
-		Spec json.RawMessage `json:"spec"`
-	}
-	_ = json.Unmarshal(body, &envelope)
-	specStr := string(envelope.Spec)
-	if len(envelope.Spec) == 0 || specStr == "{}" || specStr == "null" {
+	if req.Spec.SecretArn == "" || req.Spec.InstallerRoleArn == "" || req.Spec.IssuerUrl == "" {
 		writeAPIError(w, ErrOidcConfigCreateMissingFields, h.logger)
-		return
-	}
-
-	if req.Spec.Type == "" {
-		writeAPIError(w, ErrOidcConfigCreateMissingFields, h.logger)
-		return
-	}
-
-	if req.Spec.Type != hyperfleetv1alpha1.OidcConfigTypeManaged && req.Spec.Type != hyperfleetv1alpha1.OidcConfigTypeUnmanaged {
-		writeAPIError(w, ErrOidcConfigCreateInvalidType, h.logger)
-		return
-	}
-
-	if req.Spec.Type == hyperfleetv1alpha1.OidcConfigTypeManaged {
-		req.Spec.IssuerUrl = ""
-		if req.Spec.SecretArn != "" || req.Spec.InstallerRoleArn != "" {
-			writeAPIError(w, ErrOidcConfigCreateInvalidFields, h.logger)
-			return
-		}
-	} else if req.Spec.SecretArn == "" || req.Spec.InstallerRoleArn == "" || req.Spec.IssuerUrl == "" {
-		writeAPIError(w, ErrOidcConfigCreateInvalidFields, h.logger)
 		return
 	}
 
 	configID := h.generateID()
-	h.logger.Info("creating oidc config", "account_id", accountID, "config_id", configID, "type", req.Spec.Type)
+	h.logger.Info("creating oidc config", "account_id", accountID, "config_id", configID)
 
 	cr := hyperfleetdb.PublicToInternalOidcConfig(&req, accountID, configID)
 

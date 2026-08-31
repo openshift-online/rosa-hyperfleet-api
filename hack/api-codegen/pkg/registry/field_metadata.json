@@ -1085,11 +1085,5 @@
     "writeMode": "immutable",
     "ownerType": "OidcConfig",
     "ownerGVK": "hyperfleet.io/v1alpha1.OidcConfig"
-  },
-  {
-    "fieldPath": "spec.type",
-    "writeMode": "immutable",
-    "ownerType": "OidcConfig",
-    "ownerGVK": "hyperfleet.io/v1alpha1.OidcConfig"
   }
 ]

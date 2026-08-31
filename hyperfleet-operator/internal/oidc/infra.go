@@ -17,54 +17,38 @@ limitations under the License.
 package oidc
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"math/big"
 	"net"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	smtypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 const (
-	keyBits      = 4096
 	minKeyBits   = 2048
 	secretPrefix = "hyperfleet/oidc/"
-
-	discoveryPath = ".well-known/openid-configuration"
-	jwksPath      = "keys.json"
 )
 
 // InfraClient abstracts the OIDC infrastructure operations needed by the
 // OidcConfig controller.
 type InfraClient interface {
-	GenerateKeyPair() (privateKeyPEM []byte, jwksDoc []byte, err error)
-	UploadOIDCDocuments(ctx context.Context, configID string, jwksDoc []byte) error
-	DeleteOIDCDocuments(ctx context.Context, configID string) error
-	StorePrivateKey(ctx context.Context, configID string, privateKeyPEM []byte) error
 	PrivateKeyExists(ctx context.Context, configID string) (bool, error)
 	ReadCrossAccountSecret(ctx context.Context, secretARN, roleARN string) ([]byte, error)
+	StorePrivateKey(ctx context.Context, configID string, privateKeyPEM []byte) error
 	DeletePrivateKey(ctx context.Context, configID string) error
-	IssuerURL(configID string) string
 	ComputeThumbprint(ctx context.Context, issuerURL string) (string, error)
 }
 
@@ -96,14 +80,10 @@ func checkRSAKeySize(key *rsa.PrivateKey) error {
 }
 
 // Config holds configuration for the OIDC infrastructure client.
-type Config struct {
-	S3Bucket      string
-	IssuerBaseURL string
-}
+type Config struct{}
 
-// AWSClient implements InfraClient using AWS S3, Secrets Manager, and STS.
+// AWSClient implements InfraClient using AWS Secrets Manager and STS.
 type AWSClient struct {
-	s3     *s3.Client
 	sm     *secretsmanager.Client
 	sts    *sts.Client
 	awsCfg aws.Config
@@ -116,7 +96,6 @@ type AWSClient struct {
 // NewAWSClient creates a new AWSClient.
 func NewAWSClient(awsCfg aws.Config, config Config) *AWSClient {
 	return &AWSClient{
-		s3:              s3.NewFromConfig(awsCfg),
 		sm:              secretsmanager.NewFromConfig(awsCfg),
 		sts:             sts.NewFromConfig(awsCfg),
 		awsCfg:          awsCfg,
@@ -136,72 +115,6 @@ func (c *AWSClient) assumeRoleCredentials(roleARN string) *aws.CredentialsCache 
 	creds := aws.NewCredentialsCache(stscreds.NewAssumeRoleProvider(c.sts, roleARN))
 	c.assumeRoleCache[roleARN] = creds
 	return creds
-}
-
-func (c *AWSClient) GenerateKeyPair() ([]byte, []byte, error) {
-	key, err := rsa.GenerateKey(rand.Reader, keyBits)
-	if err != nil {
-		return nil, nil, fmt.Errorf("generate RSA key: %w", err)
-	}
-
-	privPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(key),
-	})
-
-	jwksDoc, err := buildJWKS(&key.PublicKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build JWKS: %w", err)
-	}
-
-	return privPEM, jwksDoc, nil
-}
-
-func (c *AWSClient) UploadOIDCDocuments(ctx context.Context, configID string, jwksDoc []byte) error {
-	issuer := c.IssuerURL(configID)
-	discovery, err := buildDiscoveryDocument(issuer)
-	if err != nil {
-		return fmt.Errorf("build discovery document: %w", err)
-	}
-
-	discoKey := configID + "/" + discoveryPath
-	if _, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(c.config.S3Bucket),
-		Key:         aws.String(discoKey),
-		Body:        bytes.NewReader(discovery),
-		ContentType: aws.String("application/json"),
-	}); err != nil {
-		return fmt.Errorf("upload discovery document: %w", err)
-	}
-
-	jwksKey := configID + "/" + jwksPath
-	if _, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(c.config.S3Bucket),
-		Key:         aws.String(jwksKey),
-		Body:        bytes.NewReader(jwksDoc),
-		ContentType: aws.String("application/json"),
-	}); err != nil {
-		return fmt.Errorf("upload JWKS: %w", err)
-	}
-
-	return nil
-}
-
-func (c *AWSClient) DeleteOIDCDocuments(ctx context.Context, configID string) error {
-	keys := []string{
-		configID + "/" + discoveryPath,
-		configID + "/" + jwksPath,
-	}
-	var errs []error
-	for _, key := range keys {
-		if _, err := c.s3.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket: aws.String(c.config.S3Bucket),
-			Key:    aws.String(key),
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("delete %s: %w", key, err))
-		}
-	}
-	return errors.Join(errs...)
 }
 
 // StorePrivateKey creates the Secrets Manager secret holding the OIDC
@@ -274,10 +187,6 @@ func (c *AWSClient) DeletePrivateKey(ctx context.Context, configID string) error
 		return fmt.Errorf("delete secret: %w", err)
 	}
 	return nil
-}
-
-func (c *AWSClient) IssuerURL(configID string) string {
-	return strings.TrimRight(c.config.IssuerBaseURL, "/") + "/" + configID
 }
 
 func (c *AWSClient) ComputeThumbprint(ctx context.Context, issuerURL string) (string, error) {
@@ -377,67 +286,4 @@ func isDisallowedIssuerIP(ip net.IP) bool {
 		ip.IsMulticast() ||
 		ip.IsPrivate() ||
 		ip.IsUnspecified()
-}
-
-// --- JWKS / discovery document helpers ---
-
-type jwkKey struct {
-	Kty string `json:"kty"`
-	Alg string `json:"alg"`
-	Use string `json:"use"`
-	Kid string `json:"kid"`
-	N   string `json:"n"`
-	E   string `json:"e"`
-}
-
-type jwksDocument struct {
-	Keys []jwkKey `json:"keys"`
-}
-
-func buildJWKS(pub *rsa.PublicKey) ([]byte, error) {
-	derPub, err := x509.MarshalPKIXPublicKey(pub)
-	if err != nil {
-		return nil, fmt.Errorf("marshal public key: %w", err)
-	}
-	kidHash := sha256.Sum256(derPub)
-	kid := fmt.Sprintf("%x", kidHash[:])
-
-	doc := jwksDocument{
-		Keys: []jwkKey{{
-			Kty: "RSA",
-			Alg: "RS256",
-			Use: "sig",
-			Kid: kid,
-			N:   base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
-			E:   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
-		}},
-	}
-	return json.Marshal(doc)
-}
-
-type oidcDiscoveryDocument struct {
-	Issuer                           string   `json:"issuer"`
-	JWKSURI                          string   `json:"jwks_uri"`
-	AuthorizationEndpoint            string   `json:"authorization_endpoint"`
-	ResponseTypesSupported           []string `json:"response_types_supported"`
-	SubjectTypesSupported            []string `json:"subject_types_supported"`
-	IDTokenSigningAlgValuesSupported []string `json:"id_token_signing_alg_values_supported"`
-	ClaimsSupported                  []string `json:"claims_supported"`
-}
-
-func buildDiscoveryDocument(issuerURL string) ([]byte, error) {
-	doc := oidcDiscoveryDocument{
-		Issuer:                           issuerURL,
-		JWKSURI:                          issuerURL + "/" + jwksPath,
-		AuthorizationEndpoint:            "urn:kubernetes:programmatic_authorization",
-		ResponseTypesSupported:           []string{"id_token"},
-		SubjectTypesSupported:            []string{"public"},
-		IDTokenSigningAlgValuesSupported: []string{"RS256"},
-		ClaimsSupported:                  []string{"sub", "iss"},
-	}
-	data, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("marshal discovery document: %w", err)
-	}
-	return data, nil
 }

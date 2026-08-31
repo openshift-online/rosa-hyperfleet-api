@@ -33,18 +33,20 @@ func testOidcConfigCR(configID, accountID string, spec hyperfleetv1alpha1.OidcCo
 	}
 }
 
-func testManagedOidcConfigSpec(accountID string) hyperfleetv1alpha1.OidcConfigSpec {
+func testOidcConfigSpec(accountID string) hyperfleetv1alpha1.OidcConfigSpec {
 	return hyperfleetv1alpha1.OidcConfigSpec{
-		Type:      hyperfleetv1alpha1.OidcConfigTypeManaged,
-		AccountID: accountID,
+		AccountID:        accountID,
+		IssuerUrl:        "https://oidc.example.com",
+		SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
+		InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
 	}
 }
 
 func TestOidcConfigHandler_List_Success(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		testOidcConfigCR("oidc-1", testAccountID, testManagedOidcConfigSpec(testAccountID)),
-		testOidcConfigCR("oidc-2", testAccountID, testManagedOidcConfigSpec(testAccountID)),
+		testOidcConfigCR("oidc-1", testAccountID, testOidcConfigSpec(testAccountID)),
+		testOidcConfigCR("oidc-2", testAccountID, testOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -102,9 +104,9 @@ func TestOidcConfigHandler_List_Empty(t *testing.T) {
 func TestOidcConfigHandler_List_Pagination(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		testOidcConfigCR("oidc-1", testAccountID, testManagedOidcConfigSpec(testAccountID)),
-		testOidcConfigCR("oidc-2", testAccountID, testManagedOidcConfigSpec(testAccountID)),
-		testOidcConfigCR("oidc-3", testAccountID, testManagedOidcConfigSpec(testAccountID)),
+		testOidcConfigCR("oidc-1", testAccountID, testOidcConfigSpec(testAccountID)),
+		testOidcConfigCR("oidc-2", testAccountID, testOidcConfigSpec(testAccountID)),
+		testOidcConfigCR("oidc-3", testAccountID, testOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -140,7 +142,7 @@ func TestOidcConfigHandler_List_Pagination(t *testing.T) {
 func TestOidcConfigHandler_List_OffsetBeyondTotal(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		testOidcConfigCR("oidc-1", testAccountID, testManagedOidcConfigSpec(testAccountID)),
+		testOidcConfigCR("oidc-1", testAccountID, testOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -176,7 +178,9 @@ func TestOidcConfigHandler_Create_Success(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]any{
 		"spec": map[string]any{
-			"type": "managed",
+			"secretArn":        "arn:aws:secretsmanager:us-east-1:123456789012:secret:foo",
+			"installerRoleArn": "arn:aws:iam::123456789012:role/installer",
+			"issuerUrl":        "https://example.com/oidc",
 		},
 	})
 
@@ -197,49 +201,14 @@ func TestOidcConfigHandler_Create_Success(t *testing.T) {
 		t.Errorf("expected metadata.uid=generated-config-id, got %v", uid)
 	}
 	spec := result["spec"].(map[string]any)
-	if spec["type"] != "managed" {
-		t.Errorf("expected spec.type=managed, got %v", spec["type"])
+	if spec["secretArn"] != "arn:aws:secretsmanager:us-east-1:123456789012:secret:foo" {
+		t.Errorf("expected spec.secretArn to round-trip, got %v", spec["secretArn"])
 	}
-}
-
-func TestOidcConfigHandler_Create_ManagedIgnoresClientIssuerUrl(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
-	handler.generateID = func() string { return "generated-config-id" }
-
-	body, _ := json.Marshal(map[string]any{
-		"spec": map[string]any{
-			"type":      "managed",
-			"issuerUrl": "https://arbitrary.example.com/bypass",
-		},
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v0/oidc_configs", bytes.NewReader(body))
-	req = req.WithContext(testContext(testAccountID))
-
-	w := httptest.NewRecorder()
-	handler.Create(w, req)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	if spec["installerRoleArn"] != "arn:aws:iam::123456789012:role/installer" {
+		t.Errorf("expected spec.installerRoleArn to round-trip, got %v", spec["installerRoleArn"])
 	}
-
-	var result map[string]any
-	_ = json.NewDecoder(w.Body).Decode(&result)
-
-	spec := result["spec"].(map[string]any)
-	if issuerURL, _ := spec["issuerUrl"].(string); issuerURL != "" {
-		t.Errorf("expected client-supplied issuerUrl to be ignored for managed config, got %q", issuerURL)
-	}
-
-	cr, err := handler.db.GetOidcConfig(req.Context(), testAccountID, "generated-config-id")
-	if err != nil {
-		t.Fatalf("failed to fetch created CR: %v", err)
-	}
-	if cr.Spec.IssuerUrl != "" {
-		t.Errorf("expected stored CR issuerUrl to be empty, got %q", cr.Spec.IssuerUrl)
+	if spec["issuerUrl"] != "https://example.com/oidc" {
+		t.Errorf("expected spec.issuerUrl to round-trip, got %v", spec["issuerUrl"])
 	}
 }
 
@@ -272,8 +241,36 @@ func TestOidcConfigHandler_Create_MissingFields(t *testing.T) {
 		body map[string]any
 	}{
 		{"missing spec", map[string]any{}},
-		{"missing type", map[string]any{"spec": map[string]any{}}},
-		{"empty type", map[string]any{"spec": map[string]any{"type": ""}}},
+		{"empty spec", map[string]any{"spec": map[string]any{}}},
+		{
+			name: "missing secretArn",
+			body: map[string]any{"spec": map[string]any{
+				"installerRoleArn": "arn:aws:iam::123456789012:role/installer",
+				"issuerUrl":        "https://example.com/oidc",
+			}},
+		},
+		{
+			name: "missing installerRoleArn",
+			body: map[string]any{"spec": map[string]any{
+				"secretArn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:foo",
+				"issuerUrl": "https://example.com/oidc",
+			}},
+		},
+		{
+			name: "missing issuerUrl",
+			body: map[string]any{"spec": map[string]any{
+				"secretArn":        "arn:aws:secretsmanager:us-east-1:123456789012:secret:foo",
+				"installerRoleArn": "arn:aws:iam::123456789012:role/installer",
+			}},
+		},
+		{
+			name: "empty secretArn",
+			body: map[string]any{"spec": map[string]any{
+				"secretArn":        "",
+				"installerRoleArn": "arn:aws:iam::123456789012:role/installer",
+				"issuerUrl":        "https://example.com/oidc",
+			}},
+		},
 	}
 
 	for _, tt := range tests {
@@ -303,145 +300,10 @@ func TestOidcConfigHandler_Create_MissingFields(t *testing.T) {
 	}
 }
 
-func TestOidcConfigHandler_Create_InvalidType(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
-
-	body, _ := json.Marshal(map[string]any{
-		"spec": map[string]any{
-			"type": "bogus",
-		},
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v0/oidc_configs", bytes.NewReader(body))
-	req = req.WithContext(testContext(testAccountID))
-
-	w := httptest.NewRecorder()
-	handler.Create(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var errResp map[string]any
-	_ = json.NewDecoder(w.Body).Decode(&errResp)
-	if !strings.Contains(errResp["message"].(string), ErrOidcConfigCreateInvalidType.Code) {
-		t.Errorf("expected message to contain %s, got %q", ErrOidcConfigCreateInvalidType.Code, errResp["message"])
-	}
-}
-
-func TestOidcConfigHandler_Create_InvalidFieldsForType(t *testing.T) {
-	tests := []struct {
-		name string
-		spec map[string]any
-	}{
-		{
-			name: "unmanaged missing secretArn",
-			spec: map[string]any{
-				"type":             "unmanaged",
-				"installerRoleArn": "arn:aws:iam::123456789012:role/installer",
-				"issuerUrl":        "https://example.com/oidc",
-			},
-		},
-		{
-			name: "unmanaged missing installerRoleArn",
-			spec: map[string]any{
-				"type":      "unmanaged",
-				"secretArn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:foo",
-				"issuerUrl": "https://example.com/oidc",
-			},
-		},
-		{
-			name: "unmanaged missing issuerUrl",
-			spec: map[string]any{
-				"type":             "unmanaged",
-				"secretArn":        "arn:aws:secretsmanager:us-east-1:123456789012:secret:foo",
-				"installerRoleArn": "arn:aws:iam::123456789012:role/installer",
-			},
-		},
-		{
-			name: "managed with secretArn set",
-			spec: map[string]any{
-				"type":      "managed",
-				"secretArn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:foo",
-			},
-		},
-		{
-			name: "managed with installerRoleArn set",
-			spec: map[string]any{
-				"type":             "managed",
-				"installerRoleArn": "arn:aws:iam::123456789012:role/installer",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			scheme := newTestScheme()
-			fc := fake.NewClientBuilder().WithScheme(scheme).Build()
-			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
-
-			body, _ := json.Marshal(map[string]any{"spec": tt.spec})
-			req := httptest.NewRequest(http.MethodPost, "/api/v0/oidc_configs", bytes.NewReader(body))
-			req = req.WithContext(testContext(testAccountID))
-
-			w := httptest.NewRecorder()
-			handler.Create(w, req)
-
-			if w.Code != http.StatusBadRequest {
-				t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
-			}
-
-			var errResp map[string]any
-			_ = json.NewDecoder(w.Body).Decode(&errResp)
-			if !strings.Contains(errResp["message"].(string), ErrOidcConfigCreateInvalidFields.Code) {
-				t.Errorf("expected message to contain %s, got %q", ErrOidcConfigCreateInvalidFields.Code, errResp["message"])
-			}
-		})
-	}
-}
-
-func TestOidcConfigHandler_Create_UnmanagedSuccess(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
-	handler.generateID = func() string { return "generated-config-id" }
-
-	body, _ := json.Marshal(map[string]any{
-		"spec": map[string]any{
-			"type":             "unmanaged",
-			"secretArn":        "arn:aws:secretsmanager:us-east-1:123456789012:secret:foo",
-			"installerRoleArn": "arn:aws:iam::123456789012:role/installer",
-			"issuerUrl":        "https://example.com/oidc",
-		},
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v0/oidc_configs", bytes.NewReader(body))
-	req = req.WithContext(testContext(testAccountID))
-
-	w := httptest.NewRecorder()
-	handler.Create(w, req)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var result map[string]any
-	_ = json.NewDecoder(w.Body).Decode(&result)
-	spec := result["spec"].(map[string]any)
-	if spec["type"] != "unmanaged" {
-		t.Errorf("expected spec.type=unmanaged, got %v", spec["type"])
-	}
-}
-
 func TestOidcConfigHandler_Get_Success(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		testOidcConfigCR("oidc-123", testAccountID, testManagedOidcConfigSpec(testAccountID)),
+		testOidcConfigCR("oidc-123", testAccountID, testOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -493,7 +355,7 @@ func TestOidcConfigHandler_Get_WrongAccount(t *testing.T) {
 	otherAccount := "999999999999"
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		testOidcConfigCR("oidc-123", otherAccount, testManagedOidcConfigSpec(otherAccount)),
+		testOidcConfigCR("oidc-123", otherAccount, testOidcConfigSpec(otherAccount)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -513,7 +375,7 @@ func TestOidcConfigHandler_Get_WrongAccount(t *testing.T) {
 func TestOidcConfigHandler_Delete_Success(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		testOidcConfigCR("oidc-123", testAccountID, testManagedOidcConfigSpec(testAccountID)),
+		testOidcConfigCR("oidc-123", testAccountID, testOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)

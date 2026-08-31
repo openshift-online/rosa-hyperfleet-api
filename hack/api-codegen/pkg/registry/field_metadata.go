@@ -1118,11 +1118,5 @@ var FieldRegistry = TypedFieldRegistry{
 			OwnerType: "OidcConfig",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.OidcConfig",
 		},
-		"spec.type": {
-			FieldPath: "spec.type",
-			WriteMode: Immutable,
-			OwnerType: "OidcConfig",
-			OwnerGVK:  "hyperfleet.io/v1alpha1.OidcConfig",
-		},
 	},
 }

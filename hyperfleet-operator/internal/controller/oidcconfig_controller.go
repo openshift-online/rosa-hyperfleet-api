@@ -41,9 +41,9 @@ const (
 	thumbprintRefreshDelay = 24 * time.Hour
 )
 
-// OidcConfigReconciler reconciles OidcConfig objects by provisioning OIDC
-// infrastructure (S3 documents, Secrets Manager keys) for managed configs
-// or copying customer keys for unmanaged configs.
+// OidcConfigReconciler reconciles OidcConfig objects by copying the
+// customer-provided signing key into the regional Secrets Manager and
+// computing the issuer's TLS thumbprint.
 type OidcConfigReconciler struct {
 	client.Client
 	Scheme                  *runtime.Scheme
@@ -78,69 +78,10 @@ func (r *OidcConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	switch oc.Spec.Type {
-	case hyperfleetv1alpha1.OidcConfigTypeManaged:
-		return r.reconcileManaged(ctx, &oc)
-	case hyperfleetv1alpha1.OidcConfigTypeUnmanaged:
-		return r.reconcileUnmanaged(ctx, &oc)
-	default:
-		r.setReadyConditionAndPhase(ctx, &oc, "InvalidType", "unknown type: "+oc.Spec.Type, hyperfleetv1alpha1.OidcConfigPhaseError)
-		return ctrl.Result{}, nil
-	}
+	return r.reconcile(ctx, &oc)
 }
 
-func (r *OidcConfigReconciler) reconcileManaged(ctx context.Context, oc *hyperfleetv1alpha1.OidcConfig) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-	configID := oc.Name
-
-	if oc.Status.Phase == "" {
-		r.setPhase(ctx, oc, hyperfleetv1alpha1.OidcConfigPhasePending)
-	}
-
-	// If issuerUrl is not set, the OIDC infrastructure hasn't been created yet.
-	if oc.Spec.IssuerUrl == "" {
-		log.Info("Setting up managed OIDC infrastructure", "config", configID)
-
-		privateKeyPEM, jwksDoc, err := r.OIDC.GenerateKeyPair()
-		if err != nil {
-			r.setReadyCondition(ctx, oc, "KeyGenerationFailed", err.Error())
-			return ctrl.Result{}, fmt.Errorf("generate key pair: %w", err)
-		}
-
-		if err := r.OIDC.UploadOIDCDocuments(ctx, configID, jwksDoc); err != nil {
-			r.setReadyCondition(ctx, oc, "S3UploadFailed", err.Error())
-			return ctrl.Result{}, fmt.Errorf("upload OIDC documents: %w", err)
-		}
-
-		if err := r.OIDC.StorePrivateKey(ctx, configID, privateKeyPEM); err != nil {
-			r.setReadyCondition(ctx, oc, "SecretStoreFailed", err.Error())
-			return ctrl.Result{}, fmt.Errorf("store private key: %w", err)
-		}
-
-		// Set issuerUrl on the spec (one-time, immutable after this).
-		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			var latest hyperfleetv1alpha1.OidcConfig
-			if err := r.Get(ctx, client.ObjectKeyFromObject(oc), &latest); err != nil {
-				return err
-			}
-			if latest.Spec.IssuerUrl != "" {
-				return nil
-			}
-			latest.Spec.IssuerUrl = r.OIDC.IssuerURL(configID)
-			return r.Update(ctx, &latest)
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("set issuerUrl: %w", err)
-		}
-
-		// The issuerUrl update above triggers a new reconcile via the watch
-		// on this object, so no explicit requeue is needed here.
-		return ctrl.Result{}, nil
-	}
-
-	return r.finalizeReady(ctx, oc)
-}
-
-func (r *OidcConfigReconciler) reconcileUnmanaged(ctx context.Context, oc *hyperfleetv1alpha1.OidcConfig) (ctrl.Result, error) {
+func (r *OidcConfigReconciler) reconcile(ctx context.Context, oc *hyperfleetv1alpha1.OidcConfig) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	configID := oc.Name
 
@@ -218,13 +159,7 @@ func (r *OidcConfigReconciler) reconcileDelete(ctx context.Context, oc *hyperfle
 	}
 
 	configID := oc.Name
-	log.Info("OidcConfig deleting", "config", configID, "type", oc.Spec.Type)
-
-	if oc.Spec.Type == hyperfleetv1alpha1.OidcConfigTypeManaged {
-		if err := r.OIDC.DeleteOIDCDocuments(ctx, configID); err != nil {
-			return ctrl.Result{}, fmt.Errorf("delete OIDC documents: %w", err)
-		}
-	}
+	log.Info("OidcConfig deleting", "config", configID)
 
 	if err := r.OIDC.DeletePrivateKey(ctx, configID); err != nil {
 		return ctrl.Result{}, fmt.Errorf("delete private key: %w", err)

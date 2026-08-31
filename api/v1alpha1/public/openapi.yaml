@@ -562,16 +562,13 @@ paths:
     post:
       summary: Create OIDC config
       description: |
-        Create a new OIDC configuration. Specify spec.type as "managed" or "unmanaged".
-        Unmanaged configs require spec.secretArn, spec.installerRoleArn, and spec.issuerUrl.
-        Managed configs must not set those fields.
+        Create a new OIDC configuration. spec.secretArn, spec.installerRoleArn,
+        and spec.issuerUrl are all required.
 
         Possible error codes:
         - OIDCCONFIGS-MGMT-CREATE-001: Invalid request body
-        - OIDCCONFIGS-MGMT-CREATE-002: Missing required fields (spec with type)
+        - OIDCCONFIGS-MGMT-CREATE-002: Missing required fields (spec.issuerUrl, spec.secretArn, and spec.installerRoleArn)
         - OIDCCONFIGS-MGMT-CREATE-003: Failed to create OIDC config
-        - OIDCCONFIGS-MGMT-CREATE-004: Invalid type value
-        - OIDCCONFIGS-MGMT-CREATE-005: Invalid field combination for the given type
       operationId: createOidcConfig
       tags:
         - OidcConfigs
@@ -22888,44 +22885,28 @@ components:
                       description: AccountID is the AWS account that owns this OIDC config.
                       type: string
                   installerRoleArn:
-                      description: |-
-                          InstallerRoleArn is the ARN of the cross-account IAM role used to read the customer's secret.
-                          Required for unmanaged configs; must be empty for managed configs.
-                      pattern: ^(arn:aws:iam::.*)?$
+                      description: InstallerRoleArn is the ARN of the cross-account IAM role used to read the customer's secret.
+                      pattern: ^arn:aws:iam::.*$
                       type: string
                   issuerUrl:
-                      description: |-
-                          IssuerUrl is the OIDC issuer URL.
-                          Required for unmanaged configs; set by the controller for managed configs.
+                      description: IssuerUrl is the OIDC issuer URL, hosted by the customer.
                       type: string
                   secretArn:
-                      description: |-
-                          SecretArn is the ARN of the customer's Secrets Manager secret containing the RSA private key.
-                          Required for unmanaged configs; must be empty for managed configs.
-                      pattern: ^(arn:aws:secretsmanager:.*)?$
-                      type: string
-                  type:
-                      description: Type is the OIDC configuration mode.
-                      enum:
-                          - managed
-                          - unmanaged
+                      description: SecretArn is the ARN of the customer's Secrets Manager secret containing the RSA private key.
+                      pattern: ^arn:aws:secretsmanager:.*$
                       type: string
               required:
-                  - type
+                  - installerRoleArn
+                  - issuerUrl
+                  - secretArn
               type: object
               x-kubernetes-validations:
-                  - message: managed type must not set secretArn or installerRoleArn
-                    rule: self.type != 'managed' || (self.secretArn == '' && self.installerRoleArn == '')
-                  - message: unmanaged type requires secretArn, installerRoleArn, and issuerUrl
-                    rule: self.type != 'unmanaged' || (self.secretArn != '' && self.installerRoleArn != '' && self.issuerUrl != '')
-                  - message: spec.type is immutable
-                    rule: self.type == oldSelf.type
                   - message: spec.secretArn is immutable
                     rule: self.secretArn == oldSelf.secretArn
                   - message: spec.installerRoleArn is immutable
                     rule: self.installerRoleArn == oldSelf.installerRoleArn
-                  - message: spec.issuerUrl is immutable once set
-                    rule: oldSelf.issuerUrl == '' || self.issuerUrl == oldSelf.issuerUrl
+                  - message: spec.issuerUrl is immutable
+                    rule: self.issuerUrl == oldSelf.issuerUrl
           status:
               description: OidcConfigStatus defines the observed state of an OidcConfig.
               properties:
@@ -22990,10 +22971,6 @@ components:
                       x-kubernetes-list-map-keys:
                           - type
                       x-kubernetes-list-type: map
-                  lastUsedTimestamp:
-                      description: LastUsedTimestamp records when a cluster last referenced this config.
-                      format: date-time
-                      type: string
                   observedGeneration:
                       description: ObservedGeneration is the most recent generation observed by the controller.
                       format: int64
@@ -23058,44 +23035,28 @@ components:
                                   description: AccountID is the AWS account that owns this OIDC config.
                                   type: string
                               installerRoleArn:
-                                  description: |-
-                                      InstallerRoleArn is the ARN of the cross-account IAM role used to read the customer's secret.
-                                      Required for unmanaged configs; must be empty for managed configs.
-                                  pattern: ^(arn:aws:iam::.*)?$
+                                  description: InstallerRoleArn is the ARN of the cross-account IAM role used to read the customer's secret.
+                                  pattern: ^arn:aws:iam::.*$
                                   type: string
                               issuerUrl:
-                                  description: |-
-                                      IssuerUrl is the OIDC issuer URL.
-                                      Required for unmanaged configs; set by the controller for managed configs.
+                                  description: IssuerUrl is the OIDC issuer URL, hosted by the customer.
                                   type: string
                               secretArn:
-                                  description: |-
-                                      SecretArn is the ARN of the customer's Secrets Manager secret containing the RSA private key.
-                                      Required for unmanaged configs; must be empty for managed configs.
-                                  pattern: ^(arn:aws:secretsmanager:.*)?$
-                                  type: string
-                              type:
-                                  description: Type is the OIDC configuration mode.
-                                  enum:
-                                      - managed
-                                      - unmanaged
+                                  description: SecretArn is the ARN of the customer's Secrets Manager secret containing the RSA private key.
+                                  pattern: ^arn:aws:secretsmanager:.*$
                                   type: string
                           required:
-                              - type
+                              - installerRoleArn
+                              - issuerUrl
+                              - secretArn
                           type: object
                           x-kubernetes-validations:
-                              - message: managed type must not set secretArn or installerRoleArn
-                                rule: self.type != 'managed' || (self.secretArn == '' && self.installerRoleArn == '')
-                              - message: unmanaged type requires secretArn, installerRoleArn, and issuerUrl
-                                rule: self.type != 'unmanaged' || (self.secretArn != '' && self.installerRoleArn != '' && self.issuerUrl != '')
-                              - message: spec.type is immutable
-                                rule: self.type == oldSelf.type
                               - message: spec.secretArn is immutable
                                 rule: self.secretArn == oldSelf.secretArn
                               - message: spec.installerRoleArn is immutable
                                 rule: self.installerRoleArn == oldSelf.installerRoleArn
-                              - message: spec.issuerUrl is immutable once set
-                                rule: oldSelf.issuerUrl == '' || self.issuerUrl == oldSelf.issuerUrl
+                              - message: spec.issuerUrl is immutable
+                                rule: self.issuerUrl == oldSelf.issuerUrl
                       status:
                           description: OidcConfigStatus defines the observed state of an OidcConfig.
                           properties:
@@ -23160,10 +23121,6 @@ components:
                                   x-kubernetes-list-map-keys:
                                       - type
                                   x-kubernetes-list-type: map
-                              lastUsedTimestamp:
-                                  description: LastUsedTimestamp records when a cluster last referenced this config.
-                                  format: date-time
-                                  type: string
                               observedGeneration:
                                   description: ObservedGeneration is the most recent generation observed by the controller.
                                   format: int64
@@ -23320,10 +23277,6 @@ components:
               x-kubernetes-list-map-keys:
                   - type
               x-kubernetes-list-type: map
-          lastUsedTimestamp:
-              description: LastUsedTimestamp records when a cluster last referenced this config.
-              format: date-time
-              type: string
           observedGeneration:
               description: ObservedGeneration is the most recent generation observed by the controller.
               format: int64

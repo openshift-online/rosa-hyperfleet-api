@@ -35,8 +35,6 @@ spec:
           args:
             - --aws-region={{ required "awsRegion is required" .Values.awsRegion }}
             - --base-domain={{ required "baseDomain is required" .Values.baseDomain }}
-            - --oidc-s3-bucket={{ required "oidcS3Bucket is required" .Values.oidcS3Bucket }}
-            - --oidc-issuer-base-url={{ required "oidcIssuerBaseUrl is required" .Values.oidcIssuerBaseUrl }}
             - --health-probe-bind-address=:8081
           env:
             - name: POSTGRES_DSN

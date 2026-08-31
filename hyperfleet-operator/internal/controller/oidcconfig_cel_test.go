@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -55,101 +56,70 @@ var _ = Describe("OidcConfig CEL Validation", func() {
 		}
 	}
 
+	validSpec := func() hyperfleetv1alpha1.OidcConfigSpec {
+		return hyperfleetv1alpha1.OidcConfigSpec{
+			IssuerUrl:        "https://oidc.example.com",
+			SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
+			InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
+		}
+	}
+
+	// newOidcConfigMissing builds an OidcConfig via an unstructured object
+	// so the omitted field is absent from the request body entirely, which
+	// is what the CRD's "required" validation actually checks — a typed
+	// struct without `omitempty` would always serialize the field (as an
+	// empty string) and never exercise this path.
+	newOidcConfigMissing := func(name string, omit string) *unstructured.Unstructured {
+		spec := map[string]any{
+			"issuerUrl":        "https://oidc.example.com",
+			"secretArn":        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
+			"installerRoleArn": "arn:aws:iam::123456789012:role/installer",
+		}
+		delete(spec, omit)
+		return &unstructured.Unstructured{
+			Object: map[string]any{
+				"apiVersion": hyperfleetv1alpha1.GroupVersion.String(),
+				"kind":       "OidcConfig",
+				"metadata": map[string]any{
+					"name":      name,
+					"namespace": testNS,
+				},
+				"spec": spec,
+			},
+		}
+	}
+
 	Context("Create validation", func() {
-		It("accepts a valid managed config", func() {
-			oc := newOidcConfig("managed-valid", hyperfleetv1alpha1.OidcConfigSpec{
-				Type: hyperfleetv1alpha1.OidcConfigTypeManaged,
-			})
+		It("accepts a valid config", func() {
+			oc := newOidcConfig("valid", validSpec())
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 		})
 
-		It("rejects managed config with secretArn set", func() {
-			oc := newOidcConfig("managed-secret", hyperfleetv1alpha1.OidcConfigSpec{
-				Type:      hyperfleetv1alpha1.OidcConfigTypeManaged,
-				SecretArn: "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
-			})
+		It("rejects a config missing secretArn", func() {
+			oc := newOidcConfigMissing("no-secret", "secretArn")
 			err := k8sClient.Create(ctx, oc)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("managed type must not set secretArn or installerRoleArn"))
+			Expect(err.Error()).To(ContainSubstring("spec.secretArn: Required value"))
 		})
 
-		It("rejects managed config with installerRoleArn set", func() {
-			oc := newOidcConfig("managed-role", hyperfleetv1alpha1.OidcConfigSpec{
-				Type:             hyperfleetv1alpha1.OidcConfigTypeManaged,
-				InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-			})
+		It("rejects a config missing installerRoleArn", func() {
+			oc := newOidcConfigMissing("no-role", "installerRoleArn")
 			err := k8sClient.Create(ctx, oc)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("managed type must not set secretArn or installerRoleArn"))
+			Expect(err.Error()).To(ContainSubstring("spec.installerRoleArn: Required value"))
 		})
 
-		It("accepts a valid unmanaged config", func() {
-			oc := newOidcConfig("unmanaged-valid", hyperfleetv1alpha1.OidcConfigSpec{
-				Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-				IssuerUrl:        "https://oidc.example.com",
-				SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
-				InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-			})
-			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
-		})
-
-		It("rejects unmanaged config missing secretArn", func() {
-			oc := newOidcConfig("unmanaged-no-secret", hyperfleetv1alpha1.OidcConfigSpec{
-				Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-				IssuerUrl:        "https://oidc.example.com",
-				InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-			})
+		It("rejects a config missing issuerUrl", func() {
+			oc := newOidcConfigMissing("no-issuer", "issuerUrl")
 			err := k8sClient.Create(ctx, oc)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("unmanaged type requires secretArn, installerRoleArn, and issuerUrl"))
-		})
-
-		It("rejects unmanaged config missing issuerUrl", func() {
-			oc := newOidcConfig("unmanaged-no-issuer", hyperfleetv1alpha1.OidcConfigSpec{
-				Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-				SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
-				InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-			})
-			err := k8sClient.Create(ctx, oc)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("unmanaged type requires secretArn, installerRoleArn, and issuerUrl"))
-		})
-
-		It("rejects invalid type value", func() {
-			oc := newOidcConfig("bad-type", hyperfleetv1alpha1.OidcConfigSpec{
-				Type: "invalid",
-			})
-			err := k8sClient.Create(ctx, oc)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Unsupported value"))
+			Expect(err.Error()).To(ContainSubstring("spec.issuerUrl: Required value"))
 		})
 	})
 
 	Context("Update immutability", func() {
-		It("rejects changing type", func() {
-			oc := newOidcConfig("immut-type", hyperfleetv1alpha1.OidcConfigSpec{
-				Type: hyperfleetv1alpha1.OidcConfigTypeManaged,
-			})
-			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
-
-			var latest hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "immut-type"}, &latest)).To(Succeed())
-			latest.Spec.Type = hyperfleetv1alpha1.OidcConfigTypeUnmanaged
-			latest.Spec.IssuerUrl = "https://oidc.example.com"
-			latest.Spec.SecretArn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:key"
-			latest.Spec.InstallerRoleArn = "arn:aws:iam::123456789012:role/installer"
-			err := k8sClient.Update(ctx, &latest)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("spec.type is immutable"))
-		})
-
 		It("rejects changing secretArn", func() {
-			oc := newOidcConfig("immut-secret", hyperfleetv1alpha1.OidcConfigSpec{
-				Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-				IssuerUrl:        "https://oidc.example.com",
-				SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key-v1",
-				InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-			})
+			oc := newOidcConfig("immut-secret", validSpec())
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			var latest hyperfleetv1alpha1.OidcConfig
@@ -161,12 +131,7 @@ var _ = Describe("OidcConfig CEL Validation", func() {
 		})
 
 		It("rejects changing installerRoleArn", func() {
-			oc := newOidcConfig("immut-role", hyperfleetv1alpha1.OidcConfigSpec{
-				Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-				IssuerUrl:        "https://oidc.example.com",
-				SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
-				InstallerRoleArn: "arn:aws:iam::123456789012:role/installer-v1",
-			})
+			oc := newOidcConfig("immut-role", validSpec())
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			var latest hyperfleetv1alpha1.OidcConfig
@@ -177,34 +142,16 @@ var _ = Describe("OidcConfig CEL Validation", func() {
 			Expect(err.Error()).To(ContainSubstring("spec.installerRoleArn is immutable"))
 		})
 
-		It("allows setting issuerUrl from empty (controller sets it for managed)", func() {
-			oc := newOidcConfig("issuer-set-once", hyperfleetv1alpha1.OidcConfigSpec{
-				Type: hyperfleetv1alpha1.OidcConfigTypeManaged,
-			})
+		It("rejects changing issuerUrl", func() {
+			oc := newOidcConfig("immut-issuer", validSpec())
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			var latest hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "issuer-set-once"}, &latest)).To(Succeed())
-			latest.Spec.IssuerUrl = "https://cloudfront.example.com/config-id"
-			Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
-		})
-
-		It("rejects changing issuerUrl once set", func() {
-			oc := newOidcConfig("issuer-immut", hyperfleetv1alpha1.OidcConfigSpec{
-				Type: hyperfleetv1alpha1.OidcConfigTypeManaged,
-			})
-			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
-
-			var latest hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "issuer-immut"}, &latest)).To(Succeed())
-			latest.Spec.IssuerUrl = "https://cloudfront.example.com/config-id"
-			Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
-
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "issuer-immut"}, &latest)).To(Succeed())
-			latest.Spec.IssuerUrl = "https://cloudfront.example.com/different-id"
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "immut-issuer"}, &latest)).To(Succeed())
+			latest.Spec.IssuerUrl = "https://oidc-changed.example.com"
 			err := k8sClient.Update(ctx, &latest)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("spec.issuerUrl is immutable once set"))
+			Expect(err.Error()).To(ContainSubstring("spec.issuerUrl is immutable"))
 		})
 	})
 })

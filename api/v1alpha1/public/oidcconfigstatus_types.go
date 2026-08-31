@@ -21,9 +21,6 @@ type OidcConfigStatus struct {
 	// Computed by the controller and refreshed periodically.
 	// +optional
 	Thumbprint string `json:"thumbprint,omitempty"`
-	// LastUsedTimestamp records when a cluster last referenced this config.
-	// +optional
-	LastUsedTimestamp *metav1.Time `json:"lastUsedTimestamp,omitempty"`
 	// ObservedGeneration is the most recent generation observed by the controller.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`

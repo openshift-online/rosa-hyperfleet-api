@@ -7,8 +7,6 @@ image:
 
 awsRegion: ""
 baseDomain: ""
-oidcS3Bucket: ""
-oidcIssuerBaseUrl: ""
 
 postgres:
   secretName: postgres-dsn

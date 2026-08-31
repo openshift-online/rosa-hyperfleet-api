@@ -86,8 +86,6 @@ var (
 
 	ErrOidcConfigCreateInvalidBody   APIError
 	ErrOidcConfigCreateMissingFields APIError
-	ErrOidcConfigCreateInvalidType   APIError
-	ErrOidcConfigCreateInvalidFields APIError
 	ErrOidcConfigCreateFailed        APIError
 
 	ErrOidcConfigGetNotFound APIError
@@ -310,10 +308,8 @@ func init() {
 
 	// OidcConfig — Create
 	ErrOidcConfigCreateInvalidBody = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrOidcConfigCreateMissingFields = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "Missing required fields: spec with type"}
+	ErrOidcConfigCreateMissingFields = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "Missing required fields: spec.issuerUrl, spec.secretArn, and spec.installerRoleArn"}
 	ErrOidcConfigCreateFailed = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-003", HTTPStatus: http.StatusInternalServerError, Message: "Failed to create OIDC config"}
-	ErrOidcConfigCreateInvalidType = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-004", HTTPStatus: http.StatusBadRequest, Message: "spec.type must be 'managed' or 'unmanaged'"}
-	ErrOidcConfigCreateInvalidFields = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-005", HTTPStatus: http.StatusBadRequest, Message: "unmanaged type requires secretArn and installerRoleArn; managed type must not set them"}
 
 	// OidcConfig — Get
 	ErrOidcConfigGetNotFound = APIError{Code: "OIDCCONFIGS-MGMT-GET-001", HTTPStatus: http.StatusNotFound, Message: "OIDC config not found"}

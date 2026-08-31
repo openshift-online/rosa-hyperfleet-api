@@ -29,11 +29,9 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -45,53 +43,22 @@ import (
 type fakeOidcInfra struct {
 	mu sync.Mutex
 
-	issuerBaseURL string
-	thumbprint    string
+	thumbprint string
 
-	generateErr         error
-	uploadErr           error
 	storeErr            error
 	existsErr           error
 	readCrossAccountErr error
-	deleteDocsErr       error
 	deleteKeyErr        error
 	thumbprintErr       error
 
 	keyExists       bool
 	crossAccountKey []byte
 
-	generateCalled   int
-	uploadCalled     int
 	storeCalled      int
 	existsCalled     int
 	readCalled       int
-	deleteDocsCalled int
 	deleteKeyCalled  int
 	thumbprintCalled int
-}
-
-func (f *fakeOidcInfra) GenerateKeyPair() ([]byte, []byte, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.generateCalled++
-	if f.generateErr != nil {
-		return nil, nil, f.generateErr
-	}
-	return []byte("fake-private-key-pem"), []byte(`{"keys":[]}`), nil
-}
-
-func (f *fakeOidcInfra) UploadOIDCDocuments(_ context.Context, _ string, _ []byte) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.uploadCalled++
-	return f.uploadErr
-}
-
-func (f *fakeOidcInfra) DeleteOIDCDocuments(_ context.Context, _ string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.deleteDocsCalled++
-	return f.deleteDocsErr
 }
 
 func (f *fakeOidcInfra) StorePrivateKey(_ context.Context, _ string, _ []byte) error {
@@ -123,10 +90,6 @@ func (f *fakeOidcInfra) DeletePrivateKey(_ context.Context, _ string) error {
 	defer f.mu.Unlock()
 	f.deleteKeyCalled++
 	return f.deleteKeyErr
-}
-
-func (f *fakeOidcInfra) IssuerURL(configID string) string {
-	return f.issuerBaseURL + "/" + configID
 }
 
 func (f *fakeOidcInfra) ComputeThumbprint(_ context.Context, _ string) (string, error) {
@@ -183,109 +146,23 @@ var _ = Describe("OidcConfig Controller", func() {
 		return result, nil
 	}
 
-	Context("Managed OidcConfig", func() {
-		It("should add finalizer, set up infrastructure, and reach Ready", func() {
-			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "managed-01", Namespace: testNS},
-				Spec:       hyperfleetv1alpha1.OidcConfigSpec{Type: hyperfleetv1alpha1.OidcConfigTypeManaged},
-			}
-			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+	validSpec := func() hyperfleetv1alpha1.OidcConfigSpec {
+		return hyperfleetv1alpha1.OidcConfigSpec{
+			IssuerUrl:        "https://customer-oidc.example.com",
+			SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
+			InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
+		}
+	}
 
-			infra := &fakeOidcInfra{
-				issuerBaseURL: "https://oidc.example.com",
-				thumbprint:    "abc123def456",
-			}
-			r := newReconciler(infra)
-
-			// Reconcile 1: adds finalizer. The Update call it makes triggers
-			// a follow-up reconcile via the watch in production, so no
-			// explicit requeue is returned here.
-			result, err := r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-01"},
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(Equal(ctrl.Result{}))
-
-			var updated hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-01"}, &updated)).To(Succeed())
-			Expect(controllerutil.ContainsFinalizer(&updated, oidcConfigFinalizer)).To(BeTrue())
-
-			// Reconcile 2: generates key, uploads, stores, sets issuerUrl.
-			// Setting issuerUrl similarly triggers a follow-up reconcile via
-			// the watch, so no explicit requeue is returned here either.
-			result, err = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-01"},
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(Equal(ctrl.Result{}))
-
-			Expect(infra.generateCalled).To(Equal(1))
-			Expect(infra.uploadCalled).To(Equal(1))
-			Expect(infra.storeCalled).To(Equal(1))
-
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-01"}, &updated)).To(Succeed())
-			Expect(updated.Spec.IssuerUrl).To(Equal("https://oidc.example.com/managed-01"))
-
-			// Reconcile 3: computes thumbprint, sets Ready.
-			result, err = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-01"},
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(thumbprintRefreshDelay))
-
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-01"}, &updated)).To(Succeed())
-			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseReady))
-			Expect(updated.Status.Thumbprint).To(Equal("abc123def456"))
-
-			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
-			Expect(readyCond).NotTo(BeNil())
-			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
-			Expect(readyCond.Reason).To(Equal("OIDCConfigured"))
-		})
-
-		It("should not regenerate key on re-reconcile when already Ready", func() {
-			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "managed-idem", Namespace: testNS},
-				Spec:       hyperfleetv1alpha1.OidcConfigSpec{Type: hyperfleetv1alpha1.OidcConfigTypeManaged},
-			}
-			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
-
-			infra := &fakeOidcInfra{
-				issuerBaseURL: "https://oidc.example.com",
-				thumbprint:    "thumb01",
-			}
-			r := newReconciler(infra)
-
-			// 3 reconciles to reach Ready.
-			_, err := reconcileN(r, testNS, "managed-idem", 3)
-			Expect(err).NotTo(HaveOccurred())
-
-			// 4th reconcile: should not regenerate.
-			_, err = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-idem"},
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(infra.generateCalled).To(Equal(1))
-			Expect(infra.uploadCalled).To(Equal(1))
-			Expect(infra.storeCalled).To(Equal(1))
-		})
-	})
-
-	Context("Unmanaged OidcConfig", func() {
+	Context("Reconcile", func() {
 		It("should copy customer key and reach Ready", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-01", Namespace: testNS},
-				Spec: hyperfleetv1alpha1.OidcConfigSpec{
-					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-					IssuerUrl:        "https://customer-oidc.example.com",
-					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
-					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "copy-key", Namespace: testNS},
+				Spec:       validSpec(),
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{
-				issuerBaseURL:   "https://oidc.example.com",
 				thumbprint:      "customer-thumb",
 				crossAccountKey: generateTestRSAKeyPEM(),
 			}
@@ -293,42 +170,41 @@ var _ = Describe("OidcConfig Controller", func() {
 
 			// Reconcile 1: adds finalizer.
 			// Reconcile 2: copies key, computes thumbprint, sets Ready.
-			_, err := reconcileN(r, testNS, "unmanaged-01", 2)
+			_, err := reconcileN(r, testNS, "copy-key", 2)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(infra.readCalled).To(Equal(1))
 			Expect(infra.storeCalled).To(Equal(1))
 
 			var updated hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-01"}, &updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "copy-key"}, &updated)).To(Succeed())
 			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseReady))
 			Expect(updated.Status.Thumbprint).To(Equal("customer-thumb"))
+
+			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(readyCond.Reason).To(Equal("OIDCConfigured"))
 		})
 
 		It("should set Error phase for invalid private key", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-bad-key", Namespace: testNS},
-				Spec: hyperfleetv1alpha1.OidcConfigSpec{
-					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-					IssuerUrl:        "https://customer-oidc.example.com",
-					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
-					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "bad-key", Namespace: testNS},
+				Spec:       validSpec(),
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{
-				issuerBaseURL:   "https://oidc.example.com",
 				thumbprint:      "thumb",
 				crossAccountKey: []byte("not-a-valid-pem"),
 			}
 			r := newReconciler(infra)
 
-			_, err := reconcileN(r, testNS, "unmanaged-bad-key", 2)
+			_, err := reconcileN(r, testNS, "bad-key", 2)
 			Expect(err).NotTo(HaveOccurred())
 
 			var updated hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-bad-key"}, &updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "bad-key"}, &updated)).To(Succeed())
 			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseError))
 
 			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
@@ -339,175 +215,127 @@ var _ = Describe("OidcConfig Controller", func() {
 
 		It("should skip key copy when already stored", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-exists", Namespace: testNS},
-				Spec: hyperfleetv1alpha1.OidcConfigSpec{
-					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-					IssuerUrl:        "https://customer-oidc.example.com",
-					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
-					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "key-exists", Namespace: testNS},
+				Spec:       validSpec(),
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{
-				issuerBaseURL: "https://oidc.example.com",
-				thumbprint:    "thumb",
-				keyExists:     true,
+				thumbprint: "thumb",
+				keyExists:  true,
 			}
 			r := newReconciler(infra)
 
-			_, err := reconcileN(r, testNS, "unmanaged-exists", 2)
+			_, err := reconcileN(r, testNS, "key-exists", 2)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(infra.readCalled).To(Equal(0))
 			Expect(infra.storeCalled).To(Equal(0))
 
 			var updated hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-exists"}, &updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "key-exists"}, &updated)).To(Succeed())
 			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseReady))
+		})
+
+		It("should not re-copy the key on re-reconcile once Ready", func() {
+			oc := &hyperfleetv1alpha1.OidcConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "idempotent", Namespace: testNS},
+				Spec:       validSpec(),
+			}
+			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+
+			infra := &fakeOidcInfra{
+				thumbprint:      "thumb",
+				crossAccountKey: generateTestRSAKeyPEM(),
+			}
+			r := newReconciler(infra)
+
+			// Reconcile 1: adds finalizer.
+			// Reconcile 2: copies key, computes thumbprint, sets Ready.
+			_, err := reconcileN(r, testNS, "idempotent", 2)
+			Expect(err).NotTo(HaveOccurred())
+
+			// The controller doesn't track "already copied" itself — it
+			// asks the infra client, so the fake reports the key as
+			// existing from here on, simulating what the real client
+			// would report on a re-reconcile of an already-Ready config.
+			infra.keyExists = true
+
+			// Reconcile 3: should not read/store again, just refresh the
+			// thumbprint.
+			_, err = r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "idempotent"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(infra.readCalled).To(Equal(1))
+			Expect(infra.storeCalled).To(Equal(1))
 		})
 	})
 
 	Context("Deletion", func() {
-		It("should clean up S3 and SM for managed config", func() {
+		It("should delete the private key on delete", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "managed-del", Namespace: testNS},
-				Spec:       hyperfleetv1alpha1.OidcConfigSpec{Type: hyperfleetv1alpha1.OidcConfigTypeManaged},
+				ObjectMeta: metav1.ObjectMeta{Name: "delete-me", Namespace: testNS},
+				Spec:       validSpec(),
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{
-				issuerBaseURL: "https://oidc.example.com",
-				thumbprint:    "thumb",
-			}
-			r := newReconciler(infra)
-
-			// Reach Ready state.
-			_, err := reconcileN(r, testNS, "managed-del", 3)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Delete.
-			var latest hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-del"}, &latest)).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &latest)).To(Succeed())
-
-			_, err = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-del"},
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(infra.deleteDocsCalled).To(Equal(1))
-			Expect(infra.deleteKeyCalled).To(Equal(1))
-		})
-
-		It("should clean up SM only for unmanaged config", func() {
-			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-del", Namespace: testNS},
-				Spec: hyperfleetv1alpha1.OidcConfigSpec{
-					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-					IssuerUrl:        "https://customer-oidc.example.com",
-					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
-					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-				},
-			}
-			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
-
-			infra := &fakeOidcInfra{
-				issuerBaseURL:   "https://oidc.example.com",
 				thumbprint:      "thumb",
 				crossAccountKey: generateTestRSAKeyPEM(),
 			}
 			r := newReconciler(infra)
 
 			// Reach Ready state.
-			_, err := reconcileN(r, testNS, "unmanaged-del", 2)
+			_, err := reconcileN(r, testNS, "delete-me", 2)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Delete.
 			var latest hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-del"}, &latest)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "delete-me"}, &latest)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, &latest)).To(Succeed())
 
 			_, err = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "unmanaged-del"},
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "delete-me"},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(infra.deleteDocsCalled).To(Equal(0))
 			Expect(infra.deleteKeyCalled).To(Equal(1))
-		})
-
-		It("should keep the finalizer and return an error when S3 cleanup fails", func() {
-			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "managed-del-s3-fail", Namespace: testNS},
-				Spec:       hyperfleetv1alpha1.OidcConfigSpec{Type: hyperfleetv1alpha1.OidcConfigTypeManaged},
-			}
-			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
-
-			infra := &fakeOidcInfra{
-				issuerBaseURL: "https://oidc.example.com",
-				thumbprint:    "thumb",
-			}
-			r := newReconciler(infra)
-
-			// Reach Ready state.
-			_, err := reconcileN(r, testNS, "managed-del-s3-fail", 3)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Delete.
-			var latest hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-del-s3-fail"}, &latest)).To(Succeed())
-			Expect(k8sClient.Delete(ctx, &latest)).To(Succeed())
-
-			infra.deleteDocsErr = fmt.Errorf("s3 delete failed")
-
-			_, err = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-del-s3-fail"},
-			})
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("s3 delete failed"))
-
-			// The private key must not be deleted, and the finalizer must
-			// remain, until S3 cleanup succeeds and reconciliation can retry.
-			Expect(infra.deleteKeyCalled).To(Equal(0))
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-del-s3-fail"}, &latest)).To(Succeed())
-			Expect(controllerutil.ContainsFinalizer(&latest, oidcConfigFinalizer)).To(BeTrue())
 		})
 
 		It("should keep the finalizer and return an error when Secrets Manager cleanup fails", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "managed-del-sm-fail", Namespace: testNS},
-				Spec:       hyperfleetv1alpha1.OidcConfigSpec{Type: hyperfleetv1alpha1.OidcConfigTypeManaged},
+				ObjectMeta: metav1.ObjectMeta{Name: "delete-sm-fail", Namespace: testNS},
+				Spec:       validSpec(),
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{
-				issuerBaseURL: "https://oidc.example.com",
-				thumbprint:    "thumb",
+				thumbprint:      "thumb",
+				crossAccountKey: generateTestRSAKeyPEM(),
 			}
 			r := newReconciler(infra)
 
 			// Reach Ready state.
-			_, err := reconcileN(r, testNS, "managed-del-sm-fail", 3)
+			_, err := reconcileN(r, testNS, "delete-sm-fail", 2)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Delete.
 			var latest hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-del-sm-fail"}, &latest)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "delete-sm-fail"}, &latest)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, &latest)).To(Succeed())
 
 			infra.deleteKeyErr = fmt.Errorf("secrets manager delete failed")
 
 			_, err = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-del-sm-fail"},
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "delete-sm-fail"},
 			})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("secrets manager delete failed"))
 
-			// S3 cleanup should have run first and succeeded; the finalizer
-			// must remain until Secrets Manager cleanup also succeeds.
-			Expect(infra.deleteDocsCalled).To(Equal(1))
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-del-sm-fail"}, &latest)).To(Succeed())
+			// The finalizer must remain until Secrets Manager cleanup
+			// succeeds, so reconciliation can retry.
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "delete-sm-fail"}, &latest)).To(Succeed())
 			Expect(controllerutil.ContainsFinalizer(&latest, oidcConfigFinalizer)).To(BeTrue())
 		})
 	})
@@ -521,69 +349,37 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		It("should return error when key generation fails", func() {
+		It("should return an error and set Error phase when thumbprint computation fails", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "managed-gen-fail", Namespace: testNS},
-				Spec:       hyperfleetv1alpha1.OidcConfigSpec{Type: hyperfleetv1alpha1.OidcConfigTypeManaged},
+				ObjectMeta: metav1.ObjectMeta{Name: "thumb-fail", Namespace: testNS},
+				Spec:       validSpec(),
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{
-				issuerBaseURL: "https://oidc.example.com",
-				generateErr:   fmt.Errorf("entropy failure"),
+				crossAccountKey: generateTestRSAKeyPEM(),
+				thumbprintErr:   fmt.Errorf("TLS dial failed"),
 			}
 			r := newReconciler(infra)
 
 			// Reconcile 1: adds finalizer.
 			_, _ = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-gen-fail"},
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "thumb-fail"},
 			})
-			// Reconcile 2: key generation fails.
-			_, err := r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-gen-fail"},
-			})
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("entropy failure"))
-
-			var updated hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-gen-fail"}, &updated)).To(Succeed())
-			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
-			Expect(readyCond).NotTo(BeNil())
-			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
-			Expect(readyCond.Reason).To(Equal("KeyGenerationFailed"))
-		})
-
-		It("should return an error and set Error phase when thumbprint computation fails", func() {
-			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "managed-thumb-fail", Namespace: testNS},
-				Spec:       hyperfleetv1alpha1.OidcConfigSpec{Type: hyperfleetv1alpha1.OidcConfigTypeManaged},
-			}
-			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
-
-			infra := &fakeOidcInfra{
-				issuerBaseURL: "https://oidc.example.com",
-				thumbprintErr: fmt.Errorf("TLS dial failed"),
-			}
-			r := newReconciler(infra)
-
-			// Reconcile 1: adds finalizer.
-			// Reconcile 2: generates key, uploads, stores, sets issuerUrl.
-			_, err := reconcileN(r, testNS, "managed-thumb-fail", 2)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Reconcile 3: thumbprint fails. Returning the error (rather
-			// than nil with a fixed RequeueAfter) lets controller-runtime
-			// apply exponential backoff instead of retrying every 30s
-			// forever, and the phase must reflect the failure as Error.
+			// Reconcile 2: copies key, thumbprint fails. Returning the
+			// error (rather than nil with a fixed RequeueAfter) lets
+			// controller-runtime apply exponential backoff instead of
+			// retrying every 30s forever, and the phase must reflect the
+			// failure as Error.
 			result, err := r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-thumb-fail"},
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "thumb-fail"},
 			})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("TLS dial failed"))
 			Expect(result.RequeueAfter).To(BeZero())
 
 			var updated hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-thumb-fail"}, &updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "thumb-fail"}, &updated)).To(Succeed())
 			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseError))
 
 			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
@@ -594,43 +390,42 @@ var _ = Describe("OidcConfig Controller", func() {
 
 		It("should restore Ready after a thumbprint failure is followed by a successful reconcile", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "managed-thumb-recover", Namespace: testNS},
-				Spec:       hyperfleetv1alpha1.OidcConfigSpec{Type: hyperfleetv1alpha1.OidcConfigTypeManaged},
+				ObjectMeta: metav1.ObjectMeta{Name: "thumb-recover", Namespace: testNS},
+				Spec:       validSpec(),
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{
-				issuerBaseURL: "https://oidc.example.com",
-				thumbprint:    "recovered-thumb",
-				thumbprintErr: fmt.Errorf("TLS dial failed"),
+				thumbprint:      "recovered-thumb",
+				thumbprintErr:   fmt.Errorf("TLS dial failed"),
+				crossAccountKey: generateTestRSAKeyPEM(),
 			}
 			r := newReconciler(infra)
 
 			// Reconcile 1: adds finalizer.
-			// Reconcile 2: generates key, uploads, stores, sets issuerUrl.
-			_, err := reconcileN(r, testNS, "managed-thumb-recover", 2)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Reconcile 3: thumbprint fails, phase goes to Error.
-			_, err = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-thumb-recover"},
+			// Reconcile 2: copies key, thumbprint fails, phase goes to Error.
+			_, _ = r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "thumb-recover"},
+			})
+			_, err := r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "thumb-recover"},
 			})
 			Expect(err).To(HaveOccurred())
 
 			var updated hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-thumb-recover"}, &updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "thumb-recover"}, &updated)).To(Succeed())
 			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseError))
 
 			// The customer host becomes reachable again; the next
 			// reconcile should restore Ready.
 			infra.thumbprintErr = nil
 			result, err := r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-thumb-recover"},
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "thumb-recover"},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(thumbprintRefreshDelay))
 
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-thumb-recover"}, &updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "thumb-recover"}, &updated)).To(Succeed())
 			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseReady))
 			Expect(updated.Status.Thumbprint).To(Equal("recovered-thumb"))
 
@@ -640,139 +435,25 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(readyCond.Reason).To(Equal("OIDCConfigured"))
 		})
 
-		It("should set Error phase for an unrecognized Spec.Type", func() {
-			// The CRD schema enforces an enum on spec.type, and spec.type is
-			// immutable, so an unrecognized value can never reach the real
-			// API server used by k8sClient. Seed a fake client directly to
-			// exercise the reconciler's default branch in the type switch.
-			scheme := runtime.NewScheme()
-			Expect(hyperfleetv1alpha1.AddToScheme(scheme)).To(Succeed())
-
-			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "invalid-type", Namespace: testNS},
-				Spec:       hyperfleetv1alpha1.OidcConfigSpec{Type: "bogus"},
-			}
-			fakeClient := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithStatusSubresource(&hyperfleetv1alpha1.OidcConfig{}).
-				WithObjects(oc).
-				Build()
-
-			r := &OidcConfigReconciler{
-				Client: fakeClient,
-				Scheme: scheme,
-				OIDC:   &fakeOidcInfra{},
-			}
-
-			// Reconcile 1: adds finalizer.
-			// Reconcile 2: hits the unrecognized type branch.
-			_, err := reconcileN(r, testNS, "invalid-type", 2)
-			Expect(err).NotTo(HaveOccurred())
-
-			var updated hyperfleetv1alpha1.OidcConfig
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "invalid-type"}, &updated)).To(Succeed())
-			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseError))
-
-			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
-			Expect(readyCond).NotTo(BeNil())
-			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
-			Expect(readyCond.Reason).To(Equal("InvalidType"))
-		})
-
-		It("should set Error condition when S3 upload fails", func() {
-			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "managed-upload-fail", Namespace: testNS},
-				Spec:       hyperfleetv1alpha1.OidcConfigSpec{Type: hyperfleetv1alpha1.OidcConfigTypeManaged},
-			}
-			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
-
-			infra := &fakeOidcInfra{
-				issuerBaseURL: "https://oidc.example.com",
-				uploadErr:     fmt.Errorf("s3 unavailable"),
-			}
-			r := newReconciler(infra)
-
-			// Reconcile 1: adds finalizer.
-			_, _ = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-upload-fail"},
-			})
-			// Reconcile 2: key generation succeeds, upload fails.
-			_, err := r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-upload-fail"},
-			})
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("s3 unavailable"))
-			Expect(infra.generateCalled).To(Equal(1))
-			Expect(infra.uploadCalled).To(Equal(1))
-			Expect(infra.storeCalled).To(Equal(0))
-
-			var updated hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-upload-fail"}, &updated)).To(Succeed())
-			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
-			Expect(readyCond).NotTo(BeNil())
-			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
-			Expect(readyCond.Reason).To(Equal("S3UploadFailed"))
-		})
-
-		It("should set Error condition when private key storage fails for a managed config", func() {
-			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "managed-store-fail", Namespace: testNS},
-				Spec:       hyperfleetv1alpha1.OidcConfigSpec{Type: hyperfleetv1alpha1.OidcConfigTypeManaged},
-			}
-			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
-
-			infra := &fakeOidcInfra{
-				issuerBaseURL: "https://oidc.example.com",
-				storeErr:      fmt.Errorf("secrets manager throttled"),
-			}
-			r := newReconciler(infra)
-
-			// Reconcile 1: adds finalizer.
-			_, _ = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-store-fail"},
-			})
-			// Reconcile 2: key generation and upload succeed, store fails.
-			_, err := r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-store-fail"},
-			})
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("secrets manager throttled"))
-			Expect(infra.uploadCalled).To(Equal(1))
-			Expect(infra.storeCalled).To(Equal(1))
-
-			var updated hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-store-fail"}, &updated)).To(Succeed())
-			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
-			Expect(readyCond).NotTo(BeNil())
-			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
-			Expect(readyCond.Reason).To(Equal("SecretStoreFailed"))
-		})
-
 		It("should set Error condition when cross-account secret read fails", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-read-fail", Namespace: testNS},
-				Spec: hyperfleetv1alpha1.OidcConfigSpec{
-					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-					IssuerUrl:        "https://customer-oidc.example.com",
-					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
-					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "read-fail", Namespace: testNS},
+				Spec:       validSpec(),
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{
-				issuerBaseURL:       "https://oidc.example.com",
 				readCrossAccountErr: fmt.Errorf("assume role denied"),
 			}
 			r := newReconciler(infra)
 
 			// Reconcile 1: adds finalizer.
 			_, _ = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "unmanaged-read-fail"},
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "read-fail"},
 			})
 			// Reconcile 2: key doesn't exist yet, cross-account read fails.
 			_, err := r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "unmanaged-read-fail"},
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "read-fail"},
 			})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("assume role denied"))
@@ -780,38 +461,66 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(infra.storeCalled).To(Equal(0))
 
 			var updated hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-read-fail"}, &updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "read-fail"}, &updated)).To(Succeed())
 			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal("CrossAccountReadFailed"))
 		})
 
-		It("should return error when checking private key existence fails", func() {
+		It("should set Error condition when private key storage fails", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-exists-fail", Namespace: testNS},
-				Spec: hyperfleetv1alpha1.OidcConfigSpec{
-					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-					IssuerUrl:        "https://customer-oidc.example.com",
-					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
-					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "store-fail", Namespace: testNS},
+				Spec:       validSpec(),
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{
-				issuerBaseURL: "https://oidc.example.com",
-				existsErr:     fmt.Errorf("secrets manager unreachable"),
+				crossAccountKey: generateTestRSAKeyPEM(),
+				storeErr:        fmt.Errorf("secrets manager throttled"),
 			}
 			r := newReconciler(infra)
 
 			// Reconcile 1: adds finalizer.
 			_, _ = r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "unmanaged-exists-fail"},
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "store-fail"},
+			})
+			// Reconcile 2: cross-account read succeeds, store fails.
+			_, err := r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "store-fail"},
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("secrets manager throttled"))
+			Expect(infra.readCalled).To(Equal(1))
+			Expect(infra.storeCalled).To(Equal(1))
+
+			var updated hyperfleetv1alpha1.OidcConfig
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "store-fail"}, &updated)).To(Succeed())
+			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("SecretStoreFailed"))
+		})
+
+		It("should return error when checking private key existence fails", func() {
+			oc := &hyperfleetv1alpha1.OidcConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "exists-fail", Namespace: testNS},
+				Spec:       validSpec(),
+			}
+			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+
+			infra := &fakeOidcInfra{
+				existsErr: fmt.Errorf("secrets manager unreachable"),
+			}
+			r := newReconciler(infra)
+
+			// Reconcile 1: adds finalizer.
+			_, _ = r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "exists-fail"},
 			})
 			// Reconcile 2: PrivateKeyExists fails.
 			_, err := r.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "unmanaged-exists-fail"},
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "exists-fail"},
 			})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("secrets manager unreachable"))
@@ -819,7 +528,7 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(infra.readCalled).To(Equal(0))
 
 			var updated hyperfleetv1alpha1.OidcConfig
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-exists-fail"}, &updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "exists-fail"}, &updated)).To(Succeed())
 			Expect(updated.Status.Phase).NotTo(Equal(hyperfleetv1alpha1.OidcConfigPhaseReady))
 		})
 	})
