@@ -65,7 +65,7 @@ func (f *fakeWatcherHandle) Run(_ context.Context) {
 }
 
 func (f *fakeWatcherHandle) Done() <-chan struct{} { return f.doneCh }
-func (f *fakeWatcherHandle) Stop()                { close(f.stopCh) }
+func (f *fakeWatcherHandle) Stop()                 { close(f.stopCh) }
 
 // Verify our fake satisfies the same interface surface as hd.Watcher.
 var _ interface {
@@ -283,7 +283,6 @@ func computeDesired(ctx context.Context, t *testing.T, reader *fakeReader, suffi
 	}
 	return desired
 }
-
 
 // Verify runtime.Object interface is still satisfiable — compile check.
 var _ runtime.Object = (*hyperfleetv1alpha1.ManagementCluster)(nil)

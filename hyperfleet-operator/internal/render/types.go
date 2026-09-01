@@ -20,13 +20,6 @@ type Resource struct {
 	Object    any
 }
 
-func hash4(clusterID string) string {
-	if len(clusterID) < 4 {
-		return clusterID
-	}
-	return clusterID[:4]
-}
-
 // ClusterIDFromNamespace extracts the cluster UUID from a namespace name
 // with the "cluster-" prefix.
 func ClusterIDFromNamespace(ns string) string {

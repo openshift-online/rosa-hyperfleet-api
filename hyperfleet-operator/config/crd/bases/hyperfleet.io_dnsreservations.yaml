@@ -1,0 +1,90 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: dnsreservations.hyperfleet.io
+spec:
+  group: hyperfleet.io
+  names:
+    kind: DNSReservation
+    listKind: DNSReservationList
+    plural: dnsreservations
+    shortNames:
+    - hfdns
+    singular: dnsreservation
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.shard
+      name: Shard
+      type: string
+    - jsonPath: .spec.prefix
+      name: Prefix
+      type: string
+    - jsonPath: .metadata.labels.hyperfleet\.io/cluster-namespace
+      name: Cluster
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          DNSReservation reserves a DNS prefix within a specific zone shard.
+          Name format: "{shard}-{prefix}" (e.g. "0-f7a3").
+          The API server rejects duplicates, ensuring each prefix is unique per shard.
+          Labels:
+            - hyperfleet.io/account-id: AWS account that owns this reservation (always set).
+            - hyperfleet.io/cluster-namespace: set when a cluster claims the reservation;
+              absent for pre-reservations (e.g. shared-VPC flows).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: DNSReservationSpec defines the desired state of a DNS reservation.
+            properties:
+              baseDomain:
+                description: |-
+                  BaseDomain is the fully assembled base domain for this reservation
+                  (e.g. "f7a3.0.openshiftapps.com"). Used directly as the HostedCluster
+                  BaseDomain. Computed at creation time from {prefix}.{shard}.{regionalBaseDomain}.
+                type: string
+              prefix:
+                description: Prefix is the randomly generated DNS disambiguation token
+                  (e.g. "f7a3").
+                pattern: ^[0-9a-f]{4}$
+                type: string
+              shard:
+                description: Shard is the DNS zone shard this reservation belongs
+                  to (e.g. "0").
+                pattern: ^[a-z0-9]+$
+                type: string
+            required:
+            - baseDomain
+            - prefix
+            - shard
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}

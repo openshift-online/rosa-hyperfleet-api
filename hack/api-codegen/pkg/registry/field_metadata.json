@@ -522,6 +522,12 @@
     "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
   },
   {
+    "fieldPath": "status.baseDomain",
+    "hidden": true,
+    "ownerType": "Cluster",
+    "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
+  },
+  {
     "fieldPath": "apiServer",
     "writeMode": "service-set",
     "hidden": true,

@@ -57,6 +57,12 @@ func purgeResources() {
 			_ = c.Delete(ctx, &manifests.Items[i])
 		}
 	}
+	var dnsReservations hyperfleetv1alpha1.DNSReservationList
+	if err := c.List(ctx, &dnsReservations); err == nil {
+		for i := range dnsReservations.Items {
+			_ = c.Delete(ctx, &dnsReservations.Items[i])
+		}
+	}
 
 	Eventually(func() int {
 		total := 0

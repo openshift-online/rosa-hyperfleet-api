@@ -545,6 +545,12 @@ var FieldRegistry = TypedFieldRegistry{
 			OwnerType:   "Cluster",
 			OwnerGVK:    "hyperfleet.io/v1alpha1.Cluster",
 		},
+		"status.baseDomain": {
+			FieldPath: "status.baseDomain",
+			Hidden:    true,
+			OwnerType: "Cluster",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
+		},
 	},
 	"ClusterConfiguration": {
 		"apiServer": {

@@ -6,23 +6,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/gorilla/mux"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
@@ -559,146 +553,3 @@ func TestClusterHandler_Create_SameNameDifferentAccount(t *testing.T) {
 	}
 }
 
-func sequenceIDGen(ids ...string) func() string {
-	i := 0
-	return func() string {
-		id := ids[i]
-		if i < len(ids)-1 {
-			i++
-		}
-		return id
-	}
-}
-
-func TestClusterHandler_Create_Hash4CollisionThenSuccess(t *testing.T) {
-	existing := testClusterCR("aaaa-existing", "test-cluster", "999999999999")
-	existing.Spec.InternalID = "aaaa-existing"
-
-	scheme := newTestScheme()
-	innerFC := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
-	fc := &hash4UniqueClient{Client: innerFC}
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
-	handler.generateID = sequenceIDGen("aaaa-1111-1111-1111", "cccc-2222-2222-2222")
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v0/clusters", bytes.NewReader(clusterBody("test-cluster", nil)))
-	req = req.WithContext(testContext(testAccountID))
-
-	w := httptest.NewRecorder()
-	handler.Create(w, req)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected 201 after retry, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var result map[string]any
-	_ = json.NewDecoder(w.Body).Decode(&result)
-	if uid := metaField(result, "uid"); uid != "cccc-2222-2222-2222" {
-		t.Errorf("expected metadata.uid=cccc-2222-2222-2222, got %v", uid)
-	}
-}
-
-func TestClusterHandler_Create_Hash4ExhaustedRetries(t *testing.T) {
-	existing := testClusterCR("aaaa-existing", "test-cluster", "999999999999")
-	existing.Spec.InternalID = "aaaa-existing"
-
-	scheme := newTestScheme()
-	innerFC := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
-	fc := &hash4UniqueClient{Client: innerFC}
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
-	handler.generateID = sequenceIDGen(
-		"aaaa-1111-1111-1111",
-		"aaaa-2222-2222-2222",
-		"aaaa-3333-3333-3333",
-		"aaaa-4444-4444-4444",
-		"aaaa-5555-5555-5555",
-	)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v0/clusters", bytes.NewReader(clusterBody("test-cluster", nil)))
-	req = req.WithContext(testContext(testAccountID))
-
-	w := httptest.NewRecorder()
-	handler.Create(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 after exhausted retries, got %d: %s", w.Code, w.Body.String())
-	}
-	if msg := decodeErrorMessage(t, w); !strings.Contains(msg, ErrClusterCreateIDExhausted.Code) {
-		t.Errorf("expected message to contain %s, got %q", ErrClusterCreateIDExhausted.Code, msg)
-	}
-}
-
-// hash4UniqueClient wraps a client.Client to enforce hash4 uniqueness on
-// Cluster creates, modeling the database's idx_cluster_name_hash4 unique index.
-type hash4UniqueClient struct {
-	client.Client
-	mu sync.Mutex
-}
-
-func (c *hash4UniqueClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if cluster, ok := obj.(*hyperfleetv1alpha1.Cluster); ok {
-		if id := cluster.Spec.InternalID; len(id) >= 4 {
-			var list hyperfleetv1alpha1.ClusterList
-			if err := c.Client.List(ctx, &list); err != nil {
-				return err
-			}
-			for i := range list.Items {
-				existing := &list.Items[i]
-				if existing.Name == cluster.Name &&
-					len(existing.Spec.InternalID) >= 4 &&
-					existing.Spec.InternalID[:4] == id[:4] {
-					return apierrors.NewAlreadyExists(
-						schema.GroupResource{Resource: "clusters"}, cluster.Name)
-				}
-			}
-		}
-	}
-	return c.Client.Create(ctx, obj, opts...)
-}
-
-func TestClusterHandler_Create_ConcurrentHash4Collision(t *testing.T) {
-	scheme := newTestScheme()
-	innerFC := fake.NewClientBuilder().WithScheme(scheme).Build()
-	fc := &hash4UniqueClient{Client: innerFC}
-
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
-
-	var callCount int64
-	handler.generateID = func() string {
-		n := atomic.AddInt64(&callCount, 1)
-		return fmt.Sprintf("aaaa-%04d-0000-0000", n)
-	}
-
-	var wg sync.WaitGroup
-	codes := make([]int, 2)
-
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			acct := fmt.Sprintf("account-%d", idx)
-			req := httptest.NewRequest(http.MethodPost, "/api/v0/clusters", bytes.NewReader(clusterBody("concurrent-cluster", nil)))
-			req = req.WithContext(testContext(acct))
-			w := httptest.NewRecorder()
-			handler.Create(w, req)
-			codes[idx] = w.Code
-		}(i)
-	}
-
-	wg.Wait()
-
-	var created int
-	for _, code := range codes {
-		if code == http.StatusCreated {
-			created++
-		}
-	}
-	if created != 1 {
-		t.Fatalf("expected exactly one 201 Created, got codes %v", codes)
-	}
-}

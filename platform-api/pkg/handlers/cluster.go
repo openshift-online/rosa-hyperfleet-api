@@ -156,44 +156,35 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	clusterID := h.generateID()
 
-	const maxHash4Retries = 5
-	for attempt := 0; attempt < maxHash4Retries; attempt++ {
-		h.logger.Info("creating cluster", "account_id", accountID, "cluster_name", req.Name, "cluster_id", clusterID)
+	h.logger.Info("creating cluster", "account_id", accountID, "cluster_name", req.Name, "cluster_id", clusterID)
 
-		if h.defaultClusterExpiration > 0 && req.Spec.ExpirationTimestamp == nil {
-			expiry := metav1.NewTime(time.Now().Add(h.defaultClusterExpiration))
-			req.Spec.ExpirationTimestamp = &expiry
-		}
+	if h.defaultClusterExpiration > 0 && req.Spec.ExpirationTimestamp == nil {
+		expiry := metav1.NewTime(time.Now().Add(h.defaultClusterExpiration))
+		req.Spec.ExpirationTimestamp = &expiry
+	}
 
-		if h.oidcIssuerBaseURL != "" {
-			req.Spec.HostedCluster.IssuerURL = h.oidcIssuerBaseURL + "/" + clusterID
-		}
+	if h.oidcIssuerBaseURL != "" {
+		req.Spec.HostedCluster.IssuerURL = h.oidcIssuerBaseURL + "/" + clusterID
+	}
 
-		cr := hyperfleetdb.PublicToInternalCluster(&req, accountID, clusterID)
+	cr := hyperfleetdb.PublicToInternalCluster(&req, accountID, clusterID)
 
-		// Set service-set fields on the internal CRD (not visible in public request/response)
-		if callerARN := middleware.GetCallerARN(ctx); callerARN != "" {
-			cr.Spec.CreatorARN = callerARN
-		}
+	if callerARN := middleware.GetCallerARN(ctx); callerARN != "" {
+		cr.Spec.CreatorARN = callerARN
+	}
 
-		if err := h.db.CreateCluster(ctx, accountID, cr); err != nil {
-			if hyperfleetdb.IsAlreadyExists(err) && attempt < maxHash4Retries-1 {
-				clusterID = h.generateID()
-				continue
-			}
-			h.logger.Error("failed to create cluster", "error", err, "account_id", accountID)
-			if hyperfleetdb.IsAlreadyExists(err) {
-				writeAPIError(w, ErrClusterCreateIDExhausted, h.logger)
-				return
-			}
+	if err := h.db.CreateCluster(ctx, accountID, cr); err != nil {
+		h.logger.Error("failed to create cluster", "error", err, "account_id", accountID)
+		if hyperfleetdb.IsAlreadyExists(err) {
 			writeAPIError(w, ErrClusterCreateFailed, h.logger)
 			return
 		}
-
-		if err := api.Write(w, http.StatusCreated, hyperfleetdb.InternalToPublicCluster(cr)); err != nil {
-			h.logger.Error("failed to write response", "error", err)
-		}
+		writeAPIError(w, ErrClusterCreateFailed, h.logger)
 		return
+	}
+
+	if err := api.Write(w, http.StatusCreated, hyperfleetdb.InternalToPublicCluster(cr)); err != nil {
+		h.logger.Error("failed to write response", "error", err)
 	}
 }
 
