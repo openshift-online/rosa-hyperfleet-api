@@ -53,6 +53,15 @@ func testCluster() *hyperfleetv1alpha1.Cluster {
 	}
 }
 
+// testClusterWithOidcConfig returns a cluster fixture using the
+// OidcConfig-backed issuer path (OidcConfigID set).
+func testClusterWithOidcConfig() *hyperfleetv1alpha1.Cluster {
+	c := testCluster()
+	c.Spec.OidcConfigID = "test-oidc-config"
+	c.Spec.AccountID = "123456789012"
+	return c
+}
+
 func testRegionalConfig() RegionalConfig {
 	return RegionalConfig{
 		BaseDomain: "example.com",
@@ -61,7 +70,7 @@ func testRegionalConfig() RegionalConfig {
 }
 
 func TestClusterResourcesCount(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), testRegionalConfig())
+	resources, err := ClusterResources(testCluster(), false, testRegionalConfig())
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -71,7 +80,7 @@ func TestClusterResourcesCount(t *testing.T) {
 }
 
 func TestClusterResourcesTypes(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), testRegionalConfig())
+	resources, err := ClusterResources(testCluster(), false, testRegionalConfig())
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -99,6 +108,132 @@ func TestClusterResourcesTypes(t *testing.T) {
 	}
 }
 
+// TestClusterResourcesWithOidcConfig verifies the OIDC signing key
+// ExternalSecret and ServiceAccountSigningKey reference are rendered when the
+// referenced OidcConfig is type=unmanaged (oidcSigningKeyExternal=true).
+func TestClusterResourcesWithOidcConfig(t *testing.T) {
+	resources, err := ClusterResources(testClusterWithOidcConfig(), true, testRegionalConfig())
+	if err != nil {
+		t.Fatalf("ClusterResources: %v", err)
+	}
+	if got := len(resources); got != 8 {
+		t.Fatalf("expected 8 resources, got %d", got)
+	}
+
+	last := resources[len(resources)-1]
+	if last.Resource != "externalsecrets" || last.Name != "oidc-signing-key" {
+		t.Errorf("expected last resource to be externalsecrets/oidc-signing-key, got %s/%s", last.Resource, last.Name)
+	}
+	es, ok := last.Object.(*ExternalSecret)
+	if !ok {
+		t.Fatalf("expected *ExternalSecret, got %T", last.Object)
+	}
+	wantPath := "/hyperfleet/oidc/123456789012/test-oidc-config/signing-key"
+	if len(es.Spec.Data) != 1 || es.Spec.Data[0].RemoteRef.Key != wantPath {
+		t.Errorf("expected remote ref key %q, got %+v", wantPath, es.Spec.Data)
+	}
+
+	var hc *hypershiftv1beta1.HostedCluster
+	for _, r := range resources {
+		if r.Resource == "hostedclusters" {
+			hc = r.Object.(*hypershiftv1beta1.HostedCluster)
+			break
+		}
+	}
+	if hc == nil {
+		t.Fatal("no hostedcluster resource found")
+	}
+	if hc.Spec.ServiceAccountSigningKey == nil || hc.Spec.ServiceAccountSigningKey.Name != "oidc-signing-key" {
+		t.Errorf("expected ServiceAccountSigningKey to reference oidc-signing-key, got %+v", hc.Spec.ServiceAccountSigningKey)
+	}
+}
+
+// TestClusterResourcesWithoutOidcConfig_NoExternalSecret verifies the legacy
+// path renders no OIDC signing key ExternalSecret.
+func TestClusterResourcesWithoutOidcConfig_NoExternalSecret(t *testing.T) {
+	resources, err := ClusterResources(testCluster(), false, testRegionalConfig())
+	if err != nil {
+		t.Fatalf("ClusterResources: %v", err)
+	}
+	for _, r := range resources {
+		if r.Resource == "externalsecrets" && r.Name == "oidc-signing-key" {
+			t.Error("expected no oidc-signing-key ExternalSecret without OidcConfigID")
+		}
+	}
+
+	var hc *hypershiftv1beta1.HostedCluster
+	for _, r := range resources {
+		if r.Resource == "hostedclusters" {
+			hc = r.Object.(*hypershiftv1beta1.HostedCluster)
+			break
+		}
+	}
+	if hc == nil {
+		t.Fatal("no hostedcluster resource found")
+	}
+	if hc.Spec.ServiceAccountSigningKey != nil {
+		t.Errorf("expected ServiceAccountSigningKey to be nil, got %+v", hc.Spec.ServiceAccountSigningKey)
+	}
+}
+
+// TestClusterResourcesWithManagedOidcConfig_NoExternalSecret verifies that a
+// managed OidcConfig (OidcConfigID set, oidcSigningKeyExternal=false) renders
+// no ExternalSecret/ServiceAccountSigningKey, since managed configs don't
+// store a signing key in Secrets Manager for ESO to deliver.
+func TestClusterResourcesWithManagedOidcConfig_NoExternalSecret(t *testing.T) {
+	resources, err := ClusterResources(testClusterWithOidcConfig(), false, testRegionalConfig())
+	if err != nil {
+		t.Fatalf("ClusterResources: %v", err)
+	}
+	for _, r := range resources {
+		if r.Resource == "externalsecrets" && r.Name == "oidc-signing-key" {
+			t.Error("expected no oidc-signing-key ExternalSecret for a managed OidcConfig")
+		}
+	}
+
+	var hc *hypershiftv1beta1.HostedCluster
+	for _, r := range resources {
+		if r.Resource == "hostedclusters" {
+			hc = r.Object.(*hypershiftv1beta1.HostedCluster)
+			break
+		}
+	}
+	if hc == nil {
+		t.Fatal("no hostedcluster resource found")
+	}
+	if hc.Spec.ServiceAccountSigningKey != nil {
+		t.Errorf("expected ServiceAccountSigningKey to be nil for a managed OidcConfig, got %+v", hc.Spec.ServiceAccountSigningKey)
+	}
+}
+
+// TestClusterResourcesClearsStaleServiceAccountSigningKey verifies that a
+// ServiceAccountSigningKey already present on the Cluster CR's spec (e.g. a
+// stale value from a prior generation) is cleared when oidcSigningKeyExternal
+// is false, rather than passed through to the rendered HostedCluster.
+func TestClusterResourcesClearsStaleServiceAccountSigningKey(t *testing.T) {
+	cluster := testCluster()
+	cluster.Spec.HostedCluster.ServiceAccountSigningKey = &corev1.LocalObjectReference{Name: "stale-key"}
+
+	resources, err := ClusterResources(cluster, false, testRegionalConfig())
+	if err != nil {
+		t.Fatalf("ClusterResources: %v", err)
+	}
+
+	var hc *hypershiftv1beta1.HostedCluster
+	for _, r := range resources {
+		if r.Resource == "hostedclusters" {
+			hc = r.Object.(*hypershiftv1beta1.HostedCluster)
+			break
+		}
+	}
+	if hc == nil {
+		t.Fatal("no hostedcluster resource found")
+	}
+	if hc.Spec.ServiceAccountSigningKey != nil {
+		t.Errorf("expected stale ServiceAccountSigningKey to be cleared, got %+v", hc.Spec.ServiceAccountSigningKey)
+	}
+}
+
 func TestHash4(t *testing.T) {
 	tests := []struct {
 		in, want string
@@ -116,7 +251,7 @@ func TestHash4(t *testing.T) {
 }
 
 func TestHostedClusterDNS(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), testRegionalConfig())
+	resources, err := ClusterResources(testCluster(), false, testRegionalConfig())
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -146,7 +281,7 @@ func TestHostedClusterDNS(t *testing.T) {
 }
 
 func TestCreatorARNInAuthConfig(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), testRegionalConfig())
+	resources, err := ClusterResources(testCluster(), false, testRegionalConfig())
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}

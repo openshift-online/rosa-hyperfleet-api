@@ -145,14 +145,12 @@ func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.Field
 		}
 	case registry.Immutable:
 		if op == OperationUpdate && existingFields != nil {
-			oldVal, existsInOld := existingFields[fieldPath]
-			if existsInOld {
-				newVal := fields[fieldPath]
-				if !reflect.DeepEqual(oldVal, newVal) {
-					return &ValidationError{
-						Field:  fieldPath,
-						Reason: "field is immutable and cannot be changed after creation",
-					}
+			// A field absent from a flattened spec (e.g. an omitempty zero value) is
+			// treated as nil so that "unset" and "explicitly zero" compare as equal.
+			if oldVal, newVal := existingFields[fieldPath], fields[fieldPath]; !reflect.DeepEqual(oldVal, newVal) {
+				return &ValidationError{
+					Field:  fieldPath,
+					Reason: "field is immutable and cannot be changed after creation",
 				}
 			}
 		}

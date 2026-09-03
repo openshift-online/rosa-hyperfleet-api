@@ -49,6 +49,9 @@ const (
 	clusterFinalizer   = "hyperfleet.io/cluster"
 	statusRefreshDelay = 5 * time.Minute
 	taskKey            = "hyperfleet-operator"
+
+	accountIDLabel  = "hyperfleet.io/account-id"
+	accountNSPrefix = "account-"
 )
 
 // ClusterReconciler reconciles a Cluster object by creating DynamoDB desires
@@ -68,6 +71,27 @@ type ClusterReconciler struct {
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=clusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=nodepools,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=placements,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=hyperfleet.io,resources=oidcconfigs,verbs=get;list;watch
+
+// oidcSigningKeyExternal reports whether cluster's referenced OidcConfig is unmanaged
+func (r *ClusterReconciler) oidcSigningKeyExternal(ctx context.Context, cluster *hyperfleetv1alpha1.Cluster) (bool, error) {
+	if cluster.Spec.OidcConfigID == "" {
+		return false, nil
+	}
+	accountID := cluster.Labels[accountIDLabel]
+	if accountID == "" {
+		return false, nil
+	}
+	var oc hyperfleetv1alpha1.OidcConfig
+	key := types.NamespacedName{Namespace: accountNSPrefix + accountID, Name: cluster.Spec.OidcConfigID}
+	if err := r.Get(ctx, key, &oc); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("get oidcconfig %s: %w", cluster.Spec.OidcConfigID, err)
+	}
+	return oc.Spec.Type == hyperfleetv1alpha1.OidcConfigTypeUnmanaged, nil
+}
 
 func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -129,7 +153,11 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	statusPrefix := dynamo.StatusPrefix(mc)
 
 	// Render resources and build common structures used by both paths.
-	resources, err := render.ClusterResources(&cluster, r.RegionalConfig)
+	oidcSigningKeyExternal, err := r.oidcSigningKeyExternal(ctx, &cluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("resolve oidc signing key mode: %w", err)
+	}
+	resources, err := render.ClusterResources(&cluster, oidcSigningKeyExternal, r.RegionalConfig)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("render cluster resources: %w", err)
 	}
@@ -289,8 +317,14 @@ func (r *ClusterReconciler) reconcileDelete(ctx context.Context, cluster *hyperf
 	hcName := cluster.Name
 	clusterID := render.ClusterIDFromNamespace(cluster.Namespace)
 
-	// Render the 7 cluster resources.
-	resources, err := render.ClusterResources(cluster, r.RegionalConfig)
+	// Render the cluster resources — must match the original resource set so
+	// every ApplyDesire (including the OIDC signing key ExternalSecret, if
+	// any) gets flipped to Delete below instead of left dangling.
+	oidcSigningKeyExternal, err := r.oidcSigningKeyExternal(ctx, cluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("resolve oidc signing key mode: %w", err)
+	}
+	resources, err := render.ClusterResources(cluster, oidcSigningKeyExternal, r.RegionalConfig)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("render cluster resources: %w", err)
 	}

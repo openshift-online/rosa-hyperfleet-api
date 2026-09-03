@@ -390,7 +390,7 @@
   },
   {
     "fieldPath": "spec.hostedCluster.issuerURL",
-    "writeMode": "mutable",
+    "writeMode": "service-set",
     "ownerType": "Cluster",
     "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
   },
@@ -505,6 +505,12 @@
     "fieldPath": "spec.internalId",
     "writeMode": "service-set",
     "hidden": true,
+    "ownerType": "Cluster",
+    "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
+  },
+  {
+    "fieldPath": "spec.oidcConfigId",
+    "writeMode": "immutable",
     "ownerType": "Cluster",
     "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
   },

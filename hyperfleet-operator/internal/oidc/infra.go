@@ -22,14 +22,11 @@ import (
 	"crypto/sha1"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -41,20 +38,22 @@ import (
 )
 
 const (
-	minKeyBits   = 2048
-	secretPrefix = "hyperfleet/oidc/"
-
-	discoveryPath = ".well-known/openid-configuration"
+	minKeyBits = 2048
 )
+
+// SecretName returns the AWS Secrets Manager path for accountID's configID OIDC signing key
+func SecretName(accountID, configID string) string {
+	return "/hyperfleet/oidc/" + accountID + "/" + configID + "/signing-key"
+}
 
 // InfraClient abstracts the OIDC infrastructure operations needed by the
 // OidcConfig controller.
 type InfraClient interface {
-	StorePrivateKey(ctx context.Context, configID string, privateKeyPEM []byte) error
-	PrivateKeyExists(ctx context.Context, configID string) (bool, error)
+	StorePrivateKey(ctx context.Context, accountID, configID string, privateKeyPEM []byte) error
+	PrivateKeyExists(ctx context.Context, accountID, configID string) (bool, error)
 	ReadCrossAccountSecret(ctx context.Context, secretARN, roleARN string) ([]byte, error)
-	DeletePrivateKey(ctx context.Context, configID string) error
-	VerifyIssuer(ctx context.Context, issuerURL string) (string, error)
+	DeletePrivateKey(ctx context.Context, accountID, configID string) error
+	ComputeThumbprint(ctx context.Context, issuerURL string) (string, error)
 }
 
 // ValidateRSAPrivateKey checks that pemData is a valid PEM-encoded RSA private key with a modulus of at least minKeyBits
@@ -119,8 +118,8 @@ func (c *AWSClient) assumeRoleCredentials(roleARN string) *aws.CredentialsCache 
 
 // StorePrivateKey creates the Secrets Manager secret holding the OIDC
 // signing key, or overwrites it if one already exists.
-func (c *AWSClient) StorePrivateKey(ctx context.Context, configID string, privateKeyPEM []byte) error {
-	secretName := secretPrefix + configID
+func (c *AWSClient) StorePrivateKey(ctx context.Context, accountID, configID string, privateKeyPEM []byte) error {
+	secretName := SecretName(accountID, configID)
 	_, err := c.sm.CreateSecret(ctx, &secretsmanager.CreateSecretInput{
 		Name:         aws.String(secretName),
 		SecretString: aws.String(string(privateKeyPEM)),
@@ -141,8 +140,8 @@ func (c *AWSClient) StorePrivateKey(ctx context.Context, configID string, privat
 	return nil
 }
 
-func (c *AWSClient) PrivateKeyExists(ctx context.Context, configID string) (bool, error) {
-	secretName := secretPrefix + configID
+func (c *AWSClient) PrivateKeyExists(ctx context.Context, accountID, configID string) (bool, error) {
+	secretName := SecretName(accountID, configID)
 	_, err := c.sm.DescribeSecret(ctx, &secretsmanager.DescribeSecretInput{
 		SecretId: aws.String(secretName),
 	})
@@ -173,8 +172,8 @@ func (c *AWSClient) ReadCrossAccountSecret(ctx context.Context, secretARN, roleA
 	return []byte(aws.ToString(result.SecretString)), nil
 }
 
-func (c *AWSClient) DeletePrivateKey(ctx context.Context, configID string) error {
-	secretName := secretPrefix + configID
+func (c *AWSClient) DeletePrivateKey(ctx context.Context, accountID, configID string) error {
+	secretName := SecretName(accountID, configID)
 	_, err := c.sm.DeleteSecret(ctx, &secretsmanager.DeleteSecretInput{
 		SecretId:                   aws.String(secretName),
 		ForceDeleteWithoutRecovery: aws.Bool(true),
@@ -189,13 +188,8 @@ func (c *AWSClient) DeletePrivateKey(ctx context.Context, configID string) error
 	return nil
 }
 
-// oidcDiscoveryResponse is the subset of the OIDC discovery document
-type oidcDiscoveryResponse struct {
-	Issuer string `json:"issuer"`
-}
-
-// VerifyIssuer confirms issuerURL is actually serving a valid OIDC discovery document
-func (c *AWSClient) VerifyIssuer(ctx context.Context, issuerURL string) (string, error) {
+// ComputeThumbprint confirms issuerURL is TLS-reachable and returns its root CA certificate's SHA-1 thumbprint.
+func (c *AWSClient) ComputeThumbprint(ctx context.Context, issuerURL string) (string, error) {
 	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -204,60 +198,38 @@ func (c *AWSClient) VerifyIssuer(ctx context.Context, issuerURL string) (string,
 		return "", err
 	}
 
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, dialAddr)
-		},
-		TLSClientConfig: &tls.Config{
+	return dialThumbprint(dialCtx, hostname, dialAddr)
+}
+
+// dialThumbprint TLS-dials dialAddr and returns the peer's root CA certificate SHA-1 thumbprint.
+func dialThumbprint(ctx context.Context, hostname, dialAddr string) (string, error) {
+	tlsDialer := &tls.Dialer{
+		NetDialer: &net.Dialer{Timeout: 10 * time.Second},
+		Config: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			ServerName: hostname,
 		},
 	}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport}
+	conn, err := tlsDialer.DialContext(ctx, "tcp", dialAddr)
+	if err != nil {
+		return "", fmt.Errorf("TLS dial %s: %w", hostname, err)
+	}
+	defer conn.Close()
 
-	return verifyIssuerDocument(dialCtx, client, issuerURL)
+	tlsConn, ok := conn.(*tls.Conn)
+	if !ok {
+		return "", fmt.Errorf("unexpected connection type for %s", hostname)
+	}
+
+	return thumbprintFromChain(tlsConn.ConnectionState().PeerCertificates)
 }
 
-// verifyIssuerDocument performs the actual GET check against client and validates the response
-func verifyIssuerDocument(ctx context.Context, client *http.Client, issuerURL string) (string, error) {
-	normalizedIssuerURL := strings.TrimRight(issuerURL, "/")
-	discoveryURL := normalizedIssuerURL + "/" + discoveryPath
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discoveryURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("build discovery request for %s: %w", discoveryURL, err)
+// thumbprintFromChain returns the SHA-1 fingerprint of certs' root CA certificate.
+func thumbprintFromChain(certs []*x509.Certificate) (string, error) {
+	if len(certs) == 0 {
+		return "", fmt.Errorf("no TLS certificates presented")
 	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("GET %s: %w", discoveryURL, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("GET %s: unexpected status %d", discoveryURL, resp.StatusCode)
-	}
-
-	var doc oidcDiscoveryResponse
-	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
-		return "", fmt.Errorf("decode discovery document from %s: %w", discoveryURL, err)
-	}
-	if doc.Issuer == "" {
-		return "", fmt.Errorf("discovery document from %s has no issuer field", discoveryURL)
-	}
-	if doc.Issuer != normalizedIssuerURL {
-		return "", fmt.Errorf("discovery document issuer %q from %s does not match expected issuer %q", doc.Issuer, discoveryURL, normalizedIssuerURL)
-	}
-
-	// Use the root CA certificate per AWS IAM OIDC provider convention
-	if resp.TLS == nil || len(resp.TLS.VerifiedChains) == 0 || len(resp.TLS.VerifiedChains[0]) == 0 {
-		return "", fmt.Errorf("no verified TLS certificate chain from %s", discoveryURL)
-	}
-
-	chain := resp.TLS.VerifiedChains[0]
-	root := chain[len(chain)-1]
-	// AWS IAM OIDC providers require the thumbprint to be a SHA-1 fingerprint of
-	// the root CA certificate; this is an API contract, not a security choice.
+	root := certs[len(certs)-1]
 	fingerprint := sha1.Sum(root.Raw) //nolint:gosec // SHA-1 required by AWS IAM OIDC provider API contract
 	return fmt.Sprintf("%x", fingerprint[:]), nil
 }

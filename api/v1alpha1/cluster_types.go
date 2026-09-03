@@ -85,6 +85,12 @@ type ClusterSpec struct {
 	// +optional
 	InternalID string `json:"internalId,omitempty"`
 
+	// OidcConfigID selects the OidcConfig-backed issuer flow when set, or the
+	// legacy auto-generated issuer flow when empty. Immutable after creation.
+	// +hyperfleet:write-mode=immutable
+	// +optional
+	OidcConfigID string `json:"oidcConfigId,omitempty"`
+
 	// HostedCluster contains the upstream HyperShift fields, mirrored as
 	// passthrough types with per-field visibility and write-mode markers.
 	// +kubebuilder:validation:Required

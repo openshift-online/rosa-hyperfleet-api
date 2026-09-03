@@ -25,6 +25,7 @@ rules:
   - clusters/finalizers
   - manifests/finalizers
   - nodepools/finalizers
+  - oidcconfigs/finalizers
   verbs:
   - update
 - apiGroups:
@@ -33,8 +34,19 @@ rules:
   - clusters/status
   - manifests/status
   - nodepools/status
+  - oidcconfigs/status
   - placements/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - hyperfleet.io
+  resources:
+  - oidcconfigs
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch

@@ -204,6 +204,19 @@ func (h *OidcConfigHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("deleting oidc config", "account_id", accountID, "config_id", configID)
 
+	clusters, err := h.db.ListClusters(ctx, accountID)
+	if err != nil {
+		h.logger.Error("failed to check oidc config usage", "error", err, "account_id", accountID, "config_id", configID)
+		writeAPIError(w, ErrOidcConfigDeleteFailed, h.logger)
+		return
+	}
+	for i := range clusters.Items {
+		if clusters.Items[i].Spec.OidcConfigID == configID {
+			writeAPIError(w, ErrOidcConfigDeleteInUse, h.logger)
+			return
+		}
+	}
+
 	if err := h.db.DeleteOidcConfig(ctx, accountID, configID); err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrOidcConfigDeleteNotFound, h.logger)

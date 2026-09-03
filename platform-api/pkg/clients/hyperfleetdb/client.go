@@ -261,6 +261,17 @@ func (c *Client) DeleteOidcConfig(ctx context.Context, accountID, configID strin
 	return c.client.Delete(ctx, oc)
 }
 
+// UpdateOidcConfigLastUsedTimestamp sets status.lastUsedTimestamp on an
+// OidcConfig, scoped to the given account.
+func (c *Client) UpdateOidcConfigLastUsedTimestamp(ctx context.Context, accountID, configID string, ts metav1.Time) error {
+	oc, err := c.GetOidcConfig(ctx, accountID, configID)
+	if err != nil {
+		return err
+	}
+	oc.Status.LastUsedTimestamp = &ts
+	return c.client.Status().Update(ctx, oc)
+}
+
 // --- Error helpers ---
 
 // IsNotFound returns true if the error is a Kubernetes 404.
