@@ -40,6 +40,7 @@ type DeleteOptions struct{}
 type ListOptions struct {
 	// Limit caps the number of items returned. Maximum 100, default 50.
 	Limit int64
-	// Offset is the number of items to skip before returning results.
-	Offset int64
+	// Continue is the opaque cursor token returned by a prior list response.
+	// Leave empty to start from the beginning of the list.
+	Continue string
 }

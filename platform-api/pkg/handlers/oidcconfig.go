@@ -5,16 +5,17 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/pagination"
 )
 
 // OidcConfigHandler handles OIDC config HTTP requests.
@@ -37,30 +38,20 @@ func NewOidcConfigHandler(db *hyperfleetdb.Client, logger *slog.Logger) *OidcCon
 func (h *OidcConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
+	pageOpts := pagination.ParseOptions(r)
 
-	limitStr := r.URL.Query().Get("limit")
-	offsetStr := r.URL.Query().Get("offset")
+	h.logger.Info("listing oidc configs", "account_id", redact(accountID), "limit", pageOpts.Limit)
 
-	limit := 50
-	offset := 0
-
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
-			limit = l
-		}
-	}
-
-	if offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
-			offset = o
-		}
-	}
-
-	h.logger.Info("listing oidc configs", "account_id", accountID, "limit", limit, "offset", offset)
-
-	list, err := h.db.ListOidcConfigs(ctx, accountID)
+	list, err := h.db.ListOidcConfigs(ctx, hyperfleetdb.ListOptions{
+		AccountID: accountID,
+		Options:   pageOpts,
+	})
 	if err != nil {
-		h.logger.Error("failed to list oidc configs", "error", err, "account_id", accountID)
+		if pagination.IsInvalidCursor(err) {
+			writeAPIError(w, ErrOidcConfigListInvalidCursor, h.logger)
+			return
+		}
+		h.logger.Error("failed to list oidc configs", "error", err, "account_id", redact(accountID))
 		writeAPIError(w, ErrOidcConfigList, h.logger)
 		return
 	}
@@ -70,23 +61,11 @@ func (h *OidcConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 		configs = append(configs, hyperfleetdb.InternalToPublicOidcConfig(&list.Items[i]))
 	}
 
-	total := len(configs)
-
-	if offset >= len(configs) {
-		configs = []*public.OidcConfig{}
-	} else {
-		end := min(offset+limit, len(configs))
-		configs = configs[offset:end]
-	}
-
-	response := map[string]any{
-		"items":  configs,
-		"total":  total,
-		"limit":  limit,
-		"offset": offset,
-	}
-
-	if err := api.Write(w, http.StatusOK, response); err != nil {
+	if err := api.Write(w, http.StatusOK, pagination.Response[*public.OidcConfig]{
+		ListMeta: metav1.ListMeta{Continue: list.Continue},
+		Items:    configs,
+		Limit:    pageOpts.Limit,
+	}); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }

@@ -8,14 +8,27 @@ import (
 	hyperfleetdb "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/pagination"
 )
 
-const accountIDLabel = "hyperfleet.io/account-id"
+// AccountIDLabel is the label key used to scope resources to an AWS account.
+const AccountIDLabel = "hyperfleet.io/account-id"
+
+// accountIDLabel is a package-level alias kept for internal use.
+const accountIDLabel = AccountIDLabel
+
+// ListOptions groups all parameters for a paginated list call.
+type ListOptions struct {
+	AccountID string
+	ClusterID string // optional; scopes NodePool results to a specific cluster
+	pagination.Options
+}
 
 // Client wraps a pgruntime client.Client for CRUD on hyperfleet resources.
 type Client struct {
@@ -79,13 +92,44 @@ func (c *Client) GetCluster(ctx context.Context, accountID, clusterID string) (*
 	return &list.Items[0], nil
 }
 
-// ListClusters lists Clusters for the given account using the account-id label.
-func (c *Client) ListClusters(ctx context.Context, accountID string) (*hyperfleetv1alpha1.ClusterList, error) {
+// FindClusterByName returns the cluster with the given name for the account, or
+// nil if not found. Used for name-uniqueness checks on create.
+func (c *Client) FindClusterByName(ctx context.Context, accountID, name string) (*hyperfleetv1alpha1.Cluster, error) {
+	listOpts := client.ListOptions{
+		FieldSelector: fields.SelectorFromSet(fields.Set{
+			"metadata.labels." + accountIDLabel: accountID,
+			"metadata.name":                     name,
+		}),
+		Limit: 1,
+	}
 	var list hyperfleetv1alpha1.ClusterList
-	err := c.client.List(ctx, &list, client.MatchingLabels{accountIDLabel: accountID})
+	if err := c.client.List(ctx, &list, &listOpts); err != nil {
+		return nil, err
+	}
+	if len(list.Items) == 0 {
+		return nil, nil
+	}
+	return &list.Items[0], nil
+}
+
+// ListClusters lists Clusters for the given account. The list's metadata.continue
+// is set to the platform-scoped cursor token (empty when no further pages exist).
+func (c *Client) ListClusters(ctx context.Context, opts ListOptions) (*hyperfleetv1alpha1.ClusterList, error) {
+	scope := pagination.TokenScope{AccountID: opts.AccountID, Collection: clusterGR.Resource}
+	innerCursor, err := pagination.DecodeContinue(opts.Continue, scope)
 	if err != nil {
 		return nil, err
 	}
+	listOpts := client.ListOptions{
+		FieldSelector: fields.SelectorFromSet(fields.Set{"metadata.labels." + accountIDLabel: opts.AccountID}),
+		Limit:         int64(opts.Limit),
+		Continue:      innerCursor,
+	}
+	var list hyperfleetv1alpha1.ClusterList
+	if err := c.client.List(ctx, &list, &listOpts); err != nil {
+		return nil, err
+	}
+	list.Continue = pagination.EncodeContinue(list.Continue, scope)
 	return &list, nil
 }
 
@@ -127,20 +171,28 @@ func (c *Client) GetNodePool(ctx context.Context, accountID, nodepoolName string
 	return nil, apierrors.NewNotFound(nodePoolGR, nodepoolName)
 }
 
-// ListNodePools lists NodePools. If clusterID is set, lists by namespace
-// scoped to the account. Otherwise lists all nodepools for the account.
-func (c *Client) ListNodePools(ctx context.Context, accountID, clusterID string) (*hyperfleetv1alpha1.NodePoolList, error) {
-	var list hyperfleetv1alpha1.NodePoolList
-	var opts []client.ListOption
-
-	opts = append(opts, client.MatchingLabels{accountIDLabel: accountID})
-	if clusterID != "" {
-		opts = append(opts, client.InNamespace(clusterNamespace(clusterID)))
-	}
-
-	if err := c.client.List(ctx, &list, opts...); err != nil {
+// ListNodePools lists NodePools for the given account. If opts.ClusterID is
+// set, results are scoped to that cluster's namespace. The list's
+// metadata.continue is set to the platform-scoped cursor token.
+func (c *Client) ListNodePools(ctx context.Context, opts ListOptions) (*hyperfleetv1alpha1.NodePoolList, error) {
+	scope := pagination.TokenScope{AccountID: opts.AccountID, Collection: nodePoolGR.Resource, ClusterID: opts.ClusterID}
+	innerCursor, err := pagination.DecodeContinue(opts.Continue, scope)
+	if err != nil {
 		return nil, err
 	}
+	listOpts := client.ListOptions{
+		FieldSelector: fields.SelectorFromSet(fields.Set{"metadata.labels." + accountIDLabel: opts.AccountID}),
+		Limit:         int64(opts.Limit),
+		Continue:      innerCursor,
+	}
+	if opts.ClusterID != "" {
+		listOpts.Namespace = clusterNamespace(opts.ClusterID)
+	}
+	var list hyperfleetv1alpha1.NodePoolList
+	if err := c.client.List(ctx, &list, &listOpts); err != nil {
+		return nil, err
+	}
+	list.Continue = pagination.EncodeContinue(list.Continue, scope)
 	return &list, nil
 }
 
@@ -242,13 +294,24 @@ func (c *Client) GetOidcConfig(ctx context.Context, accountID, configID string) 
 	return &oc, nil
 }
 
-// ListOidcConfigs lists OidcConfigs for the given account by namespace.
-func (c *Client) ListOidcConfigs(ctx context.Context, accountID string) (*hyperfleetv1alpha1.OidcConfigList, error) {
-	var list hyperfleetv1alpha1.OidcConfigList
-	err := c.client.List(ctx, &list, client.InNamespace(accountNamespace(accountID)))
+// ListOidcConfigs lists OidcConfigs for the given account. The list's
+// metadata.continue is set to the platform-scoped cursor token.
+func (c *Client) ListOidcConfigs(ctx context.Context, opts ListOptions) (*hyperfleetv1alpha1.OidcConfigList, error) {
+	scope := pagination.TokenScope{AccountID: opts.AccountID, Collection: oidcConfigGR.Resource}
+	innerCursor, err := pagination.DecodeContinue(opts.Continue, scope)
 	if err != nil {
 		return nil, err
 	}
+	listOpts := client.ListOptions{
+		Namespace: accountNamespace(opts.AccountID),
+		Limit:     int64(opts.Limit),
+		Continue:  innerCursor,
+	}
+	var list hyperfleetv1alpha1.OidcConfigList
+	if err := c.client.List(ctx, &list, &listOpts); err != nil {
+		return nil, err
+	}
+	list.Continue = pagination.EncodeContinue(list.Continue, scope)
 	return &list, nil
 }
 
@@ -285,8 +348,9 @@ func setAccountLabel(obj client.Object, accountID string) {
 }
 
 var (
-	clusterGR  = hyperfleetv1alpha1.GroupVersion.WithResource("clusters").GroupResource()
-	nodePoolGR = hyperfleetv1alpha1.GroupVersion.WithResource("nodepools").GroupResource()
+	clusterGR    = hyperfleetv1alpha1.GroupVersion.WithResource("clusters").GroupResource()
+	nodePoolGR   = hyperfleetv1alpha1.GroupVersion.WithResource("nodepools").GroupResource()
+	oidcConfigGR = hyperfleetv1alpha1.GroupVersion.WithResource("oidcconfigs").GroupResource()
 )
 
 const accountNSPrefix = "account-"

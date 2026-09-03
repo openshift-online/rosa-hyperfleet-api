@@ -63,7 +63,7 @@ func New(cfg *config.Config, dbClient *hyperfleetdb.Client, logger *slog.Logger)
 			logger.Error("failed to write 405 response", "error", err)
 		}
 	})
-	apiRouter.Use(middleware.Identity)
+	apiRouter.Use(middleware.Identity(logger))
 
 	// Rate limiting middleware
 	var redisCloser io.Closer

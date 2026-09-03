@@ -20,7 +20,8 @@ func writeAPIError(w http.ResponseWriter, def APIError, logger *slog.Logger) {
 
 // Cluster error codes
 var (
-	ErrClusterList APIError
+	ErrClusterList              APIError
+	ErrClusterListInvalidCursor APIError
 
 	ErrClusterCreateInvalidBody   APIError
 	ErrClusterCreateMissingFields APIError
@@ -51,7 +52,8 @@ var (
 
 // NodePool error codes
 var (
-	ErrNodePoolList APIError
+	ErrNodePoolList              APIError
+	ErrNodePoolListInvalidCursor APIError
 
 	ErrNodePoolCreateInvalidBody      APIError
 	ErrNodePoolCreateMissingFields    APIError
@@ -82,7 +84,8 @@ var (
 
 // OidcConfig error codes
 var (
-	ErrOidcConfigList APIError
+	ErrOidcConfigList              APIError
+	ErrOidcConfigListInvalidCursor APIError
 
 	ErrOidcConfigCreateInvalidBody   APIError
 	ErrOidcConfigCreateMissingFields APIError
@@ -212,6 +215,7 @@ var (
 func init() {
 	// Cluster — List
 	ErrClusterList = APIError{Code: "CLUSTERS-MGMT-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list clusters"}
+	ErrClusterListInvalidCursor = APIError{Code: "CLUSTERS-MGMT-LIST-002", HTTPStatus: http.StatusBadRequest, Message: "Invalid continue token"}
 
 	// Cluster — Create
 	ErrClusterCreateInvalidBody = APIError{Code: "CLUSTERS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
@@ -247,6 +251,7 @@ func init() {
 
 	// NodePool — List
 	ErrNodePoolList = APIError{Code: "NODEPOOLS-MGMT-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list nodepools"}
+	ErrNodePoolListInvalidCursor = APIError{Code: "NODEPOOLS-MGMT-LIST-002", HTTPStatus: http.StatusBadRequest, Message: "Invalid continue token"}
 
 	// NodePool — Create
 	ErrNodePoolCreateInvalidBody = APIError{Code: "NODEPOOLS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
@@ -282,6 +287,7 @@ func init() {
 
 	// OidcConfig — List
 	ErrOidcConfigList = APIError{Code: "OIDCCONFIGS-MGMT-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list OIDC configs"}
+	ErrOidcConfigListInvalidCursor = APIError{Code: "OIDCCONFIGS-MGMT-LIST-002", HTTPStatus: http.StatusBadRequest, Message: "Invalid continue token"}
 
 	// OidcConfig — Create
 	ErrOidcConfigCreateInvalidBody = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}

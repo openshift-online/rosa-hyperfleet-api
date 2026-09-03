@@ -6,23 +6,13 @@ import (
 	"os"
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 )
 
-func testScheme() *runtime.Scheme {
-	s := runtime.NewScheme()
-	_ = corev1.AddToScheme(s)
-	_ = hyperfleetv1alpha1.AddToScheme(s)
-	return s
-}
-
 func TestClient_CreateCluster_SetsAccountLabel(t *testing.T) {
-	fc := fake.NewClientBuilder().WithScheme(testScheme()).Build()
+	fc := testFakeBuilder(t).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	c := NewClientFrom(fc, logger)
 
@@ -43,7 +33,7 @@ func TestClient_CreateCluster_SetsAccountLabel(t *testing.T) {
 }
 
 func TestClient_CreateNodePool_SetsNamespaceAndLabel(t *testing.T) {
-	fc := fake.NewClientBuilder().WithScheme(testScheme()).Build()
+	fc := testFakeBuilder(t).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	c := NewClientFrom(fc, logger)
 
@@ -65,7 +55,7 @@ func TestClient_CreateNodePool_SetsNamespaceAndLabel(t *testing.T) {
 }
 
 func TestClient_ListClusters_FiltersByAccount(t *testing.T) {
-	fc := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(
+	fc := testFakeBuilder(t).WithObjects(
 		&hyperfleetv1alpha1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "my-cluster", Namespace: "cluster-uuid-1",
@@ -82,7 +72,7 @@ func TestClient_ListClusters_FiltersByAccount(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	c := NewClientFrom(fc, logger)
 
-	list, err := c.ListClusters(context.Background(), "acct-1")
+	list, err := c.ListClusters(context.Background(), testListOpts("acct-1"))
 	if err != nil {
 		t.Fatalf("ListClusters: %v", err)
 	}
@@ -95,7 +85,7 @@ func TestClient_ListClusters_FiltersByAccount(t *testing.T) {
 }
 
 func TestClient_GetCluster_ScopedToAccount(t *testing.T) {
-	fc := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(
+	fc := testFakeBuilder(t).WithObjects(
 		&hyperfleetv1alpha1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "my-cluster", Namespace: "cluster-uuid-1",

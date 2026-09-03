@@ -354,7 +354,6 @@ generate-clientset: codegen-conversion $(CLIENT_GEN) $(BRIDGE_GEN)
 		--output-pkg "$(SDK_OUTPUT_PKG)" \
 		--go-header-file "$(SDK_HEADER_FILE)"
 	$(BRIDGE_GEN) \
-		--mode platform \
 		--input-dir "$(BRIDGE_INPUT_DIR)" \
 		--output-dir "$(PLATFORM_OUTPUT_DIR)" \
 		--output-pkg "$(PLATFORM_OUTPUT_PKG)" \

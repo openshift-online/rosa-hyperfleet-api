@@ -106,9 +106,6 @@ type OidcConfigStatus struct {
 
 // +genclient
 // +genclient:nonNamespaced
-// +bridge:field=id,meta=name
-// +bridge:field=resource_version,meta=resourceVersion
-// +bridge:field=generation,meta=generation
 // +bridge:watch=disabled
 // +bridge:wait
 // +kubebuilder:object:root=true

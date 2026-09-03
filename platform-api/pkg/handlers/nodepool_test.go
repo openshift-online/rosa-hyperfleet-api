@@ -14,7 +14,6 @@ import (
 	"github.com/gorilla/mux"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
@@ -32,8 +31,7 @@ func testNodePoolCR(npName, clusterNamespace, accountID string) *hyperfleetv1alp
 
 func newTestNodePoolHandler(t *testing.T, objects ...client.Object) *NodePoolHandler {
 	t.Helper()
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	fc := newIndexedFakeBuilder(t).WithObjects(objects...).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	return NewNodePoolHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
 }

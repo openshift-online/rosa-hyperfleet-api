@@ -23,9 +23,30 @@ func TestFieldPathToSQL(t *testing.T) {
 	}
 	for _, tt := range valid {
 		t.Run(tt.field, func(t *testing.T) {
-			col, err := fieldPathToSQL(tt.field)
+			col, extraArgs, err := fieldPathToSQL(tt.field, 3)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, col)
+			assert.Nil(t, extraArgs)
+		})
+	}
+
+	// Label keys are parameterized: the key becomes $paramIdx and the value $paramIdx+1.
+	labelCases := []struct {
+		field      string
+		wantCol    string
+		wantKeyArg string
+	}{
+		{"metadata.labels.app", "metadata->'labels'->>$3", "app"},
+		{"metadata.labels.hyperfleet.io/account-id", "metadata->'labels'->>$3", "hyperfleet.io/account-id"},
+		{"metadata.labels.my-label", "metadata->'labels'->>$3", "my-label"},
+	}
+	for _, tt := range labelCases {
+		t.Run(tt.field, func(t *testing.T) {
+			col, extraArgs, err := fieldPathToSQL(tt.field, 3)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantCol, col)
+			require.Len(t, extraArgs, 1)
+			assert.Equal(t, tt.wantKeyArg, extraArgs[0])
 		})
 	}
 
@@ -39,10 +60,13 @@ func TestFieldPathToSQL(t *testing.T) {
 		{"starts with digit", "spec.1abc", "invalid field selector path"},
 		{"empty segment", "spec.", "invalid field selector path"},
 		{"special chars", "spec.foo$bar", "invalid field selector path"},
+		{"invalid label key — empty name", "metadata.labels.", "invalid label key"},
+		{"invalid label key — multiple slashes", "metadata.labels.foo/bar/baz", "invalid label key"},
+		{"invalid label key — invalid DNS prefix", "metadata.labels.invalid..prefix/name", "invalid label key"},
 	}
 	for _, tt := range invalid {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := fieldPathToSQL(tt.field)
+			_, _, err := fieldPathToSQL(tt.field, 3)
 			assert.ErrorContains(t, err, tt.errContains)
 		})
 	}
@@ -61,6 +85,23 @@ func TestBuildFieldSelectorFilter(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, []string{"spec->>'color' = $3"}, clauses)
 		assert.Equal(t, []any{"blue"}, args)
+	})
+
+	t.Run("label field — key and value are separate bound parameters", func(t *testing.T) {
+		clauses, args, err := buildFieldSelectorFilter(
+			fields.SelectorFromSet(fields.Set{"metadata.labels.hyperfleet.io/account-id": "123456789012"}), 3)
+		require.NoError(t, err)
+		// Key is $3, value is $4 — no literal key in SQL text.
+		assert.Equal(t, []string{"metadata->'labels'->>$3 = $4"}, clauses)
+		assert.Equal(t, []any{"hyperfleet.io/account-id", "123456789012"}, args)
+	})
+
+	t.Run("label field — quote/comment payload in key is rejected by validation", func(t *testing.T) {
+		// A K8s-invalid label key containing SQL metacharacters must be rejected
+		// before reaching parameterization, verifying defense-in-depth.
+		_, _, err := buildFieldSelectorFilter(
+			fields.SelectorFromSet(fields.Set{"metadata.labels.'; DROP TABLE--": "x"}), 3)
+		assert.ErrorContains(t, err, "invalid label key")
 	})
 
 	t.Run("multiple fields", func(t *testing.T) {
@@ -92,25 +133,28 @@ func TestBuildFieldSelectorFilter(t *testing.T) {
 }
 
 func TestContinueToken(t *testing.T) {
-	t.Run("round trip", func(t *testing.T) {
-		offset, err := decodeContinue(encodeContinue(42))
+	t.Run("round trip with watermark", func(t *testing.T) {
+		ct := continueToken{TxidStamp: 42, TxidStampMax: 99}
+		decoded, err := decodeContinue(encodeContinue(ct))
 		require.NoError(t, err)
-		assert.Equal(t, int64(42), offset)
+		assert.Equal(t, uint64(42), decoded.TxidStamp)
+		assert.Equal(t, uint64(99), decoded.TxidStampMax)
 	})
 
 	t.Run("empty", func(t *testing.T) {
-		offset, err := decodeContinue("")
+		ct, err := decodeContinue("")
 		require.NoError(t, err)
-		assert.Equal(t, int64(0), offset)
+		assert.Equal(t, uint64(0), ct.TxidStamp)
+		assert.Equal(t, uint64(0), ct.TxidStampMax)
 	})
 
 	t.Run("invalid base64", func(t *testing.T) {
 		_, err := decodeContinue("not-valid!!!")
-		assert.ErrorContains(t, err, "invalid continue token")
+		assert.ErrorIs(t, err, ErrInvalidContinueToken)
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {
 		_, err := decodeContinue("bm90LWpzb24=")
-		assert.ErrorContains(t, err, "invalid continue token")
+		assert.ErrorIs(t, err, ErrInvalidContinueToken)
 	})
 }

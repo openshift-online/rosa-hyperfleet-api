@@ -17,36 +17,18 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
-	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
 )
 
 const testAccountID = "123456789012"
-
-func newTestScheme() *runtime.Scheme {
-	s := runtime.NewScheme()
-	_ = corev1.AddToScheme(s)
-	_ = hyperfleetv1alpha1.AddToScheme(s)
-	return s
-}
-
-func testContext(accountID string) context.Context {
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, middleware.ContextKeyAccountID, accountID)
-	ctx = context.WithValue(ctx, middleware.ContextKeyCallerARN, "arn:aws:iam::"+accountID+":user/test")
-	return ctx
-}
 
 // testClusterCR creates a cluster CR with Namespace="cluster-<clusterID>",
 // Name=clusterName (human-readable), labeled with accountID.
@@ -116,8 +98,7 @@ func decodeErrorMessage(t *testing.T, w *httptest.ResponseRecorder) string {
 }
 
 func TestClusterHandler_List_Success(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := newIndexedFakeBuilder(t).WithObjects(
 		testClusterCR("uuid-1", "cluster-1", testAccountID),
 		testClusterCR("uuid-2", "cluster-2", testAccountID),
 	).Build()
@@ -137,18 +118,17 @@ func TestClusterHandler_List_Success(t *testing.T) {
 	var result map[string]any
 	_ = json.NewDecoder(w.Body).Decode(&result)
 
-	if int(result["total"].(float64)) != 2 {
-		t.Errorf("expected total=2, got %v", result["total"])
-	}
 	items := result["items"].([]any)
 	if len(items) != 2 {
 		t.Errorf("expected 2 items, got %d", len(items))
 	}
+	if metadataContinue(result) != "" {
+		t.Error("expected no continue token on last page")
+	}
 }
 
 func TestClusterHandler_List_Empty(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := newIndexedFakeBuilder(t).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
 
@@ -165,14 +145,17 @@ func TestClusterHandler_List_Empty(t *testing.T) {
 	var result map[string]any
 	_ = json.NewDecoder(w.Body).Decode(&result)
 
-	if int(result["total"].(float64)) != 0 {
-		t.Errorf("expected total=0, got %v", result["total"])
+	items := result["items"].([]any)
+	if len(items) != 0 {
+		t.Errorf("expected 0 items, got %d", len(items))
+	}
+	if metadataContinue(result) != "" {
+		t.Error("expected no continue token on last page")
 	}
 }
 
 func TestClusterHandler_List_Pagination(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := newIndexedFakeBuilder(t).WithObjects(
 		testClusterCR("uuid-c1", "c1", testAccountID),
 		testClusterCR("uuid-c2", "c2", testAccountID),
 		testClusterCR("uuid-c3", "c3", testAccountID),
@@ -180,31 +163,44 @@ func TestClusterHandler_List_Pagination(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v0/clusters?limit=2&offset=1", nil)
-	req = req.WithContext(testContext(testAccountID))
+	t.Run("first page returns items and cursor-shaped envelope", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v0/clusters?limit=50", nil)
+		req = req.WithContext(testContext(testAccountID))
+		w := httptest.NewRecorder()
+		handler.List(w, req)
 
-	w := httptest.NewRecorder()
-	handler.List(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
+		var result map[string]any
+		_ = json.NewDecoder(w.Body).Decode(&result)
 
-	var result map[string]any
-	_ = json.NewDecoder(w.Body).Decode(&result)
+		if _, hasTotal := result["total"]; hasTotal {
+			t.Error("response must not include 'total' field")
+		}
+		if result["limit"] == nil {
+			t.Error("response must include 'limit'")
+		}
+		if _, ok := result["metadata"]; !ok {
+			t.Error("response must include 'metadata'")
+		}
+	})
 
-	if int(result["total"].(float64)) != 3 {
-		t.Errorf("expected total=3, got %v", result["total"])
-	}
-	items := result["items"].([]any)
-	if len(items) != 2 {
-		t.Errorf("expected 2 items (offset=1, limit=2 of 3), got %d", len(items))
-	}
+	t.Run("invalid continue token returns 400", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v0/clusters?continue=not-a-valid-token", nil)
+		req = req.WithContext(testContext(testAccountID))
+		w := httptest.NewRecorder()
+		handler.List(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for invalid cursor, got %d", w.Code)
+		}
+	})
 }
 
 func TestClusterHandler_Create_Success(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := newIndexedFakeBuilder(t).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
 
@@ -230,8 +226,7 @@ func TestClusterHandler_Create_Success(t *testing.T) {
 }
 
 func TestClusterHandler_Create_SetsCreatorARN(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := newIndexedFakeBuilder(t).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
 
@@ -261,8 +256,7 @@ func TestClusterHandler_Create_SetsCreatorARN(t *testing.T) {
 }
 
 func TestClusterHandler_Create_InvalidJSON(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := newIndexedFakeBuilder(t).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
 
@@ -291,8 +285,7 @@ func TestClusterHandler_Create_MissingFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			scheme := newTestScheme()
-			fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+			fc := newIndexedFakeBuilder(t).Build()
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 			handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
 
@@ -310,8 +303,7 @@ func TestClusterHandler_Create_MissingFields(t *testing.T) {
 }
 
 func TestClusterHandler_Create_NameTooLong(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := newIndexedFakeBuilder(t).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
 
@@ -339,8 +331,7 @@ func TestClusterHandler_Get_Success(t *testing.T) {
 			{Type: "Available", Status: metav1.ConditionTrue, Reason: "AsExpected"},
 		},
 	}
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).
+	fc := newIndexedFakeBuilder(t).WithObjects(cr).
 		WithStatusSubresource(cr).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
@@ -373,8 +364,7 @@ func TestClusterHandler_Get_Success(t *testing.T) {
 }
 
 func TestClusterHandler_Get_NotFound(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := newIndexedFakeBuilder(t).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
 
@@ -394,8 +384,7 @@ func TestClusterHandler_Get_NotFound(t *testing.T) {
 }
 
 func TestClusterHandler_Delete_Success(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := newIndexedFakeBuilder(t).WithObjects(
 		testClusterCR("cluster-123", "test-cluster", testAccountID),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -421,8 +410,7 @@ func TestClusterHandler_Delete_Success(t *testing.T) {
 }
 
 func TestClusterHandler_Delete_NotFound(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := newIndexedFakeBuilder(t).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
 
@@ -439,8 +427,7 @@ func TestClusterHandler_Delete_NotFound(t *testing.T) {
 }
 
 func TestClusterHandler_Update_Success(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := newIndexedFakeBuilder(t).WithObjects(
 		testClusterCR("cluster-123", "test-cluster", testAccountID),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -474,8 +461,7 @@ func TestClusterHandler_Update_Success(t *testing.T) {
 }
 
 func TestClusterHandler_Update_NotFound(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := newIndexedFakeBuilder(t).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
 
@@ -496,8 +482,7 @@ func TestClusterHandler_Update_NotFound(t *testing.T) {
 }
 
 func TestClusterHandler_Update_MissingSpec(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := newIndexedFakeBuilder(t).WithObjects(
 		testClusterCR("cluster-123", "test-cluster", testAccountID),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -518,8 +503,7 @@ func TestClusterHandler_Update_MissingSpec(t *testing.T) {
 }
 
 func TestClusterHandler_Create_DuplicateName(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := newIndexedFakeBuilder(t).WithObjects(
 		testClusterCR("existing-id", "test-cluster", testAccountID),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -541,8 +525,7 @@ func TestClusterHandler_Create_DuplicateName(t *testing.T) {
 
 func TestClusterHandler_Create_SameNameDifferentAccount(t *testing.T) {
 	otherAccount := "999999999999"
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := newIndexedFakeBuilder(t).WithObjects(
 		testClusterCR("existing-id", "test-cluster", otherAccount),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -574,8 +557,7 @@ func TestClusterHandler_Create_Hash4CollisionThenSuccess(t *testing.T) {
 	existing := testClusterCR("aaaa-existing", "test-cluster", "999999999999")
 	existing.Spec.InternalID = "aaaa-existing"
 
-	scheme := newTestScheme()
-	innerFC := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
+	innerFC := newIndexedFakeBuilder(t).WithObjects(existing).Build()
 	fc := &hash4UniqueClient{Client: innerFC}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
@@ -602,8 +584,7 @@ func TestClusterHandler_Create_Hash4ExhaustedRetries(t *testing.T) {
 	existing := testClusterCR("aaaa-existing", "test-cluster", "999999999999")
 	existing.Spec.InternalID = "aaaa-existing"
 
-	scheme := newTestScheme()
-	innerFC := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
+	innerFC := newIndexedFakeBuilder(t).WithObjects(existing).Build()
 	fc := &hash4UniqueClient{Client: innerFC}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
@@ -661,8 +642,7 @@ func (c *hash4UniqueClient) Create(ctx context.Context, obj client.Object, opts 
 }
 
 func TestClusterHandler_Create_ConcurrentHash4Collision(t *testing.T) {
-	scheme := newTestScheme()
-	innerFC := fake.NewClientBuilder().WithScheme(scheme).Build()
+	innerFC := newIndexedFakeBuilder(t).Build()
 	fc := &hash4UniqueClient{Client: innerFC}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))

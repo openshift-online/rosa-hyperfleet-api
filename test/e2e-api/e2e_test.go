@@ -166,10 +166,11 @@ var _ = Describe("Platform API", Ordered, func() {
 			Expect(response.Headers).To(HaveKey("Content-Type"))
 			Expect(response.Headers).To(HaveKey("X-Amz-Apigw-Id"))
 			var list struct {
-				Items  []map[string]interface{} `json:"items"`
-				Limit  int                      `json:"limit"`
-				Offset int                      `json:"offset"`
-				Total  int                      `json:"total"`
+				Metadata struct {
+					Continue string `json:"continue,omitempty"`
+				} `json:"metadata"`
+				Items []map[string]interface{} `json:"items"`
+				Limit int                      `json:"limit"`
 			}
 			err = json.Unmarshal(response.Body, &list)
 			Expect(err).To(BeNil())

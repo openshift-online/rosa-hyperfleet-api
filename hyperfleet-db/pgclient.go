@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -90,10 +91,23 @@ func (c *pgClient) List(ctx context.Context, list client.ObjectList, opts ...cli
 	if err != nil {
 		return err
 	}
+	// Request one extra item so we can tell whether a next page exists without
+	// issuing a second COUNT query. The extra item is never exposed to callers.
+	// Skip the increment when Limit is already math.MaxInt64 to avoid wrapping
+	// to a negative value — no real result set can exceed that count anyway.
+	if filter != nil && filter.Limit > 0 && filter.Limit < math.MaxInt64 {
+		filter.Limit++
+	}
 
 	result, err := reader.List(ctx, conn, gvkStr, filter)
 	if err != nil {
 		return err
+	}
+
+	// Determine whether more pages exist and trim the lookahead item.
+	hasMore := listOpts.Limit > 0 && int64(len(result.Resources)) > listOpts.Limit
+	if hasMore {
+		result.Resources = result.Resources[:listOpts.Limit]
 	}
 
 	var items []client.Object
@@ -113,9 +127,20 @@ func (c *pgClient) List(ctx context.Context, list client.ObjectList, opts ...cli
 	}
 
 	list.SetResourceVersion(result.ResourceVersion.String())
-	if listOpts.Limit > 0 && int64(len(result.Resources)) == listOpts.Limit {
-		offset, _ := decodeContinue(listOpts.Continue)
-		list.SetContinue(encodeContinue(offset + listOpts.Limit))
+	if hasMore {
+		last := result.Resources[len(result.Resources)-1]
+		// Carry the snapshot watermark from the incoming token, or set it from
+		// this query's watermark for the first page. All subsequent pages use
+		// txid_stamp <= watermark so items created after page 1 do not appear.
+		incomingCT, _ := decodeContinue(listOpts.Continue)
+		watermark := incomingCT.TxidStampMax
+		if watermark == 0 {
+			watermark = result.ResourceVersion.Watermark
+		}
+		list.SetContinue(encodeContinue(continueToken{
+			TxidStamp:    last.TxidStamp,
+			TxidStampMax: watermark,
+		}))
 	}
 	return nil
 }
@@ -586,26 +611,27 @@ func (ls labelSet) Lookup(label string) (value string, exists bool) {
 }
 
 type continueToken struct {
-	Offset int64 `json:"offset"`
+	TxidStamp    uint64 `json:"txid_stamp"`
+	TxidStampMax uint64 `json:"txid_stamp_max"` // snapshot watermark; 0 = unconstrained
 }
 
-func decodeContinue(token string) (int64, error) {
+func decodeContinue(token string) (continueToken, error) {
 	if token == "" {
-		return 0, nil
+		return continueToken{}, nil
 	}
 	data, err := base64.StdEncoding.DecodeString(token)
 	if err != nil {
-		return 0, fmt.Errorf("pgruntime: invalid continue token: %w", err)
+		return continueToken{}, fmt.Errorf("%w: %w", ErrInvalidContinueToken, err)
 	}
 	var ct continueToken
 	if err := json.Unmarshal(data, &ct); err != nil {
-		return 0, fmt.Errorf("pgruntime: invalid continue token: %w", err)
+		return continueToken{}, fmt.Errorf("%w: %w", ErrInvalidContinueToken, err)
 	}
-	return ct.Offset, nil
+	return ct, nil
 }
 
-func encodeContinue(offset int64) string {
-	data, _ := json.Marshal(continueToken{Offset: offset})
+func encodeContinue(ct continueToken) string {
+	data, _ := json.Marshal(ct)
 	return base64.StdEncoding.EncodeToString(data)
 }
 
@@ -630,16 +656,25 @@ func buildListFilter(listOpts client.ListOptions) (*reader.ListFilter, error) {
 		f.WhereArgs = append(f.WhereArgs, args...)
 	}
 
-	if listOpts.Limit > 0 {
-		f.Limit = listOpts.Limit
-		offset, err := decodeContinue(listOpts.Continue)
+	if listOpts.Continue != "" {
+		ct, err := decodeContinue(listOpts.Continue)
 		if err != nil {
 			return nil, err
 		}
-		f.Offset = offset
+		if ct.TxidStamp == 0 {
+			return nil, fmt.Errorf("%w: cursor position must be non-zero", ErrInvalidContinueToken)
+		}
+		if ct.TxidStampMax != 0 && ct.TxidStampMax < ct.TxidStamp {
+			return nil, fmt.Errorf("%w: watermark must be >= cursor position", ErrInvalidContinueToken)
+		}
+		f.TxidStampCursor = ct.TxidStamp
+		f.TxidStampMax = ct.TxidStampMax
+	}
+	if listOpts.Limit > 0 {
+		f.Limit = listOpts.Limit
 	}
 
-	if f.Limit == 0 && len(f.WhereClauses) == 0 {
+	if f.Limit == 0 && len(f.WhereClauses) == 0 && f.TxidStampCursor == 0 && f.TxidStampMax == 0 {
 		return nil, nil
 	}
 	return &f, nil

@@ -18,6 +18,7 @@ package transport
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -25,26 +26,6 @@ import (
 	"strings"
 	"testing"
 )
-
-func newAdapter() *Adapter {
-	return NewAdapter(http.DefaultTransport)
-}
-
-func getRequest(rawURL string) *http.Request {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, rawURL, nil)
-	if err != nil {
-		panic(err)
-	}
-	return req
-}
-
-func postRequest(rawURL, body string) *http.Request {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, rawURL, io.NopCloser(strings.NewReader(body)))
-	if err != nil {
-		panic(err)
-	}
-	return req
-}
 
 // testServer starts a handler and returns the adapter and server URL.
 func testServer(t *testing.T, handler http.HandlerFunc) (*Adapter, string) {
@@ -157,56 +138,42 @@ func TestRoundTrip_NativeMetav1StatusPassesThrough(t *testing.T) {
 	}
 }
 
-// --- adaptListQuery ---
+// --- cursor token passthrough ---
 
-func TestAdaptListQuery_NumericContinueRewrittenToOffset(t *testing.T) {
-	a := newAdapter()
-	req := getRequest("https://example.com/api/v0/clusters?continue=50")
-
-	out := a.adaptListQuery(req)
-	q := out.URL.Query()
-	if q.Get("offset") != "50" {
-		t.Errorf("offset = %q, want 50", q.Get("offset"))
+func encodeCursorToken(t *testing.T, txidStamp uint64, accountID string) string {
+	t.Helper()
+	data, err := json.Marshal(map[string]any{"txid_stamp": txidStamp, "account_id": accountID})
+	if err != nil {
+		t.Fatalf("encode cursor: %v", err)
 	}
-	if q.Get("continue") != "" {
-		t.Errorf("continue should be removed, got %q", q.Get("continue"))
-	}
+	return base64.StdEncoding.EncodeToString(data)
 }
 
-func TestAdaptListQuery_NonNumericContinuePassesThrough(t *testing.T) {
-	a := newAdapter()
-	req := getRequest("https://example.com/api/v0/clusters?continue=cursor-token")
+func TestRoundTrip_CursorContinuePassesThrough(t *testing.T) {
+	token := encodeCursorToken(t, 42, "123456789012")
+	var capturedQuery string
 
-	out := a.adaptListQuery(req)
-	q := out.URL.Query()
-	if q.Get("continue") != "cursor-token" {
-		t.Errorf("continue changed: got %q, want cursor-token", q.Get("continue"))
+	a, srvURL := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+		capturedQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	})
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		srvURL+"/api/v0/clusters?limit=10&continue="+token, nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext: %v", err)
 	}
-	if q.Get("offset") != "" {
-		t.Errorf("offset should be absent, got %q", q.Get("offset"))
+	resp, err := a.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip: %v", err)
 	}
-}
+	defer func() { _ = resp.Body.Close() }()
 
-func TestAdaptListQuery_NoContinuePassesThrough(t *testing.T) {
-	a := newAdapter()
-	req := getRequest("https://example.com/api/v0/clusters")
-
-	out := a.adaptListQuery(req)
-	if out.URL.RawQuery != "" {
-		t.Errorf("query changed: got %q, want empty", out.URL.RawQuery)
+	if !strings.Contains(capturedQuery, "continue=") {
+		t.Errorf("continue param not present in query: %q", capturedQuery)
 	}
-}
-
-func TestAdaptListQuery_NonGETNotRewritten(t *testing.T) {
-	a := newAdapter()
-	req := postRequest("https://example.com/api/v0/clusters?continue=50", `{}`)
-
-	out := a.adaptListQuery(req)
-	q := out.URL.Query()
-	if q.Get("offset") != "" {
-		t.Error("offset should not be set on non-GET request")
-	}
-	if q.Get("continue") != "50" {
-		t.Errorf("continue should be preserved on non-GET: got %q", q.Get("continue"))
+	if strings.Contains(capturedQuery, "offset=") {
+		t.Errorf("offset should not appear in query: %q", capturedQuery)
 	}
 }

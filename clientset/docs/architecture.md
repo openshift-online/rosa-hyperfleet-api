@@ -66,9 +66,6 @@ clientset/generated/
     nodepool.go                                   # NodePoolInterface: same
     fake/                                         # fake implementations for testing
 
-clientset/transport/
-  bridge_mappings_generated.go                      # defaultMappings from +bridge:field markers
-
 clientset/platform/
   bridge_wrappers_generated.go                      # platform-scoped interfaces + WaitUntil from +bridge:wait markers
 ```

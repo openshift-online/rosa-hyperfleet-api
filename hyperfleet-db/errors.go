@@ -14,6 +14,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// ErrInvalidContinueToken is returned when a continue token is malformed or
+// does not match the expected account context.
+var ErrInvalidContinueToken = errors.New("pgruntime: invalid continue token")
+
 var (
 	errDryRunNotSupported            = fmt.Errorf("pgruntime: DryRun not supported")
 	errPropagationPolicyNotSupported = fmt.Errorf(

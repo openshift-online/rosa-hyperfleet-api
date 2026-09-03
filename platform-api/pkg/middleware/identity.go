@@ -2,7 +2,9 @@ package middleware
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
+	"regexp"
 )
 
 type contextKey string
@@ -29,33 +31,42 @@ const (
 	HeaderRequestID = "X-Amz-Request-Id"
 )
 
-// Identity extracts AWS identity headers and adds them to the request context
-func Identity(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+var awsAccountIDRegexp = regexp.MustCompile(`^[0-9]{12}$`)
 
-		if accountID := r.Header.Get(HeaderAccountID); accountID != "" {
-			ctx = context.WithValue(ctx, ContextKeyAccountID, accountID)
-		}
+// Identity returns a middleware that extracts AWS identity headers and adds them
+// to the request context. It rejects requests with a malformed account ID.
+func Identity(logger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
 
-		if callerARN := r.Header.Get(HeaderCallerARN); callerARN != "" {
-			ctx = context.WithValue(ctx, ContextKeyCallerARN, callerARN)
-		}
+			if accountID := r.Header.Get(HeaderAccountID); accountID != "" {
+				if !awsAccountIDRegexp.MatchString(accountID) {
+					writeError(w, ErrInvalidAccountID, logger)
+					return
+				}
+				ctx = context.WithValue(ctx, ContextKeyAccountID, accountID)
+			}
 
-		if userID := r.Header.Get(HeaderUserID); userID != "" {
-			ctx = context.WithValue(ctx, ContextKeyUserID, userID)
-		}
+			if callerARN := r.Header.Get(HeaderCallerARN); callerARN != "" {
+				ctx = context.WithValue(ctx, ContextKeyCallerARN, callerARN)
+			}
 
-		if sourceIP := r.Header.Get(HeaderSourceIP); sourceIP != "" {
-			ctx = context.WithValue(ctx, ContextKeySourceIP, sourceIP)
-		}
+			if userID := r.Header.Get(HeaderUserID); userID != "" {
+				ctx = context.WithValue(ctx, ContextKeyUserID, userID)
+			}
 
-		if requestID := r.Header.Get(HeaderRequestID); requestID != "" {
-			ctx = context.WithValue(ctx, ContextKeyRequestID, requestID)
-		}
+			if sourceIP := r.Header.Get(HeaderSourceIP); sourceIP != "" {
+				ctx = context.WithValue(ctx, ContextKeySourceIP, sourceIP)
+			}
 
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+			if requestID := r.Header.Get(HeaderRequestID); requestID != "" {
+				ctx = context.WithValue(ctx, ContextKeyRequestID, requestID)
+			}
+
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }
 
 // GetAccountID retrieves the AWS account ID from context

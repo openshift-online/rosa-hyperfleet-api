@@ -18,6 +18,8 @@ package platform
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -28,6 +30,15 @@ import (
 
 	typedclient "github.com/openshift-online/rosa-hyperfleet-api/clientset/generated/typed/v1alpha1/public"
 )
+
+func encodeTestCursor(t *testing.T, txidStamp uint64, accountID string) string {
+	t.Helper()
+	data, err := json.Marshal(map[string]any{"txid_stamp": txidStamp, "account_id": accountID})
+	if err != nil {
+		t.Fatalf("encode cursor: %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(data)
+}
 
 // stubClusterClient is a minimal implementation of typedclient.ClusterInterface.
 // Methods that should not be called during validation tests panic to catch regressions.
@@ -132,10 +143,14 @@ func TestClusterList_LimitOver100Rejected(t *testing.T) {
 	}
 }
 
-func TestClusterList_NegativeOffsetRejected(t *testing.T) {
-	c := newClusterClient(&stubClusterClient{})
-	if _, err := c.List(context.Background(), ListOptions{Offset: -1}); err == nil {
-		t.Error("expected error for negative Offset")
+func TestClusterList_ContinuePassedThrough(t *testing.T) {
+	token := encodeTestCursor(t, 42, "123456789012")
+	var gotOpts metav1.ListOptions
+	stub := &captureListClusterClient{captureFn: func(opts metav1.ListOptions) { gotOpts = opts }}
+	c := &clusterClient{inner: stub}
+	_, _ = c.List(context.Background(), ListOptions{Continue: token})
+	if gotOpts.Continue != token {
+		t.Errorf("Continue = %q, want %q", gotOpts.Continue, token)
 	}
 }
 
@@ -155,10 +170,14 @@ func TestNodePoolList_LimitOver100Rejected(t *testing.T) {
 	}
 }
 
-func TestNodePoolList_NegativeOffsetRejected(t *testing.T) {
-	c := newNodePoolClient(&stubNodePoolClient{})
-	if _, err := c.List(context.Background(), ListOptions{Offset: -1}); err == nil {
-		t.Error("expected error for negative Offset")
+func TestNodePoolList_ContinuePassedThrough(t *testing.T) {
+	token := encodeTestCursor(t, 99, "123456789012")
+	var gotOpts metav1.ListOptions
+	stub := &captureListNodePoolClient{captureFn: func(opts metav1.ListOptions) { gotOpts = opts }}
+	c := &nodePoolClient{inner: stub}
+	_, _ = c.List(context.Background(), ListOptions{Continue: token})
+	if gotOpts.Continue != token {
+		t.Errorf("Continue = %q, want %q", gotOpts.Continue, token)
 	}
 }
 
@@ -347,4 +366,30 @@ func TestNodePoolUpdate_DoesNotMutateCallerObject(t *testing.T) {
 	if obj.Name != "human-name" {
 		t.Errorf("Update mutated caller's object: Name = %q", obj.Name)
 	}
+}
+
+// captureListClusterClient captures metav1.ListOptions passed to List.
+type captureListClusterClient struct {
+	captureFn func(metav1.ListOptions)
+	stubClusterClient
+}
+
+func (c *captureListClusterClient) List(_ context.Context, opts metav1.ListOptions) (*v1alpha1.ClusterList, error) {
+	if c.captureFn != nil {
+		c.captureFn(opts)
+	}
+	return &v1alpha1.ClusterList{}, nil
+}
+
+// captureListNodePoolClient captures metav1.ListOptions passed to List.
+type captureListNodePoolClient struct {
+	captureFn func(metav1.ListOptions)
+	stubNodePoolClient
+}
+
+func (c *captureListNodePoolClient) List(_ context.Context, opts metav1.ListOptions) (*v1alpha1.NodePoolList, error) {
+	if c.captureFn != nil {
+		c.captureFn(opts)
+	}
+	return &v1alpha1.NodePoolList{}, nil
 }

@@ -5,7 +5,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +16,7 @@ import (
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/pagination"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/validation"
 )
 
@@ -46,29 +46,19 @@ func NewClusterHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, defaul
 func (h *ClusterHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
+	pageOpts := pagination.ParseOptions(r)
 
-	limitStr := r.URL.Query().Get("limit")
-	offsetStr := r.URL.Query().Get("offset")
+	h.logger.Info("listing clusters", "account_id", redact(accountID), "limit", pageOpts.Limit)
 
-	limit := 50
-	offset := 0
-
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
-			limit = l
-		}
-	}
-
-	if offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
-			offset = o
-		}
-	}
-
-	h.logger.Info("listing clusters", "account_id", accountID, "limit", limit, "offset", offset)
-
-	list, err := h.db.ListClusters(ctx, accountID)
+	list, err := h.db.ListClusters(ctx, hyperfleetdb.ListOptions{
+		AccountID: accountID,
+		Options:   pageOpts,
+	})
 	if err != nil {
+		if pagination.IsInvalidCursor(err) {
+			writeAPIError(w, ErrClusterListInvalidCursor, h.logger)
+			return
+		}
 		h.logger.Error("failed to list clusters", "error", err, "account_id", accountID)
 		writeAPIError(w, ErrClusterList, h.logger)
 		return
@@ -79,24 +69,11 @@ func (h *ClusterHandler) List(w http.ResponseWriter, r *http.Request) {
 		clusters = append(clusters, hyperfleetdb.InternalToPublicCluster(&list.Items[i]))
 	}
 
-	total := len(clusters)
-
-	// Apply offset/limit pagination in-memory.
-	if offset >= len(clusters) {
-		clusters = []*public.Cluster{}
-	} else {
-		end := min(offset+limit, len(clusters))
-		clusters = clusters[offset:end]
-	}
-
-	response := map[string]any{
-		"items":  clusters,
-		"total":  total,
-		"limit":  limit,
-		"offset": offset,
-	}
-
-	if err := api.Write(w, http.StatusOK, response); err != nil {
+	if err := api.Write(w, http.StatusOK, pagination.Response[*public.Cluster]{
+		ListMeta: metav1.ListMeta{Continue: list.Continue},
+		Items:    clusters,
+		Limit:    pageOpts.Limit,
+	}); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }
@@ -141,17 +118,15 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.db.ListClusters(ctx, accountID)
+	existing, err := h.db.FindClusterByName(ctx, accountID, req.Name)
 	if err != nil {
 		h.logger.Error("failed to check cluster name uniqueness", "error", err, "account_id", accountID)
 		writeAPIError(w, ErrClusterCreateNameCheck, h.logger)
 		return
 	}
-	for i := range existing.Items {
-		if existing.Items[i].Name == req.Name {
-			writeAPIError(w, ErrClusterCreateNameConflict.WithReason(req.Name), h.logger)
-			return
-		}
+	if existing != nil {
+		writeAPIError(w, ErrClusterCreateNameConflict.WithReason(req.Name), h.logger)
+		return
 	}
 
 	clusterID := h.generateID()

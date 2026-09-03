@@ -20,7 +20,6 @@ package platform
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -64,14 +63,10 @@ func (c *clusterClient) List(ctx context.Context, opts ListOptions) (*v1alpha1.C
 	if opts.Limit < 0 || opts.Limit > 100 {
 		return nil, fmt.Errorf("List: Limit must be between 0 and 100, got %d", opts.Limit)
 	}
-	if opts.Offset < 0 {
-		return nil, fmt.Errorf("List: Offset must be non-negative, got %d", opts.Offset)
-	}
-	mo := metav1.ListOptions{Limit: opts.Limit}
-	if opts.Offset > 0 {
-		mo.Continue = strconv.FormatInt(opts.Offset, 10)
-	}
-	return c.inner.List(ctx, mo)
+	return c.inner.List(ctx, metav1.ListOptions{
+		Limit:    opts.Limit,
+		Continue: opts.Continue,
+	})
 }
 
 func (c *clusterClient) Update(ctx context.Context, obj *v1alpha1.Cluster, opts UpdateOptions) (*v1alpha1.Cluster, error) {
@@ -174,14 +169,10 @@ func (c *nodePoolClient) List(ctx context.Context, opts ListOptions) (*v1alpha1.
 	if opts.Limit < 0 || opts.Limit > 100 {
 		return nil, fmt.Errorf("List: Limit must be between 0 and 100, got %d", opts.Limit)
 	}
-	if opts.Offset < 0 {
-		return nil, fmt.Errorf("List: Offset must be non-negative, got %d", opts.Offset)
-	}
-	mo := metav1.ListOptions{Limit: opts.Limit}
-	if opts.Offset > 0 {
-		mo.Continue = strconv.FormatInt(opts.Offset, 10)
-	}
-	return c.inner.List(ctx, mo)
+	return c.inner.List(ctx, metav1.ListOptions{
+		Limit:    opts.Limit,
+		Continue: opts.Continue,
+	})
 }
 
 func (c *nodePoolClient) Update(ctx context.Context, obj *v1alpha1.NodePool, opts UpdateOptions) (*v1alpha1.NodePool, error) {
@@ -273,14 +264,10 @@ func (c *oidcConfigClient) List(ctx context.Context, opts ListOptions) (*v1alpha
 	if opts.Limit < 0 || opts.Limit > 100 {
 		return nil, fmt.Errorf("List: Limit must be between 0 and 100, got %d", opts.Limit)
 	}
-	if opts.Offset < 0 {
-		return nil, fmt.Errorf("List: Offset must be non-negative, got %d", opts.Offset)
-	}
-	mo := metav1.ListOptions{Limit: opts.Limit}
-	if opts.Offset > 0 {
-		mo.Continue = strconv.FormatInt(opts.Offset, 10)
-	}
-	return c.inner.List(ctx, mo)
+	return c.inner.List(ctx, metav1.ListOptions{
+		Limit:    opts.Limit,
+		Continue: opts.Continue,
+	})
 }
 
 func (c *oidcConfigClient) Update(ctx context.Context, obj *v1alpha1.OidcConfig, opts UpdateOptions) (*v1alpha1.OidcConfig, error) {

@@ -19,6 +19,7 @@ func writeError(w http.ResponseWriter, def APIError, logger *slog.Logger) {
 // Auth middleware error codes
 var (
 	ErrMissingAccountID      APIError
+	ErrInvalidAccountID      APIError
 	ErrMissingCallerARN      APIError
 	ErrInternalError         APIError
 	ErrAccountNotProvisioned APIError
@@ -35,6 +36,7 @@ var (
 
 func init() {
 	ErrMissingAccountID = APIError{Code: "AUTH-001", HTTPStatus: http.StatusForbidden, Message: "Account ID header is required"}
+	ErrInvalidAccountID = APIError{Code: "AUTH-013", HTTPStatus: http.StatusBadRequest, Message: "Account ID must be a 12-digit AWS account number"}
 	ErrMissingCallerARN = APIError{Code: "AUTH-002", HTTPStatus: http.StatusForbidden, Message: "Caller ARN header is required"}
 	ErrInternalError = APIError{Code: "AUTH-003", HTTPStatus: http.StatusInternalServerError, Message: "Internal server error"}
 	ErrAccountNotProvisioned = APIError{Code: "AUTH-004", HTTPStatus: http.StatusForbidden, Message: "Account is not provisioned for ROSA authorization. Contact your administrator."}

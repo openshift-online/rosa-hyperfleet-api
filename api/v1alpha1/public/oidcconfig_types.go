@@ -16,9 +16,6 @@ import (
 // +kubebuilder:subresource:status
 // +genclient
 // +genclient:nonNamespaced
-// +bridge:field=id,meta=name
-// +bridge:field=resource_version,meta=resourceVersion
-// +bridge:field=generation,meta=generation
 // +bridge:watch=disabled
 // +bridge:wait
 type OidcConfig struct {

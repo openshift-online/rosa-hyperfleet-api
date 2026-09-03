@@ -41,7 +41,7 @@ func testManagedOidcConfigSpec(accountID string) hyperfleetv1alpha1.OidcConfigSp
 }
 
 func TestOidcConfigHandler_List_Success(t *testing.T) {
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		testOidcConfigCR("oidc-1", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 		testOidcConfigCR("oidc-2", testAccountID, testManagedOidcConfigSpec(testAccountID)),
@@ -62,17 +62,17 @@ func TestOidcConfigHandler_List_Success(t *testing.T) {
 	var result map[string]any
 	_ = json.NewDecoder(w.Body).Decode(&result)
 
-	if int(result["total"].(float64)) != 2 {
-		t.Errorf("expected total=2, got %v", result["total"])
-	}
 	items := result["items"].([]any)
 	if len(items) != 2 {
 		t.Errorf("expected 2 items, got %d", len(items))
 	}
+	if metadataContinue(result) != "" {
+		t.Error("expected no continue token on last page")
+	}
 }
 
 func TestOidcConfigHandler_List_Empty(t *testing.T) {
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -90,17 +90,17 @@ func TestOidcConfigHandler_List_Empty(t *testing.T) {
 	var result map[string]any
 	_ = json.NewDecoder(w.Body).Decode(&result)
 
-	if int(result["total"].(float64)) != 0 {
-		t.Errorf("expected total=0, got %v", result["total"])
-	}
 	items := result["items"].([]any)
 	if len(items) != 0 {
 		t.Errorf("expected 0 items, got %d", len(items))
 	}
+	if metadataContinue(result) != "" {
+		t.Error("expected no continue token on last page")
+	}
 }
 
 func TestOidcConfigHandler_List_Pagination(t *testing.T) {
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		testOidcConfigCR("oidc-1", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 		testOidcConfigCR("oidc-2", testAccountID, testManagedOidcConfigSpec(testAccountID)),
@@ -109,66 +109,44 @@ func TestOidcConfigHandler_List_Pagination(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v0/oidc_configs?limit=2&offset=1", nil)
-	req = req.WithContext(testContext(testAccountID))
+	t.Run("first page returns cursor envelope", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v0/oidc_configs?limit=50", nil)
+		req = req.WithContext(testContext(testAccountID))
+		w := httptest.NewRecorder()
+		handler.List(w, req)
 
-	w := httptest.NewRecorder()
-	handler.List(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		}
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
+		var result map[string]any
+		_ = json.NewDecoder(w.Body).Decode(&result)
 
-	var result map[string]any
-	_ = json.NewDecoder(w.Body).Decode(&result)
+		if _, ok := result["total"]; ok {
+			t.Error("response must not include 'total'")
+		}
+		if _, ok := result["metadata"]; !ok {
+			t.Error("response must include 'metadata'")
+		}
+		if result["limit"] == nil {
+			t.Error("response must include 'limit'")
+		}
+	})
 
-	if int(result["total"].(float64)) != 3 {
-		t.Errorf("expected total=3, got %v", result["total"])
-	}
-	if int(result["limit"].(float64)) != 2 {
-		t.Errorf("expected limit=2, got %v", result["limit"])
-	}
-	if int(result["offset"].(float64)) != 1 {
-		t.Errorf("expected offset=1, got %v", result["offset"])
-	}
-	items := result["items"].([]any)
-	if len(items) != 2 {
-		t.Errorf("expected 2 items (offset=1, limit=2 of 3), got %d", len(items))
-	}
-}
+	t.Run("invalid continue token returns 400", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v0/oidc_configs?continue=bad-token", nil)
+		req = req.WithContext(testContext(testAccountID))
+		w := httptest.NewRecorder()
+		handler.List(w, req)
 
-func TestOidcConfigHandler_List_OffsetBeyondTotal(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		testOidcConfigCR("oidc-1", testAccountID, testManagedOidcConfigSpec(testAccountID)),
-	).Build()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v0/oidc_configs?offset=10", nil)
-	req = req.WithContext(testContext(testAccountID))
-
-	w := httptest.NewRecorder()
-	handler.List(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-
-	var result map[string]any
-	_ = json.NewDecoder(w.Body).Decode(&result)
-
-	if int(result["total"].(float64)) != 1 {
-		t.Errorf("expected total=1, got %v", result["total"])
-	}
-	items := result["items"].([]any)
-	if len(items) != 0 {
-		t.Errorf("expected 0 items when offset beyond total, got %d", len(items))
-	}
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for invalid cursor, got %d", w.Code)
+		}
+	})
 }
 
 func TestOidcConfigHandler_Create_Success(t *testing.T) {
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -203,7 +181,7 @@ func TestOidcConfigHandler_Create_Success(t *testing.T) {
 }
 
 func TestOidcConfigHandler_Create_ManagedIgnoresClientIssuerUrl(t *testing.T) {
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -244,7 +222,7 @@ func TestOidcConfigHandler_Create_ManagedIgnoresClientIssuerUrl(t *testing.T) {
 }
 
 func TestOidcConfigHandler_Create_InvalidJSON(t *testing.T) {
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -278,7 +256,7 @@ func TestOidcConfigHandler_Create_MissingFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			scheme := newTestScheme()
+			scheme := newTestScheme(t)
 			fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -304,7 +282,7 @@ func TestOidcConfigHandler_Create_MissingFields(t *testing.T) {
 }
 
 func TestOidcConfigHandler_Create_InvalidType(t *testing.T) {
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -379,7 +357,7 @@ func TestOidcConfigHandler_Create_InvalidFieldsForType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			scheme := newTestScheme()
+			scheme := newTestScheme(t)
 			fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -405,7 +383,7 @@ func TestOidcConfigHandler_Create_InvalidFieldsForType(t *testing.T) {
 }
 
 func TestOidcConfigHandler_Create_UnmanagedSuccess(t *testing.T) {
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -439,7 +417,7 @@ func TestOidcConfigHandler_Create_UnmanagedSuccess(t *testing.T) {
 }
 
 func TestOidcConfigHandler_Get_Success(t *testing.T) {
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		testOidcConfigCR("oidc-123", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 	).Build()
@@ -466,7 +444,7 @@ func TestOidcConfigHandler_Get_Success(t *testing.T) {
 }
 
 func TestOidcConfigHandler_Get_NotFound(t *testing.T) {
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)
@@ -491,7 +469,7 @@ func TestOidcConfigHandler_Get_NotFound(t *testing.T) {
 
 func TestOidcConfigHandler_Get_WrongAccount(t *testing.T) {
 	otherAccount := "999999999999"
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		testOidcConfigCR("oidc-123", otherAccount, testManagedOidcConfigSpec(otherAccount)),
 	).Build()
@@ -511,7 +489,7 @@ func TestOidcConfigHandler_Get_WrongAccount(t *testing.T) {
 }
 
 func TestOidcConfigHandler_Delete_Success(t *testing.T) {
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		testOidcConfigCR("oidc-123", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 	).Build()
@@ -537,7 +515,7 @@ func TestOidcConfigHandler_Delete_Success(t *testing.T) {
 }
 
 func TestOidcConfigHandler_Delete_NotFound(t *testing.T) {
-	scheme := newTestScheme()
+	scheme := newTestScheme(t)
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), logger)

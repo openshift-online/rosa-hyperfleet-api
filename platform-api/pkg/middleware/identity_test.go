@@ -2,13 +2,19 @@ package middleware
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
+// identityMiddleware is a test helper that wires up Identity with a discard logger.
+func identityMiddleware(next http.Handler) http.Handler {
+	return Identity(slog.New(slog.NewTextHandler(nil, nil)))(next)
+}
+
 func TestIdentity_AllHeaders(t *testing.T) {
-	handler := Identity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := identityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
 		accountID := GetAccountID(ctx)
@@ -55,7 +61,7 @@ func TestIdentity_AllHeaders(t *testing.T) {
 }
 
 func TestIdentity_NoHeaders(t *testing.T) {
-	handler := Identity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := identityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
 		accountID := GetAccountID(ctx)
@@ -144,7 +150,7 @@ func TestIdentity_PartialHeaders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := Identity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := identityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				ctx := r.Context()
 
 				accountID := GetAccountID(ctx)
@@ -181,7 +187,7 @@ func TestIdentity_PartialHeaders(t *testing.T) {
 }
 
 func TestIdentity_EmptyHeaderValues(t *testing.T) {
-	handler := Identity(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := identityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
 		accountID := GetAccountID(ctx)
@@ -206,6 +212,45 @@ func TestIdentity_EmptyHeaderValues(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
+	}
+}
+
+func TestIdentity_AccountIDValidation(t *testing.T) {
+	nextCalled := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	tests := []struct {
+		accountID      string
+		expectStatus   int
+		expectNextCall bool
+	}{
+		{"123456789012", http.StatusOK, true},           // valid 12-digit
+		{"1234", http.StatusBadRequest, false},          // too short
+		{"12345678901a", http.StatusBadRequest, false},  // non-numeric
+		{"1234567890123", http.StatusBadRequest, false}, // 13 digits
+		{"", http.StatusOK, true},                       // absent header — allowed (auth middleware checks separately)
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.accountID, func(t *testing.T) {
+			nextCalled = false
+			handler := identityMiddleware(next)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+			if tt.accountID != "" {
+				req.Header.Set(HeaderAccountID, tt.accountID)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != tt.expectStatus {
+				t.Errorf("account_id=%q: expected status %d, got %d", tt.accountID, tt.expectStatus, w.Code)
+			}
+			if nextCalled != tt.expectNextCall {
+				t.Errorf("account_id=%q: nextCalled=%v, want %v", tt.accountID, nextCalled, tt.expectNextCall)
+			}
+		})
 	}
 }
 

@@ -18,7 +18,6 @@ package transport
 
 import (
 	"net/http"
-	"strconv"
 )
 
 // Adapter wraps an inner RoundTripper. It adjusts pagination query parameters
@@ -33,39 +32,9 @@ func NewAdapter(inner http.RoundTripper) *Adapter {
 	return &Adapter{inner: inner}
 }
 
-// RoundTrip implements http.RoundTripper. It adjusts pagination query parameters,
-// then forwards the request and response unchanged. The platform-api speaks
-// K8s-native JSON (metav1.Status errors, ObjectMeta responses) end-to-end.
+// RoundTrip implements http.RoundTripper. It forwards the request and response
+// unchanged. The platform-api speaks K8s-native JSON (metav1.Status errors,
+// ObjectMeta responses) end-to-end, including the ?continue= cursor parameter.
 func (a *Adapter) RoundTrip(req *http.Request) (*http.Response, error) {
-	req = a.adaptListQuery(req)
 	return a.inner.RoundTrip(req)
-}
-
-// adaptListQuery translates the Kubernetes-style ?continue=N query parameter to
-// the platform API's ?offset=N parameter for GET (list) requests.
-//
-// The Kubernetes generated client serializes metav1.ListOptions.Continue as the
-// "continue" query parameter. The Hyperfleet platform API uses offset-based
-// pagination instead, accepting an integer "offset" parameter. platform.ListOptions
-// encodes the integer offset as a numeric string in ListOptions.Continue before
-// calling the inner client; this method rewrites the parameter accordingly.
-//
-// Non-numeric "continue" values are passed through unchanged.
-func (a *Adapter) adaptListQuery(req *http.Request) *http.Request {
-	if req.Method != http.MethodGet {
-		return req
-	}
-	q := req.URL.Query()
-	cont := q.Get("continue")
-	if cont == "" {
-		return req
-	}
-	if _, err := strconv.ParseInt(cont, 10, 64); err != nil {
-		return req
-	}
-	req = req.Clone(req.Context())
-	q.Del("continue")
-	q.Set("offset", cont)
-	req.URL.RawQuery = q.Encode()
-	return req
 }
