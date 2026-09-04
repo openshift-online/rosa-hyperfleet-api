@@ -12,10 +12,11 @@ import (
 	"k8s.io/utils/ptr"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
+	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/oidc"
 )
 
-// ClusterResources generates the 7 Kubernetes resources for a cluster on the MC.
-func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, rcfg RegionalConfig) ([]Resource, error) {
+// ClusterResources generates the Kubernetes resources for a cluster on the MC
+func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal bool, rcfg RegionalConfig) ([]Resource, error) {
 	clusterID := ClusterIDFromNamespace(cluster.Namespace)
 	clusterName := cluster.Name // human-readable
 	ns := cluster.Namespace     // already "cluster-<uuid>"
@@ -23,12 +24,12 @@ func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, rcfg RegionalConfig) 
 	// Zone shard 0 is hardcoded; will be dynamically assigned per-cluster in a future phase.
 	zoneDomain := fmt.Sprintf("0.%s", rcfg.BaseDomain)
 
-	hc, err := hostedCluster(cluster, h4, zoneDomain)
+	hc, err := hostedCluster(cluster, oidcSigningKeyExternal, h4, zoneDomain)
 	if err != nil {
 		return nil, err
 	}
 
-	return []Resource{
+	resources := []Resource{
 		namespace(clusterID, ns),
 		clusterConfig(clusterID, clusterName, ns),
 		awsIAMAuthConfig(clusterID, clusterName, ns, cluster.Spec.CreatorARN),
@@ -36,7 +37,60 @@ func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, rcfg RegionalConfig) 
 		apiServingCert(clusterID, clusterName, h4, zoneDomain, ns),
 		hc,
 		sshKey(clusterID, ns),
-	}, nil
+	}
+
+	if oidcSigningKeyExternal {
+		resources = append(resources, oidcSigningKeySecret(cluster.Spec.AccountID, cluster.Spec.OidcConfigID, clusterID, ns))
+	}
+
+	return resources, nil
+}
+
+// oidcSigningKeyName names the ESO-materialized Secret and ExternalSecret;
+// HostedCluster.Spec.ServiceAccountSigningKey references this same name.
+const oidcSigningKeyName = "oidc-signing-key"
+
+// oidcSigningKeySecretStorePath is the AWS Secrets Manager path the OidcConfig
+// controller writes the signing key to and the ExternalSecret reads from.
+func oidcSigningKeySecretStorePath(accountID, oidcConfigID string) string {
+	return oidc.SecretName(accountID, oidcConfigID)
+}
+
+// oidcSigningKeySecret renders the ExternalSecret pulling the cluster's OIDC
+// signing key from the RC's Secrets Manager into a Secret on the MC.
+func oidcSigningKeySecret(accountID, oidcConfigID, clusterID, ns string) Resource {
+	return Resource{
+		Group: "external-secrets.io", Version: "v1", Resource: "externalsecrets",
+		Name: oidcSigningKeyName, Namespace: ns,
+		Object: &ExternalSecret{
+			TypeMeta: metav1.TypeMeta{APIVersion: "external-secrets.io/v1", Kind: "ExternalSecret"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      oidcSigningKeyName,
+				Namespace: ns,
+				Labels: map[string]string{
+					"hyperfleet.io/cluster-id":    clusterID,
+					"hyperfleet.io/resource-type": "oidc-signing-key",
+				},
+			},
+			Spec: ExternalSecretSpec{
+				RefreshInterval: "1h",
+				SecretStoreRef: SecretStoreRef{
+					Name: "rc-secrets-manager",
+					Kind: "ClusterSecretStore",
+				},
+				Target: ExternalSecretTarget{
+					Name:           oidcSigningKeyName,
+					CreationPolicy: "Owner",
+				},
+				Data: []ExternalSecretDataEntry{
+					{
+						SecretKey: "key",
+						RemoteRef: ExternalRemoteRef{Key: oidcSigningKeySecretStorePath(accountID, oidcConfigID)},
+					},
+				},
+			},
+		},
+	}
 }
 
 func namespace(clusterID, ns string) Resource {
@@ -178,7 +232,7 @@ func apiServingCert(clusterID, clusterName, h4, baseDomain, ns string) Resource 
 	}
 }
 
-func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (Resource, error) {
+func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal bool, h4, zoneDomain string) (Resource, error) {
 	clusterID := ClusterIDFromNamespace(cluster.Namespace)
 	clusterName := cluster.Name // human-readable
 	ns := cluster.Namespace     // already "cluster-<uuid>"
@@ -239,6 +293,13 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (
 	if hcSpec.Platform.AWS != nil {
 		hcSpec.Platform.AWS.EndpointAccess = hypershiftv1beta1.PublicAndPrivate
 		hcSpec.Platform.AWS.ResourceTags = appendSystemTags(hcSpec.Platform.AWS.ResourceTags, clusterID)
+	}
+
+	// References the Secret materialized by oidcSigningKeySecret's ExternalSecret.
+	if oidcSigningKeyExternal {
+		hcSpec.ServiceAccountSigningKey = &corev1.LocalObjectReference{Name: oidcSigningKeyName}
+	} else {
+		hcSpec.ServiceAccountSigningKey = nil
 	}
 
 	return Resource{

@@ -45,33 +45,39 @@ type fakeOidcInfra struct {
 
 	thumbprint string
 
-	storeErr            error
-	existsErr           error
-	readCrossAccountErr error
-	deleteKeyErr        error
-	verifyIssuerErr     error
+	storeErr             error
+	existsErr            error
+	readCrossAccountErr  error
+	deleteKeyErr         error
+	computeThumbprintErr error
 
 	keyExists       bool
 	crossAccountKey []byte
 
-	storeCalled        int
-	existsCalled       int
-	readCalled         int
-	deleteKeyCalled    int
-	verifyIssuerCalled int
+	storeCalled             int
+	existsCalled            int
+	readCalled              int
+	deleteKeyCalled         int
+	computeThumbprintCalled int
+
+	// lastAccountID records the accountID passed to the most recent
+	// StorePrivateKey/PrivateKeyExists/DeletePrivateKey call.
+	lastAccountID string
 }
 
-func (f *fakeOidcInfra) StorePrivateKey(_ context.Context, _ string, _ []byte) error {
+func (f *fakeOidcInfra) StorePrivateKey(_ context.Context, accountID, _ string, _ []byte) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.storeCalled++
+	f.lastAccountID = accountID
 	return f.storeErr
 }
 
-func (f *fakeOidcInfra) PrivateKeyExists(_ context.Context, _ string) (bool, error) {
+func (f *fakeOidcInfra) PrivateKeyExists(_ context.Context, accountID, _ string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.existsCalled++
+	f.lastAccountID = accountID
 	return f.keyExists, f.existsErr
 }
 
@@ -85,30 +91,34 @@ func (f *fakeOidcInfra) ReadCrossAccountSecret(_ context.Context, _, _ string) (
 	return f.crossAccountKey, nil
 }
 
-func (f *fakeOidcInfra) DeletePrivateKey(_ context.Context, _ string) error {
+func (f *fakeOidcInfra) DeletePrivateKey(_ context.Context, accountID, _ string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deleteKeyCalled++
+	f.lastAccountID = accountID
 	return f.deleteKeyErr
 }
 
-func (f *fakeOidcInfra) VerifyIssuer(_ context.Context, _ string) (string, error) {
+func (f *fakeOidcInfra) ComputeThumbprint(_ context.Context, _ string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.verifyIssuerCalled++
-	if f.verifyIssuerErr != nil {
-		return "", f.verifyIssuerErr
+	f.computeThumbprintCalled++
+	if f.computeThumbprintErr != nil {
+		return "", f.computeThumbprintErr
 	}
 	return f.thumbprint, nil
 }
 
 var _ = Describe("OidcConfig Controller", func() {
 	const testNS = "account-test-account"
+	const clusterNS = "cluster-test-cluster-id"
+	const testAccountID = "test-account"
 
 	ctx := context.Background()
 
 	BeforeEach(func() {
 		ensureNamespace(ctx, testNS)
+		ensureNamespace(ctx, clusterNS)
 	})
 
 	AfterEach(func() {
@@ -120,6 +130,11 @@ var _ = Describe("OidcConfig Controller", func() {
 				_ = k8sClient.Delete(ctx, &list.Items[i])
 			}
 		}
+		clusters := &hyperfleetv1alpha1.ClusterList{}
+		Expect(k8sClient.List(ctx, clusters, client.InNamespace(clusterNS))).To(Succeed())
+		for i := range clusters.Items {
+			Expect(k8sClient.Delete(ctx, &clusters.Items[i])).To(Succeed())
+		}
 	})
 
 	newReconciler := func(infra *fakeOidcInfra) *OidcConfigReconciler {
@@ -128,6 +143,16 @@ var _ = Describe("OidcConfig Controller", func() {
 			Scheme: k8sClient.Scheme(),
 			OIDC:   infra,
 		}
+	}
+
+	// createReferencingCluster creates a minimal Cluster owned by testAccountID that references
+	// oidcConfigID via spec.oidcConfigId, simulating the cluster-creation flow that unblocks a
+	// managed OidcConfig's readiness checks (see isReferencedByCluster).
+	createReferencingCluster := func(name, oidcConfigID string) {
+		cluster := newTestCluster(name)
+		cluster.Spec.OidcConfigID = oidcConfigID
+		cluster.Labels = map[string]string{accountIDLabel: testAccountID}
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 	}
 
 	reconcileN := func(r *OidcConfigReconciler, ns, name string, n int) (ctrl.Result, error) {
@@ -145,12 +170,13 @@ var _ = Describe("OidcConfig Controller", func() {
 	}
 
 	Context("Managed OidcConfig", func() {
-		It("should add finalizer and reach Ready once the issuer is verified", func() {
+		It("should add finalizer and reach Ready once the issuer is TLS-reachable", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "managed-01", Namespace: testNS},
 				Spec: hyperfleetv1alpha1.OidcConfigSpec{
 					Type:      hyperfleetv1alpha1.OidcConfigTypeManaged,
 					IssuerUrl: "https://oidc.example.com/managed-01",
+					AccountID: testAccountID,
 				},
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
@@ -168,13 +194,16 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-01"}, &updated)).To(Succeed())
 			Expect(controllerutil.ContainsFinalizer(&updated, oidcConfigFinalizer)).To(BeTrue())
 
+			// A cluster must reference the config before the issuer is ever probed.
+			createReferencingCluster("managed-01-cluster", "managed-01")
+
 			result, err = r.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-01"},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(thumbprintRefreshDelay))
 
-			Expect(infra.verifyIssuerCalled).To(Equal(1))
+			Expect(infra.computeThumbprintCalled).To(Equal(1))
 			Expect(infra.storeCalled).To(Equal(0))
 			Expect(infra.existsCalled).To(Equal(0))
 			Expect(infra.readCalled).To(Equal(0))
@@ -189,17 +218,83 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(readyCond.Reason).To(Equal("OIDCConfigured"))
 		})
 
-		It("should stay Pending (not Error) while HyperShift hasn't published OIDC documents yet", func() {
+		It("should stay Pending with AwaitingCluster and never probe the issuer until a cluster references it", func() {
+			oc := &hyperfleetv1alpha1.OidcConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "managed-awaiting", Namespace: testNS},
+				Spec: hyperfleetv1alpha1.OidcConfigSpec{
+					Type:      hyperfleetv1alpha1.OidcConfigTypeManaged,
+					IssuerUrl: "https://oidc.example.com/managed-awaiting",
+				},
+			}
+			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+
+			// ComputeThumbprint must never be called before a cluster references the config.
+			infra := &fakeOidcInfra{computeThumbprintErr: fmt.Errorf("should not be called")}
+			r := newReconciler(infra)
+
+			result, err := reconcileN(r, testNS, "managed-awaiting", 2)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(managedPendingRequeueInterval))
+			Expect(infra.computeThumbprintCalled).To(Equal(0))
+
+			var updated hyperfleetv1alpha1.OidcConfig
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-awaiting"}, &updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhasePending))
+
+			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("AwaitingCluster"))
+			Expect(readyCond.Message).NotTo(ContainSubstring("403"))
+		})
+
+		It("should not treat a same-ID Cluster from another account as a reference", func() {
+			oc := &hyperfleetv1alpha1.OidcConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "managed-cross-account", Namespace: testNS},
+				Spec: hyperfleetv1alpha1.OidcConfigSpec{
+					Type:      hyperfleetv1alpha1.OidcConfigTypeManaged,
+					IssuerUrl: "https://oidc.example.com/managed-cross-account",
+					AccountID: testAccountID,
+				},
+			}
+			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+
+			// A cluster with the same oidcConfigId, but owned by a different account, must
+			// never count as a reference.
+			otherAccountCluster := newTestCluster("cross-account-cluster")
+			otherAccountCluster.Spec.OidcConfigID = "managed-cross-account"
+			otherAccountCluster.Labels = map[string]string{accountIDLabel: "other-account"}
+			Expect(k8sClient.Create(ctx, otherAccountCluster)).To(Succeed())
+
+			infra := &fakeOidcInfra{computeThumbprintErr: fmt.Errorf("should not be called")}
+			r := newReconciler(infra)
+
+			result, err := reconcileN(r, testNS, "managed-cross-account", 2)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(managedPendingRequeueInterval))
+			Expect(infra.computeThumbprintCalled).To(Equal(0))
+
+			var updated hyperfleetv1alpha1.OidcConfig
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-cross-account"}, &updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhasePending))
+
+			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Reason).To(Equal("AwaitingCluster"))
+		})
+
+		It("should stay Pending (not Error) while the issuer isn't TLS-reachable yet", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "managed-pending", Namespace: testNS},
 				Spec: hyperfleetv1alpha1.OidcConfigSpec{
 					Type:      hyperfleetv1alpha1.OidcConfigTypeManaged,
 					IssuerUrl: "https://oidc.example.com/managed-pending",
+					AccountID: testAccountID,
 				},
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
-			infra := &fakeOidcInfra{verifyIssuerErr: fmt.Errorf("GET .../.well-known/openid-configuration: unexpected status 404")}
+			infra := &fakeOidcInfra{computeThumbprintErr: fmt.Errorf("TLS dial oidc.example.com: connection refused")}
 			r := newReconciler(infra)
 
 			_, err := r.Reconcile(ctx, reconcile.Request{
@@ -207,11 +302,14 @@ var _ = Describe("OidcConfig Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
+			createReferencingCluster("managed-pending-cluster", "managed-pending")
+
 			result, err := r.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-pending"},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(managedPendingRequeueInterval))
+			Expect(infra.computeThumbprintCalled).To(Equal(1))
 
 			var updated hyperfleetv1alpha1.OidcConfig
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-pending"}, &updated)).To(Succeed())
@@ -223,24 +321,26 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(readyCond.Reason).To(Equal("IssuerNotReady"))
 		})
 
-		It("should reach Ready once the issuer starts serving valid documents after being Pending", func() {
+		It("should reach Ready once the issuer becomes TLS-reachable after being Pending", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "managed-recover", Namespace: testNS},
 				Spec: hyperfleetv1alpha1.OidcConfigSpec{
 					Type:      hyperfleetv1alpha1.OidcConfigTypeManaged,
 					IssuerUrl: "https://oidc.example.com/managed-recover",
+					AccountID: testAccountID,
 				},
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{
-				verifyIssuerErr: fmt.Errorf("not ready yet"),
-				thumbprint:      "recovered-thumb",
+				computeThumbprintErr: fmt.Errorf("not reachable yet"),
+				thumbprint:           "recovered-thumb",
 			}
 			r := newReconciler(infra)
+			createReferencingCluster("managed-recover-cluster", "managed-recover")
 
 			// Reconcile 1: adds finalizer.
-			// Reconcile 2: issuer not ready yet, stays Pending.
+			// Reconcile 2: issuer not reachable yet, stays Pending.
 			_, err := reconcileN(r, testNS, "managed-recover", 2)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -248,8 +348,8 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-recover"}, &updated)).To(Succeed())
 			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhasePending))
 
-			// HyperShift finishes publishing the OIDC documents.
-			infra.verifyIssuerErr = nil
+			// The issuer becomes TLS-reachable.
+			infra.computeThumbprintErr = nil
 			result, err := r.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-recover"},
 			})
@@ -266,18 +366,20 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(readyCond.Reason).To(Equal("OIDCConfigured"))
 		})
 
-		It("should keep verifying the issuer on subsequent reconciles without touching key storage", func() {
+		It("should stay Ready on subsequent reconciles while continuing to refresh the thumbprint, without touching key storage", func() {
 			oc := &hyperfleetv1alpha1.OidcConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "managed-idem", Namespace: testNS},
 				Spec: hyperfleetv1alpha1.OidcConfigSpec{
 					Type:      hyperfleetv1alpha1.OidcConfigTypeManaged,
 					IssuerUrl: "https://oidc.example.com/managed-idem",
+					AccountID: testAccountID,
 				},
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{thumbprint: "thumb01"}
 			r := newReconciler(infra)
+			createReferencingCluster("managed-idem-cluster", "managed-idem")
 
 			_, err := reconcileN(r, testNS, "managed-idem", 2)
 			Expect(err).NotTo(HaveOccurred())
@@ -286,10 +388,15 @@ var _ = Describe("OidcConfig Controller", func() {
 				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "managed-idem"},
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(infra.verifyIssuerCalled).To(Equal(2))
+			Expect(infra.computeThumbprintCalled).To(Equal(2))
 			Expect(infra.storeCalled).To(Equal(0))
 			Expect(infra.existsCalled).To(Equal(0))
 			Expect(infra.readCalled).To(Equal(0))
+
+			var updated hyperfleetv1alpha1.OidcConfig
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "managed-idem"}, &updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseReady))
+			Expect(updated.Status.Thumbprint).To(Equal("thumb01"))
 		})
 	})
 
@@ -302,6 +409,7 @@ var _ = Describe("OidcConfig Controller", func() {
 					IssuerUrl:        "https://customer-oidc.example.com",
 					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
 					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
+					AccountID:        testAccountID,
 				},
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
@@ -319,6 +427,7 @@ var _ = Describe("OidcConfig Controller", func() {
 
 			Expect(infra.readCalled).To(Equal(1))
 			Expect(infra.storeCalled).To(Equal(1))
+			Expect(infra.lastAccountID).To(Equal(testAccountID), "the signing key secret path must be account-scoped")
 
 			var updated hyperfleetv1alpha1.OidcConfig
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-01"}, &updated)).To(Succeed())
@@ -399,8 +508,8 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{
-				crossAccountKey: generateTestRSAKeyPEM(),
-				verifyIssuerErr: fmt.Errorf("connection refused"),
+				crossAccountKey:      generateTestRSAKeyPEM(),
+				computeThumbprintErr: fmt.Errorf("connection refused"),
 			}
 			r := newReconciler(infra)
 
@@ -439,9 +548,9 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{
-				crossAccountKey: generateTestRSAKeyPEM(),
-				thumbprint:      "recovered-thumb",
-				verifyIssuerErr: fmt.Errorf("temporarily unreachable"),
+				crossAccountKey:      generateTestRSAKeyPEM(),
+				thumbprint:           "recovered-thumb",
+				computeThumbprintErr: fmt.Errorf("temporarily unreachable"),
 			}
 			r := newReconciler(infra)
 
@@ -459,7 +568,7 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-recover"}, &updated)).To(Succeed())
 			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseError))
 
-			infra.verifyIssuerErr = nil
+			infra.computeThumbprintErr = nil
 			result, err := r.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "unmanaged-recover"},
 			})
@@ -557,12 +666,14 @@ var _ = Describe("OidcConfig Controller", func() {
 				Spec: hyperfleetv1alpha1.OidcConfigSpec{
 					Type:      hyperfleetv1alpha1.OidcConfigTypeManaged,
 					IssuerUrl: "https://oidc.example.com/managed-del",
+					AccountID: testAccountID,
 				},
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{thumbprint: "thumb"}
 			r := newReconciler(infra)
+			createReferencingCluster("managed-del-cluster", "managed-del")
 
 			// Reach Ready state.
 			_, err := reconcileN(r, testNS, "managed-del", 2)
@@ -623,12 +734,14 @@ var _ = Describe("OidcConfig Controller", func() {
 				Spec: hyperfleetv1alpha1.OidcConfigSpec{
 					Type:      hyperfleetv1alpha1.OidcConfigTypeManaged,
 					IssuerUrl: "https://oidc.example.com/managed-del-sm-fail",
+					AccountID: testAccountID,
 				},
 			}
 			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
 
 			infra := &fakeOidcInfra{thumbprint: "thumb"}
 			r := newReconciler(infra)
+			createReferencingCluster("managed-del-sm-fail-cluster", "managed-del-sm-fail")
 
 			_, err := reconcileN(r, testNS, "managed-del-sm-fail", 2)
 			Expect(err).NotTo(HaveOccurred())

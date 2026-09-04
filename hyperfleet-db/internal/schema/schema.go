@@ -16,6 +16,7 @@ func Migrate(ctx context.Context, conn *pgx.Conn) error {
 		"migrations/001_initial.sql",
 		"migrations/002_cluster_dns_uniqueness.sql",
 		"migrations/003_oidcconfig_issuer_url_uniqueness.sql",
+		"migrations/004_cluster_oidcconfig_uniqueness.sql",
 	}
 	for _, f := range files {
 		sql, err := migrationsFS.ReadFile(f)

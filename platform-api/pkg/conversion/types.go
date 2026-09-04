@@ -13,133 +13,135 @@ import (
 // ServiceSetFields contains platform-managed fields injected during UnprojectX conversions
 type ServiceSetFields struct {
 	// AccountID is service-set (platform-managed, hidden from API)
-	AccountID string `json:"accountId"`
+	AccountID string `json:"accountId,omitempty"`
 	// AdditionalTrustBundle is service-set (platform-managed, hidden from API)
-	AdditionalTrustBundle *corev1.LocalObjectReference `json:"additionalTrustBundle"`
+	AdditionalTrustBundle *corev1.LocalObjectReference `json:"additionalTrustBundle,omitempty"`
 	// AllowedUnsafeSysctls is service-set (platform-managed, hidden from API)
-	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls"`
+	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
 	// ApiServer is service-set (platform-managed, hidden from API)
-	ApiServer *v1alpha1.APIServerNetworkConfiguration `json:"apiServer"`
+	ApiServer *v1alpha1.APIServerNetworkConfiguration `json:"apiServer,omitempty"`
 	// Arch is service-set (platform-managed, hidden from API)
-	Arch string `json:"arch"`
+	Arch string `json:"arch,omitempty"`
 	// AuditWebhook is service-set (platform-managed, hidden from API)
-	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook"`
+	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
 	// Authentication is service-set (platform-managed, hidden from API)
-	Authentication *v1alpha1.ClusterAuthentication `json:"authentication"`
+	Authentication *v1alpha1.ClusterAuthentication `json:"authentication,omitempty"`
 	// AutoNode is service-set (platform-managed, hidden from API)
-	AutoNode hypershiftv1beta1.AutoNode `json:"autoNode"`
+	AutoNode hypershiftv1beta1.AutoNode `json:"autoNode,omitempty"`
 	// AutoScaling is service-set (platform-managed, hidden from API)
-	AutoScaling *hypershiftv1beta1.NodePoolAutoScaling `json:"autoScaling"`
+	AutoScaling *hypershiftv1beta1.NodePoolAutoScaling `json:"autoScaling,omitempty"`
 	// Autoscaling is service-set (platform-managed, hidden from API)
-	Autoscaling hypershiftv1beta1.ClusterAutoscaling `json:"autoscaling"`
+	Autoscaling hypershiftv1beta1.ClusterAutoscaling `json:"autoscaling,omitempty"`
 	// Capabilities is service-set (platform-managed, hidden from API)
-	Capabilities *hypershiftv1beta1.Capabilities `json:"capabilities"`
+	Capabilities *hypershiftv1beta1.Capabilities `json:"capabilities,omitempty"`
 	// Channel is service-set (platform-managed, hidden from API)
-	Channel string `json:"channel"`
+	Channel string `json:"channel,omitempty"`
 	// ClusterID is service-set (platform-managed, hidden from API)
-	ClusterID string `json:"clusterID"`
+	ClusterID string `json:"clusterID,omitempty"`
 	// Config is service-set (platform-managed, hidden from API)
-	Config []corev1.LocalObjectReference `json:"config"`
+	Config []corev1.LocalObjectReference `json:"config,omitempty"`
 	// ControlPlaneRelease is service-set (platform-managed, hidden from API)
-	ControlPlaneRelease *hypershiftv1beta1.Release `json:"controlPlaneRelease"`
+	ControlPlaneRelease *hypershiftv1beta1.Release `json:"controlPlaneRelease,omitempty"`
 	// ControllerAvailabilityPolicy is service-set (platform-managed, hidden from API)
-	ControllerAvailabilityPolicy hypershiftv1beta1.AvailabilityPolicy `json:"controllerAvailabilityPolicy"`
+	ControllerAvailabilityPolicy hypershiftv1beta1.AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 	// CpuManagerPolicy is service-set (platform-managed, hidden from API)
-	CpuManagerPolicy *string `json:"cpuManagerPolicy"`
+	CpuManagerPolicy *string `json:"cpuManagerPolicy,omitempty"`
 	// CpuManagerPolicyOptions is service-set (platform-managed, hidden from API)
-	CpuManagerPolicyOptions map[string]string `json:"cpuManagerPolicyOptions"`
+	CpuManagerPolicyOptions map[string]string `json:"cpuManagerPolicyOptions,omitempty"`
 	// CpuManagerReconcilePeriod is service-set (platform-managed, hidden from API)
-	CpuManagerReconcilePeriod *metav1.Duration `json:"cpuManagerReconcilePeriod"`
+	CpuManagerReconcilePeriod *metav1.Duration `json:"cpuManagerReconcilePeriod,omitempty"`
 	// CreatorARN is service-set (platform-managed, hidden from API)
-	CreatorARN string `json:"creatorARN"`
+	CreatorARN string `json:"creatorARN,omitempty"`
 	// Dns is service-set (platform-managed, hidden from API)
-	Dns hypershiftv1beta1.DNSSpec `json:"dns"`
+	Dns hypershiftv1beta1.DNSSpec `json:"dns,omitempty"`
 	// Etcd is service-set (platform-managed, hidden from API)
-	Etcd hypershiftv1beta1.EtcdSpec `json:"etcd"`
+	Etcd hypershiftv1beta1.EtcdSpec `json:"etcd,omitempty"`
 	// EvictionHard is service-set (platform-managed, hidden from API)
-	EvictionHard map[string]string `json:"evictionHard"`
+	EvictionHard map[string]string `json:"evictionHard,omitempty"`
 	// EvictionSoft is service-set (platform-managed, hidden from API)
-	EvictionSoft map[string]string `json:"evictionSoft"`
+	EvictionSoft map[string]string `json:"evictionSoft,omitempty"`
 	// EvictionSoftGracePeriod is service-set (platform-managed, hidden from API)
-	EvictionSoftGracePeriod map[string]string `json:"evictionSoftGracePeriod"`
+	EvictionSoftGracePeriod map[string]string `json:"evictionSoftGracePeriod,omitempty"`
 	// Extensions is service-set (platform-managed, hidden from API)
-	Extensions []string `json:"extensions"`
+	Extensions []string `json:"extensions,omitempty"`
 	// FeatureGate is service-set (platform-managed, hidden from API)
-	FeatureGate *v1alpha1.FeatureGateConfiguration `json:"featureGate"`
+	FeatureGate *v1alpha1.FeatureGateConfiguration `json:"featureGate,omitempty"`
 	// Files is service-set (platform-managed, hidden from API)
-	Files []v1alpha1.FileSpec `json:"files"`
+	Files []v1alpha1.FileSpec `json:"files,omitempty"`
 	// Fips is service-set (platform-managed, hidden from API)
-	Fips bool `json:"fips"`
+	Fips bool `json:"fips,omitempty"`
 	// Image is service-set (platform-managed, hidden from API)
-	Image *v1alpha1.ImageConfiguration `json:"image"`
+	Image *v1alpha1.ImageConfiguration `json:"image,omitempty"`
 	// InfraID is service-set (platform-managed, hidden from API)
-	InfraID string `json:"infraID"`
+	InfraID string `json:"infraID,omitempty"`
 	// InfrastructureAvailabilityPolicy is service-set (platform-managed, hidden from API)
-	InfrastructureAvailabilityPolicy hypershiftv1beta1.AvailabilityPolicy `json:"infrastructureAvailabilityPolicy"`
+	InfrastructureAvailabilityPolicy hypershiftv1beta1.AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 	// Ingress is service-set (platform-managed, hidden from API)
-	Ingress *v1alpha1.IngressConfiguration `json:"ingress"`
+	Ingress *v1alpha1.IngressConfiguration `json:"ingress,omitempty"`
 	// InternalID is service-set (platform-managed, hidden from API)
-	InternalID string `json:"internalId"`
+	InternalID string `json:"internalId,omitempty"`
 	// InternalPoolID is service-set (platform-managed, hidden from API)
-	InternalPoolID string `json:"internalPoolId"`
+	InternalPoolID string `json:"internalPoolId,omitempty"`
+	// IssuerURL is service-set (platform-managed, hidden from API)
+	IssuerURL string `json:"issuerURL,omitempty"`
 	// KernelArguments is service-set (platform-managed, hidden from API)
-	KernelArguments []string `json:"kernelArguments"`
+	KernelArguments []string `json:"kernelArguments,omitempty"`
 	// KernelType is service-set (platform-managed, hidden from API)
-	KernelType *string `json:"kernelType"`
+	KernelType *string `json:"kernelType,omitempty"`
 	// KubeAPIServerDNSName is service-set (platform-managed, hidden from API)
-	KubeAPIServerDNSName string `json:"kubeAPIServerDNSName"`
+	KubeAPIServerDNSName string `json:"kubeAPIServerDNSName,omitempty"`
 	// Labels is service-set (platform-managed, hidden from API)
-	Labels map[string]string `json:"labels"`
+	Labels map[string]string `json:"labels,omitempty"`
 	// Management is service-set (platform-managed, hidden from API)
-	Management hypershiftv1beta1.NodePoolManagement `json:"management"`
+	Management hypershiftv1beta1.NodePoolManagement `json:"management,omitempty"`
 	// MemoryThrottlingFactor is service-set (platform-managed, hidden from API)
-	MemoryThrottlingFactor *float64 `json:"memoryThrottlingFactor"`
+	MemoryThrottlingFactor *float64 `json:"memoryThrottlingFactor,omitempty"`
 	// Network is service-set (platform-managed, hidden from API)
-	Network *v1alpha1.NetworkConfiguration `json:"network"`
+	Network *v1alpha1.NetworkConfiguration `json:"network,omitempty"`
 	// NodeDrainTimeout is service-set (platform-managed, hidden from API)
-	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout"`
+	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
 	// NodeLabels is service-set (platform-managed, hidden from API)
-	NodeLabels map[string]string `json:"nodeLabels"`
+	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 	// NodeSelector is service-set (platform-managed, hidden from API)
-	NodeSelector map[string]string `json:"nodeSelector"`
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 	// NodeVolumeDetachTimeout is service-set (platform-managed, hidden from API)
-	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout"`
+	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout,omitempty"`
 	// Oauth is service-set (platform-managed, hidden from API)
-	Oauth *v1alpha1.OAuthConfiguration `json:"oauth"`
+	Oauth *v1alpha1.OAuthConfiguration `json:"oauth,omitempty"`
 	// OlmCatalogPlacement is service-set (platform-managed, hidden from API)
-	OlmCatalogPlacement hypershiftv1beta1.OLMCatalogPlacement `json:"olmCatalogPlacement"`
+	OlmCatalogPlacement hypershiftv1beta1.OLMCatalogPlacement `json:"olmCatalogPlacement,omitempty"`
 	// OperatorConfiguration is service-set (platform-managed, hidden from API)
-	OperatorConfiguration *hypershiftv1beta1.OperatorConfiguration `json:"operatorConfiguration"`
+	OperatorConfiguration *hypershiftv1beta1.OperatorConfiguration `json:"operatorConfiguration,omitempty"`
 	// OsImageStream is service-set (platform-managed, hidden from API)
-	OsImageStream hypershiftv1beta1.OSImageStreamReference `json:"osImageStream"`
+	OsImageStream hypershiftv1beta1.OSImageStreamReference `json:"osImageStream,omitempty"`
 	// PausedUntil is service-set (platform-managed, hidden from API)
-	PausedUntil *string `json:"pausedUntil"`
+	PausedUntil *string `json:"pausedUntil,omitempty"`
 	// Proxy is service-set (platform-managed, hidden from API)
-	Proxy *v1alpha1.ProxyConfiguration `json:"proxy"`
+	Proxy *v1alpha1.ProxyConfiguration `json:"proxy,omitempty"`
 	// PullSecret is service-set (platform-managed, hidden from API)
-	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
+	PullSecret corev1.LocalObjectReference `json:"pullSecret,omitempty"`
 	// Scheduler is service-set (platform-managed, hidden from API)
-	Scheduler *v1alpha1.SchedulerConfiguration `json:"scheduler"`
+	Scheduler *v1alpha1.SchedulerConfiguration `json:"scheduler,omitempty"`
 	// SecretEncryption is service-set (platform-managed, hidden from API)
-	SecretEncryption *hypershiftv1beta1.SecretEncryptionSpec `json:"secretEncryption"`
+	SecretEncryption *hypershiftv1beta1.SecretEncryptionSpec `json:"secretEncryption,omitempty"`
 	// ServiceAccountSigningKey is service-set (platform-managed, hidden from API)
-	ServiceAccountSigningKey *corev1.LocalObjectReference `json:"serviceAccountSigningKey"`
+	ServiceAccountSigningKey *corev1.LocalObjectReference `json:"serviceAccountSigningKey,omitempty"`
 	// Services is service-set (platform-managed, hidden from API)
-	Services []hypershiftv1beta1.ServicePublishingStrategyMapping `json:"services"`
+	Services []hypershiftv1beta1.ServicePublishingStrategyMapping `json:"services,omitempty"`
 	// SshKey is service-set (platform-managed, hidden from API)
-	SshKey corev1.LocalObjectReference `json:"sshKey"`
+	SshKey corev1.LocalObjectReference `json:"sshKey,omitempty"`
 	// SystemdUnits is service-set (platform-managed, hidden from API)
-	SystemdUnits []v1alpha1.SystemdUnit `json:"systemdUnits"`
+	SystemdUnits []v1alpha1.SystemdUnit `json:"systemdUnits,omitempty"`
 	// Taints is service-set (platform-managed, hidden from API)
-	Taints []hypershiftv1beta1.Taint `json:"taints"`
+	Taints []hypershiftv1beta1.Taint `json:"taints,omitempty"`
 	// Tolerations is service-set (platform-managed, hidden from API)
-	Tolerations []corev1.Toleration `json:"tolerations"`
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 	// TopologyManagerPolicy is service-set (platform-managed, hidden from API)
-	TopologyManagerPolicy *string `json:"topologyManagerPolicy"`
+	TopologyManagerPolicy *string `json:"topologyManagerPolicy,omitempty"`
 	// TopologyManagerScope is service-set (platform-managed, hidden from API)
-	TopologyManagerScope *string `json:"topologyManagerScope"`
+	TopologyManagerScope *string `json:"topologyManagerScope,omitempty"`
 	// TuningConfig is service-set (platform-managed, hidden from API)
-	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig"`
+	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig,omitempty"`
 	// UpdateService is service-set (platform-managed, hidden from API)
-	UpdateService configv1.URL `json:"updateService"`
+	UpdateService configv1.URL `json:"updateService,omitempty"`
 }

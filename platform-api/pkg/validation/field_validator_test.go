@@ -151,6 +151,26 @@ func TestValidateUpdate_AllowsImmutableFieldSameValue(t *testing.T) {
 	}
 }
 
+func TestValidateUpdate_RejectsImmutableFieldChangeFromOmittedZeroValue(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.oidcConfigId": {FieldPath: "spec.oidcConfigId", WriteMode: registry.Immutable},
+	})
+
+	// An omitempty zero value is absent from the flattened existing spec entirely,
+	// which must still be treated as a change when the update sets a real value.
+	existing := map[string]any{}
+	updated := map[string]any{"oidcConfigId": "new-oidc-config"}
+
+	errs := v.ValidateUpdate(updated, existing, featuregate.Default)
+	if errs == nil {
+		t.Fatal("expected validation error when setting an immutable field that was previously omitted")
+	}
+
+	if errs[0].Field != "spec.oidcConfigId" {
+		t.Errorf("expected error on spec.oidcConfigId, got %s", errs[0].Field)
+	}
+}
+
 func TestValidateCreate_RejectsFeatureGatedField(t *testing.T) {
 	v := newTestValidator(map[string]registry.FieldMeta{
 		"spec.tags": {FieldPath: "spec.tags", WriteMode: registry.Mutable, FeatureGate: "HyperFleetAutoScaling"},

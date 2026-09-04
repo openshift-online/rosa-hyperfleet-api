@@ -49,6 +49,15 @@ func testManagedOidcConfigSpec(accountID string) hyperfleetv1alpha1.OidcConfigSp
 	}
 }
 
+func testUnmanagedOidcConfigSpec(accountID string) hyperfleetv1alpha1.OidcConfigSpec {
+	return hyperfleetv1alpha1.OidcConfigSpec{
+		Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
+		AccountID:        accountID,
+		SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
+		InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
+	}
+}
+
 func TestOidcConfigHandler_List_Success(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
@@ -748,6 +757,69 @@ func TestOidcConfigHandler_Delete_Success(t *testing.T) {
 	_ = json.NewDecoder(w.Body).Decode(&result)
 	if result["config_id"] != "oidc-123" {
 		t.Errorf("expected config_id=oidc-123, got %v", result["config_id"])
+	}
+}
+
+func TestOidcConfigHandler_Delete_InUse(t *testing.T) {
+	scheme := newTestScheme()
+	oidcConfig := testOidcConfigCR("oidc-123", testAccountID, testManagedOidcConfigSpec(testAccountID))
+	referencingCluster := testClusterCR("cluster-id", "referencing-cluster", testAccountID)
+	referencingCluster.Spec.OidcConfigID = "oidc-123"
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(oidcConfig, referencingCluster).Build()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v0/oidc_configs/oidc-123", nil)
+	req = req.WithContext(testContext(testAccountID))
+	req = mux.SetURLVars(req, map[string]string{"id": "oidc-123"})
+
+	w := httptest.NewRecorder()
+	handler.Delete(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var errResp map[string]any
+	_ = json.NewDecoder(w.Body).Decode(&errResp)
+	if !strings.Contains(errResp["message"].(string), ErrOidcConfigDeleteInUse.Code) {
+		t.Errorf("expected message to contain %s, got %q", ErrOidcConfigDeleteInUse.Code, errResp["message"])
+	}
+
+	if _, err := handler.db.GetOidcConfig(req.Context(), testAccountID, "oidc-123"); err != nil {
+		t.Errorf("expected OidcConfig to survive a blocked delete, got error: %v", err)
+	}
+}
+
+func TestOidcConfigHandler_Delete_AfterClusterDeletedSucceeds(t *testing.T) {
+	scheme := newTestScheme()
+	oidcConfig := testOidcConfigCR("oidc-123", testAccountID, testManagedOidcConfigSpec(testAccountID))
+	referencingCluster := testClusterCR("cluster-id", "referencing-cluster", testAccountID)
+	referencingCluster.Spec.OidcConfigID = "oidc-123"
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(oidcConfig, referencingCluster).Build()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v0/oidc_configs/oidc-123", nil)
+	req = req.WithContext(testContext(testAccountID))
+	req = mux.SetURLVars(req, map[string]string{"id": "oidc-123"})
+
+	// While the cluster still references the config, deletion must be blocked.
+	w := httptest.NewRecorder()
+	handler.Delete(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 while the cluster still references the config, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if err := fc.Delete(context.Background(), referencingCluster); err != nil {
+		t.Fatalf("failed to delete referencing cluster: %v", err)
+	}
+
+	// Once the referencing cluster is gone, deletion must succeed.
+	w = httptest.NewRecorder()
+	handler.Delete(w, req)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 once no cluster references the config, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

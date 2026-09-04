@@ -414,7 +414,7 @@ var FieldRegistry = TypedFieldRegistry{
 		},
 		"spec.hostedCluster.issuerURL": {
 			FieldPath: "spec.hostedCluster.issuerURL",
-			WriteMode: Mutable,
+			WriteMode: ServiceSet,
 			OwnerType: "Cluster",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
 		},
@@ -529,6 +529,12 @@ var FieldRegistry = TypedFieldRegistry{
 			FieldPath: "spec.internalId",
 			WriteMode: ServiceSet,
 			Hidden:    true,
+			OwnerType: "Cluster",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
+		},
+		"spec.oidcConfigId": {
+			FieldPath: "spec.oidcConfigId",
+			WriteMode: Immutable,
 			OwnerType: "Cluster",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
 		},

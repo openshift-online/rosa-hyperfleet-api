@@ -6971,6 +6971,11 @@ spec:
                 internalId:
                   description: InternalID is a platform-assigned unique identifier.
                   type: string
+                oidcConfigId:
+                  description: |-
+                    OidcConfigID selects the OidcConfig-backed issuer flow when set, or the
+                    legacy auto-generated issuer flow when empty. Immutable after creation.
+                  type: string
                 properties:
                   additionalProperties:
                     type: string

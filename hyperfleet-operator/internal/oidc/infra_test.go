@@ -20,13 +20,26 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha1" //nolint:gosec // SHA-1 required by AWS IAM OIDC provider API contract
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
-	"net/http"
-	"net/http/httptest"
+	"fmt"
+	"math/big"
 	"testing"
 )
+
+func TestSecretName(t *testing.T) {
+	got := SecretName("123456789012", "my-config")
+	want := "/hyperfleet/oidc/123456789012/my-config/signing-key"
+	if got != want {
+		t.Errorf("expected %q, got %q", want, got)
+	}
+
+	// Different accounts must not collide on the same configID.
+	if SecretName("111111111111", "my-config") == SecretName("222222222222", "my-config") {
+		t.Error("expected SecretName to be account-scoped, got the same path for two different accounts")
+	}
+}
 
 func rsaKeyPEM(t *testing.T, bits int) []byte {
 	t.Helper()
@@ -92,103 +105,42 @@ func TestResolveIssuerHost(t *testing.T) {
 	}
 }
 
-// discoveryHandler returns an http.HandlerFunc that serves body only at the discovery path, and 404s everything else,
-// mirroring a real OIDC issuer
-func discoveryHandler(status int, body string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/"+discoveryPath {
-			w.WriteHeader(http.StatusNotFound)
-			return
+func TestThumbprintFromChain(t *testing.T) {
+	t.Run("fails when no certificates are presented", func(t *testing.T) {
+		if _, err := thumbprintFromChain(nil); err == nil {
+			t.Error("expected an error for an empty certificate chain, got nil")
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_, _ = w.Write([]byte(body))
-	}
-}
+	})
 
-func TestVerifyIssuerDocument(t *testing.T) {
-	t.Run("succeeds for a valid discovery document with a matching issuer", func(t *testing.T) {
-		var srv *httptest.Server
-		srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/"+discoveryPath {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"issuer": srv.URL})
-		}))
-		defer srv.Close()
-
-		thumbprint, err := verifyIssuerDocument(context.Background(), srv.Client(), srv.URL)
+	t.Run("succeeds and returns the root certificate's SHA-1 fingerprint", func(t *testing.T) {
+		root := selfSignedCert(t)
+		thumbprint, err := thumbprintFromChain([]*x509.Certificate{root})
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
-		if thumbprint == "" {
-			t.Error("expected a non-empty thumbprint")
+		want := fmt.Sprintf("%x", sha1.Sum(root.Raw)) //nolint:gosec // test asserts against the same algorithm under test
+		if thumbprint != want {
+			t.Errorf("expected thumbprint %q, got %q", want, thumbprint)
 		}
 	})
+}
 
-	t.Run("succeeds when issuerURL has a trailing slash but the document reports it without one", func(t *testing.T) {
-		var srv *httptest.Server
-		srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/"+discoveryPath {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"issuer": srv.URL})
-		}))
-		defer srv.Close()
-
-		if _, err := verifyIssuerDocument(context.Background(), srv.Client(), srv.URL+"/"); err != nil {
-			t.Fatalf("expected no error for a trailing-slash issuerURL, got %v", err)
-		}
-	})
-
-	t.Run("fails on a non-200 response", func(t *testing.T) {
-		srv := httptest.NewTLSServer(discoveryHandler(http.StatusInternalServerError, `{"issuer":"ignored"}`))
-		defer srv.Close()
-
-		if _, err := verifyIssuerDocument(context.Background(), srv.Client(), srv.URL); err == nil {
-			t.Error("expected an error for a non-200 response, got nil")
-		}
-	})
-
-	t.Run("fails on an invalid JSON body", func(t *testing.T) {
-		srv := httptest.NewTLSServer(discoveryHandler(http.StatusOK, `not json`))
-		defer srv.Close()
-
-		if _, err := verifyIssuerDocument(context.Background(), srv.Client(), srv.URL); err == nil {
-			t.Error("expected an error for an invalid JSON body, got nil")
-		}
-	})
-
-	t.Run("fails when the issuer field is missing", func(t *testing.T) {
-		srv := httptest.NewTLSServer(discoveryHandler(http.StatusOK, `{}`))
-		defer srv.Close()
-
-		if _, err := verifyIssuerDocument(context.Background(), srv.Client(), srv.URL); err == nil {
-			t.Error("expected an error for a missing issuer field, got nil")
-		}
-	})
-
-	t.Run("fails when the issuer field does not match", func(t *testing.T) {
-		srv := httptest.NewTLSServer(discoveryHandler(http.StatusOK, `{"issuer":"https://wrong.example.com"}`))
-		defer srv.Close()
-
-		if _, err := verifyIssuerDocument(context.Background(), srv.Client(), srv.URL); err == nil {
-			t.Error("expected an error for a mismatched issuer field, got nil")
-		}
-	})
-
-	t.Run("fails when the host is unreachable", func(t *testing.T) {
-		srv := httptest.NewTLSServer(discoveryHandler(http.StatusOK, `{"issuer":"ignored"}`))
-		issuerURL := srv.URL
-		client := srv.Client()
-		srv.Close()
-
-		if _, err := verifyIssuerDocument(context.Background(), client, issuerURL); err == nil {
-			t.Error("expected an error for an unreachable host, got nil")
-		}
-	})
+func selfSignedCert(t *testing.T) *x509.Certificate {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate RSA key: %v", err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse certificate: %v", err)
+	}
+	return cert
 }

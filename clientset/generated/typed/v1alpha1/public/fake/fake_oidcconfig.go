@@ -35,7 +35,7 @@ func newFakeOidcConfigs(fake *FakeV1alpha1Public) v1alpha1public.OidcConfigInter
 		gentype.NewFakeClientWithList[*public.OidcConfig, *public.OidcConfigList](
 			fake.Fake,
 			"",
-			public.SchemeGroupVersion.WithResource("oidcconfigs"),
+			public.SchemeGroupVersion.WithResource("oidc_configs"),
 			public.SchemeGroupVersion.WithKind("OidcConfig"),
 			func() *public.OidcConfig { return &public.OidcConfig{} },
 			func() *public.OidcConfigList { return &public.OidcConfigList{} },

@@ -117,6 +117,59 @@ var _ = Describe("Cluster lifecycle", func() {
 		Expect(found).To(BeTrue(), "namespace desire should have deterministic document ID %s", nsDocID)
 	})
 
+	It("should write an oidc-signing-key ExternalSecret ApplyDesire when the Cluster has OidcConfigID set", func() {
+		By("creating an unmanaged OidcConfig CR referenced by the Cluster")
+		Expect(k8sClient.Create(ctx, newTestOidcConfig())).To(Succeed())
+
+		By("creating a Cluster CR with OidcConfigID set")
+		cluster := newTestClusterWithOidcConfig(clusterName)
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+
+		By("waiting for Placement to be created and Bound")
+		Eventually(func(g Gomega) {
+			var p hyperfleetv1alpha1.Placement
+			nn := types.NamespacedName{
+				Namespace: testNS,
+				Name:      clusterName + "-placement",
+			}
+			g.Expect(k8sClient.Get(ctx, nn, &p)).To(Succeed())
+			g.Expect(p.Status.Phase).To(Equal(hyperfleetv1alpha1.PlacementPhaseBound))
+		}).Should(Succeed())
+
+		By("waiting for the oidc-signing-key ExternalSecret ApplyDesire to appear in DynamoDB")
+		specsTable := mc + "-specs-applydesires"
+		Eventually(func(g Gomega) {
+			items := scanTable(specsTable)
+			g.Expect(len(items)).To(BeNumerically(">=", 8), "expected at least 8 ApplyDesires, got %d", len(items))
+			found := false
+			for _, item := range items {
+				resource := attrString(item, "spec", "targetItem", "resource")
+				name := attrString(item, "spec", "targetItem", "name")
+				if resource == "externalsecrets" && name == "oidc-signing-key" {
+					found = true
+					break
+				}
+			}
+			g.Expect(found).To(BeTrue(), "expected an externalsecrets/oidc-signing-key ApplyDesire")
+		}).Should(Succeed())
+
+		By("verifying HostedCluster references the oidc-signing-key Secret")
+		items := scanTable(specsTable)
+		var hcContent map[string]any
+		for _, item := range items {
+			if attrString(item, "spec", "targetItem", "resource") == "hostedclusters" {
+				raw := attrString(item, "spec_kubeContent")
+				Expect(raw).NotTo(BeEmpty())
+				Expect(json.Unmarshal([]byte(raw), &hcContent)).To(Succeed())
+				break
+			}
+		}
+		Expect(hcContent).NotTo(BeNil(), "HostedCluster not found in DynamoDB")
+		spec := hcContent["spec"].(map[string]any)
+		sask := spec["serviceAccountSigningKey"].(map[string]any)
+		Expect(sask["name"]).To(Equal("oidc-signing-key"))
+	})
+
 	It("should propagate HostedCluster status from ReadDesire to Cluster CR", func() {
 		By("creating a Cluster CR")
 		cluster := newTestCluster(clusterName)

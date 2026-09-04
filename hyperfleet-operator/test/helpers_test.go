@@ -57,6 +57,14 @@ func purgeResources() {
 			_ = c.Delete(ctx, &manifests.Items[i])
 		}
 	}
+	var oidcConfigs hyperfleetv1alpha1.OidcConfigList
+	if err := c.List(ctx, &oidcConfigs); err == nil {
+		for i := range oidcConfigs.Items {
+			oidcConfigs.Items[i].SetFinalizers(nil)
+			_ = c.Update(ctx, &oidcConfigs.Items[i])
+			_ = c.Delete(ctx, &oidcConfigs.Items[i])
+		}
+	}
 
 	Eventually(func() int {
 		total := 0
@@ -71,6 +79,10 @@ func purgeResources() {
 		var ml hyperfleetv1alpha1.ManifestList
 		if c.List(ctx, &ml) == nil {
 			total += len(ml.Items)
+		}
+		var ol hyperfleetv1alpha1.OidcConfigList
+		if c.List(ctx, &ol) == nil {
+			total += len(ol.Items)
 		}
 		return total
 	}, 5*time.Second, 50*time.Millisecond).Should(Equal(0))
@@ -198,6 +210,32 @@ func newTestCluster(name string) *hyperfleetv1alpha1.Cluster {
 					},
 				},
 			},
+		},
+	}
+}
+
+// newTestClusterWithOidcConfig returns a cluster fixture using the
+// OidcConfig-backed issuer path (OidcConfigID set).
+func newTestClusterWithOidcConfig(name string) *hyperfleetv1alpha1.Cluster {
+	cluster := newTestCluster(name)
+	cluster.Spec.OidcConfigID = "e2e-oidc-config"
+	cluster.Spec.AccountID = "e2e-account"
+	cluster.Labels = map[string]string{"hyperfleet.io/account-id": "e2e-account"}
+	return cluster
+}
+
+// newTestOidcConfig returns an unmanaged OidcConfig fixture matching the
+// OidcConfigID/account label set by newTestClusterWithOidcConfig, so the
+// operator's ClusterReconciler resolves oidcSigningKeyExternal=true for it.
+func newTestOidcConfig() *hyperfleetv1alpha1.OidcConfig {
+	return &hyperfleetv1alpha1.OidcConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "e2e-oidc-config", Namespace: "account-e2e-account"},
+		Spec: hyperfleetv1alpha1.OidcConfigSpec{
+			Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
+			IssuerUrl:        "https://oidc.e2e.example.com/e2e-oidc-config",
+			SecretArn:        "arn:aws:secretsmanager:us-east-1:111222333444:secret:e2e-test",
+			InstallerRoleArn: "arn:aws:iam::111222333444:role/installer",
+			AccountID:        "e2e-account",
 		},
 	}
 }
