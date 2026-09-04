@@ -28,7 +28,6 @@ var (
 	ErrClusterCreateNameCheck     APIError
 	ErrClusterCreateNameConflict  APIError
 	ErrClusterCreateNameTooLong   APIError
-	ErrClusterCreateIDExhausted   APIError
 	ErrClusterCreateInvalidSpec   APIError
 
 	ErrClusterGetNotFound APIError
@@ -222,8 +221,7 @@ func init() {
 	ErrClusterCreateNameCheck = APIError{Code: "CLUSTERS-MGMT-CREATE-004", HTTPStatus: http.StatusInternalServerError, Message: "Failed to validate cluster name"}
 	ErrClusterCreateNameConflict = APIError{Code: "CLUSTERS-MGMT-CREATE-005", HTTPStatus: http.StatusConflict, Message: "Cluster name already exists in this account", Reason: "a cluster named %q already exists in this account"}
 	ErrClusterCreateNameTooLong = APIError{Code: "CLUSTERS-MGMT-CREATE-006", HTTPStatus: http.StatusBadRequest, Message: fmt.Sprintf("Cluster name must be no more than %d characters", hyperfleetdb.MaxClusterNameLen)}
-	ErrClusterCreateIDExhausted = APIError{Code: "CLUSTERS-MGMT-CREATE-007", HTTPStatus: http.StatusInternalServerError, Message: "Unable to generate unique DNS identifier"}
-	ErrClusterCreateInvalidSpec = APIError{Code: "CLUSTERS-MGMT-CREATE-008", HTTPStatus: http.StatusBadRequest, Message: "Invalid cluster spec"}
+	ErrClusterCreateInvalidSpec = APIError{Code: "CLUSTERS-MGMT-CREATE-007", HTTPStatus: http.StatusBadRequest, Message: "Invalid cluster spec"}
 
 	// Cluster — Get
 	ErrClusterGetNotFound = APIError{Code: "CLUSTERS-MGMT-GET-001", HTTPStatus: http.StatusNotFound, Message: "Cluster not found"}

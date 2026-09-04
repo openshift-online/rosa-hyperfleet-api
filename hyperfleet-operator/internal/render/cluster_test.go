@@ -61,7 +61,7 @@ func testRegionalConfig() RegionalConfig {
 }
 
 func TestClusterResourcesCount(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), testRegionalConfig())
+	resources, err := ClusterResources(testCluster(), testRegionalConfig(), "f7a3.0.example.com")
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestClusterResourcesCount(t *testing.T) {
 }
 
 func TestClusterResourcesTypes(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), testRegionalConfig())
+	resources, err := ClusterResources(testCluster(), testRegionalConfig(), "f7a3.0.example.com")
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -99,24 +99,8 @@ func TestClusterResourcesTypes(t *testing.T) {
 	}
 }
 
-func TestHash4(t *testing.T) {
-	tests := []struct {
-		in, want string
-	}{
-		{"abc12345", "abc1"},
-		{"ab", "ab"},
-		{"abcd", "abcd"},
-		{"", ""},
-	}
-	for _, tt := range tests {
-		if got := hash4(tt.in); got != tt.want {
-			t.Errorf("hash4(%q) = %q, want %q", tt.in, got, tt.want)
-		}
-	}
-}
-
 func TestHostedClusterDNS(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), testRegionalConfig())
+	resources, err := ClusterResources(testCluster(), testRegionalConfig(), "f7a3.0.example.com")
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -132,12 +116,12 @@ func TestHostedClusterDNS(t *testing.T) {
 		t.Fatal("no hostedcluster resource found")
 	}
 
-	if got := hc.Spec.DNS.BaseDomain; got != "abc1.0.example.com" {
-		t.Errorf("dns.baseDomain = %q, want %q", got, "abc1.0.example.com")
+	if got := hc.Spec.DNS.BaseDomain; got != "f7a3.0.example.com" {
+		t.Errorf("dns.baseDomain = %q, want %q", got, "f7a3.0.example.com")
 	}
 
-	if got := hc.Spec.KubeAPIServerDNSName; got != "api.my-cluster.abc1.0.example.com" {
-		t.Errorf("kubeAPIServerDNSName = %q, want %q", got, "api.my-cluster.abc1.0.example.com")
+	if want := "api.my-cluster.f7a3.0.example.com"; hc.Spec.KubeAPIServerDNSName != want {
+		t.Errorf("kubeAPIServerDNSName = %q, want %q", hc.Spec.KubeAPIServerDNSName, want)
 	}
 
 	if got := hc.Spec.IssuerURL; got != "https://oidc.example.com/abc12345" {
@@ -146,7 +130,7 @@ func TestHostedClusterDNS(t *testing.T) {
 }
 
 func TestCreatorARNInAuthConfig(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), testRegionalConfig())
+	resources, err := ClusterResources(testCluster(), testRegionalConfig(), "f7a3.0.example.com")
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}

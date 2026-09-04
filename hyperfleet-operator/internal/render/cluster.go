@@ -15,15 +15,14 @@ import (
 )
 
 // ClusterResources generates the 7 Kubernetes resources for a cluster on the MC.
-func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, rcfg RegionalConfig) ([]Resource, error) {
+// baseDomain is the fully assembled DNS base domain from the DNSReservation
+// (e.g. "f7a3.0.openshiftapps.com").
+func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, rcfg RegionalConfig, baseDomain string) ([]Resource, error) {
 	clusterID := ClusterIDFromNamespace(cluster.Namespace)
 	clusterName := cluster.Name // human-readable
 	ns := cluster.Namespace     // already "cluster-<uuid>"
-	h4 := hash4(clusterID)
-	// Zone shard 0 is hardcoded; will be dynamically assigned per-cluster in a future phase.
-	zoneDomain := fmt.Sprintf("0.%s", rcfg.BaseDomain)
 
-	hc, err := hostedCluster(cluster, h4, zoneDomain)
+	hc, err := hostedCluster(cluster, baseDomain)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +32,7 @@ func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, rcfg RegionalConfig) 
 		clusterConfig(clusterID, clusterName, ns),
 		awsIAMAuthConfig(clusterID, clusterName, ns, cluster.Spec.CreatorARN),
 		pullSecret(clusterID, ns),
-		apiServingCert(clusterID, clusterName, h4, zoneDomain, ns),
+		apiServingCert(clusterID, clusterName, baseDomain, ns),
 		hc,
 		sshKey(clusterID, ns),
 	}, nil
@@ -151,7 +150,7 @@ func pullSecret(clusterID, ns string) Resource {
 	}
 }
 
-func apiServingCert(clusterID, clusterName, h4, baseDomain, ns string) Resource {
+func apiServingCert(clusterID, clusterName, baseDomain, ns string) Resource {
 	return Resource{
 		Group: "cert-manager.io", Version: "v1", Resource: "certificates",
 		Name: "api-serving-cert", Namespace: ns,
@@ -171,19 +170,18 @@ func apiServingCert(clusterID, clusterName, h4, baseDomain, ns string) Resource 
 					Kind: "ClusterIssuer",
 				},
 				DNSNames: []string{
-					fmt.Sprintf("*.%s.%s.%s", clusterName, h4, baseDomain),
+					fmt.Sprintf("*.%s.%s", clusterName, baseDomain),
 				},
 			},
 		},
 	}
 }
 
-func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (Resource, error) {
+func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, baseDomain string) (Resource, error) {
 	clusterID := ClusterIDFromNamespace(cluster.Namespace)
 	clusterName := cluster.Name // human-readable
 	ns := cluster.Namespace     // already "cluster-<uuid>"
-	baseDomain := zoneDomain
-	apiHost := fmt.Sprintf("api.%s.%s.%s", clusterName, h4, baseDomain)
+	apiHost := fmt.Sprintf("api.%s.%s", clusterName, baseDomain)
 
 	hcSpec, err := toHostedClusterSpec(&cluster.Spec.HostedCluster)
 	if err != nil {
@@ -193,12 +191,12 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (
 	// --- Platform-managed overrides (always set by the operator) ---
 	hcSpec.InfraID = clusterID
 	hcSpec.DNS = hypershiftv1beta1.DNSSpec{
-		BaseDomain: fmt.Sprintf("%s.%s", h4, baseDomain),
+		BaseDomain: baseDomain,
 	}
 	hcSpec.PullSecret = corev1.LocalObjectReference{Name: "pull-secret"}
 	hcSpec.SSHKey = corev1.LocalObjectReference{Name: "ssh-key"}
 	hcSpec.KubeAPIServerDNSName = apiHost
-	hcSpec.Services = servicePublishingStrategies(clusterName, h4, baseDomain)
+	hcSpec.Services = servicePublishingStrategies(clusterName, baseDomain)
 	if hcSpec.Configuration == nil {
 		hcSpec.Configuration = apiServerConfiguration()
 	} else {
@@ -266,8 +264,8 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) (
 	}, nil
 }
 
-func servicePublishingStrategies(clusterName, h4, baseDomain string) []hypershiftv1beta1.ServicePublishingStrategyMapping {
-	apiHost := fmt.Sprintf("api.%s.%s.%s", clusterName, h4, baseDomain)
+func servicePublishingStrategies(clusterName, baseDomain string) []hypershiftv1beta1.ServicePublishingStrategyMapping {
+	apiHost := fmt.Sprintf("api.%s.%s", clusterName, baseDomain)
 	return []hypershiftv1beta1.ServicePublishingStrategyMapping{
 		{
 			Service: hypershiftv1beta1.APIServer,
@@ -280,7 +278,7 @@ func servicePublishingStrategies(clusterName, h4, baseDomain string) []hypershif
 			Service: hypershiftv1beta1.OAuthServer,
 			ServicePublishingStrategy: hypershiftv1beta1.ServicePublishingStrategy{
 				Type:  hypershiftv1beta1.Route,
-				Route: &hypershiftv1beta1.RoutePublishingStrategy{Hostname: fmt.Sprintf("oauth.%s.%s.%s", clusterName, h4, baseDomain)},
+				Route: &hypershiftv1beta1.RoutePublishingStrategy{Hostname: fmt.Sprintf("oauth.%s.%s", clusterName, baseDomain)},
 			},
 		},
 		{
