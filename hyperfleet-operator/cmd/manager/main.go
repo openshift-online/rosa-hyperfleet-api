@@ -218,7 +218,7 @@ func main() {
 		mgr.GetClient(),
 		[]string{dynamo.TableSuffixStatusApplyDesires, dynamo.TableSuffixStatusReadDesires},
 		func(documentID string, _ hd.Item) { eventRouter.Dispatch(documentID) },
-		ctrl.Log.WithName("statusstream"),		hd.Options{
+		ctrl.Log.WithName("statusstream"), hd.Options{
 			PollInterval:      watcherPollInterval,
 			RelistInterval:    watcherRelistInterval,
 			MaxLookbackWindow: watcherMaxLookback,

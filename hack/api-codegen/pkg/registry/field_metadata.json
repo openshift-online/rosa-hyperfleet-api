@@ -441,8 +441,14 @@
     "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
   },
   {
-    "fieldPath": "spec.hostedCluster.platform",
+    "fieldPath": "spec.hostedCluster.platform.aws",
     "writeMode": "mutable",
+    "ownerType": "Cluster",
+    "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.platform.type",
+    "writeMode": "immutable",
     "ownerType": "Cluster",
     "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
   },
@@ -929,6 +935,48 @@
     "ownerGVK": ""
   },
   {
+    "fieldPath": "allowedKernelArguments",
+    "writeMode": "immutable",
+    "featureGate": "HyperFleetMachineConfig",
+    "ownerType": "MachineConfigSpec",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "extensions",
+    "writeMode": "service-set",
+    "hidden": true,
+    "ownerType": "MachineConfigSpec",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "files",
+    "writeMode": "service-set",
+    "hidden": true,
+    "ownerType": "MachineConfigSpec",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "kernelArguments",
+    "writeMode": "service-set",
+    "hidden": true,
+    "ownerType": "MachineConfigSpec",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "kernelType",
+    "writeMode": "service-set",
+    "hidden": true,
+    "ownerType": "MachineConfigSpec",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "systemdUnits",
+    "writeMode": "service-set",
+    "hidden": true,
+    "ownerType": "MachineConfigSpec",
+    "ownerGVK": ""
+  },
+  {
     "fieldPath": "spec.accountId",
     "writeMode": "service-set",
     "hidden": true,
@@ -1030,8 +1078,14 @@
     "ownerGVK": "hyperfleet.io/v1alpha1.NodePool"
   },
   {
-    "fieldPath": "spec.nodePool.platform",
+    "fieldPath": "spec.nodePool.platform.aws",
     "writeMode": "mutable",
+    "ownerType": "NodePool",
+    "ownerGVK": "hyperfleet.io/v1alpha1.NodePool"
+  },
+  {
+    "fieldPath": "spec.nodePool.platform.type",
+    "writeMode": "immutable",
     "ownerType": "NodePool",
     "ownerGVK": "hyperfleet.io/v1alpha1.NodePool"
   },
@@ -1060,6 +1114,18 @@
     "hidden": true,
     "ownerType": "NodePool",
     "ownerGVK": "hyperfleet.io/v1alpha1.NodePool"
+  },
+  {
+    "fieldPath": "aws",
+    "writeMode": "mutable",
+    "ownerType": "NodePoolPlatform",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "type",
+    "writeMode": "immutable",
+    "ownerType": "NodePoolPlatform",
+    "ownerGVK": ""
   },
   {
     "fieldPath": "spec.accountId",
@@ -1091,5 +1157,17 @@
     "writeMode": "immutable",
     "ownerType": "OidcConfig",
     "ownerGVK": "hyperfleet.io/v1alpha1.OidcConfig"
+  },
+  {
+    "fieldPath": "aws",
+    "writeMode": "mutable",
+    "ownerType": "PlatformSpec",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "type",
+    "writeMode": "immutable",
+    "ownerType": "PlatformSpec",
+    "ownerGVK": ""
   }
 ]

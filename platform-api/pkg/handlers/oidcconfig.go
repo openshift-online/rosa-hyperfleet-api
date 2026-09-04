@@ -122,6 +122,16 @@ func (h *OidcConfigHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrOidcConfigCreateMissingFields, h.logger)
 		return
 	}
+	// Reject semantically empty specs (nil, empty decoded maps, whitespace variants).
+	var rawSpec map[string]any
+	if err := json.Unmarshal(envelope.Spec, &rawSpec); err != nil {
+		writeAPIError(w, ErrOidcConfigCreateInvalidBody, h.logger)
+		return
+	}
+	if len(rawSpec) == 0 {
+		writeAPIError(w, ErrOidcConfigCreateMissingFields, h.logger)
+		return
+	}
 
 	if req.Spec.Type == "" {
 		writeAPIError(w, ErrOidcConfigCreateMissingFields, h.logger)

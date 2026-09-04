@@ -320,11 +320,14 @@ func TestOidcConfigHandler_Create_InvalidJSON(t *testing.T) {
 func TestOidcConfigHandler_Create_MissingFields(t *testing.T) {
 	tests := []struct {
 		name string
-		body map[string]any
+		body []byte
 	}{
-		{"missing spec", map[string]any{}},
-		{"missing type", map[string]any{"spec": map[string]any{}}},
-		{"empty type", map[string]any{"spec": map[string]any{"type": ""}}},
+		{"missing spec", []byte(`{}`)},
+		{"missing type", []byte(`{"spec":{}}`)},
+		{"empty type", []byte(`{"spec":{"type":""}}`)},
+		{"whitespace spec", []byte(`{"spec":{ }}`)},
+		{"whitespace with newline spec", []byte(`{"spec":{
+}}`)},
 	}
 
 	for _, tt := range tests {
@@ -334,8 +337,7 @@ func TestOidcConfigHandler_Create_MissingFields(t *testing.T) {
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
-			body, _ := json.Marshal(tt.body)
-			req := httptest.NewRequest(http.MethodPost, "/api/v0/oidc_configs", bytes.NewReader(body))
+			req := httptest.NewRequest(http.MethodPost, "/api/v0/oidc_configs", bytes.NewReader(tt.body))
 			req = req.WithContext(testContext(testAccountID))
 
 			w := httptest.NewRecorder()

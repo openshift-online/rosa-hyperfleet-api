@@ -50,6 +50,9 @@ func TestNodePoolHandler_Update_MissingSpec(t *testing.T) {
 	}{
 		{"no spec key", mustMarshal(t, map[string]any{})},
 		{"empty spec object", mustMarshal(t, map[string]any{"spec": map[string]any{}})},
+		{"whitespace spec", []byte(`{"spec":{ }}`)},
+		{"whitespace with newline spec", []byte(`{"spec":{
+}}`)},
 	}
 
 	for _, tc := range cases {

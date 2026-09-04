@@ -228,9 +228,13 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reject absent spec (nil) and empty spec object ({}) — both are no-ops
-	// that indicate a malformed request rather than a deliberate partial update.
-	if len(envelope.Spec) == 0 || string(envelope.Spec) == "{}" {
+	// Reject semantically empty specs (nil, empty decoded maps, whitespace variants).
+	var rawSpec map[string]any
+	if err := json.Unmarshal(envelope.Spec, &rawSpec); err != nil {
+		writeAPIError(w, ErrNodePoolUpdateInvalidBody, h.logger)
+		return
+	}
+	if len(rawSpec) == 0 {
 		writeAPIError(w, ErrNodePoolUpdateMissingFields, h.logger)
 		return
 	}

@@ -1,6 +1,6 @@
 module github.com/openshift-online/rosa-hyperfleet-api/test
 
-go 1.26.3
+go 1.26.5
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.7
@@ -12,7 +12,7 @@ require (
 	github.com/openshift-online/rosa-hyperfleet-api/api v0.0.0
 	github.com/openshift-online/rosa-hyperfleet-api/clientset v0.0.0
 	github.com/openshift/hypershift/api v0.0.0-20260625052409-9acec4759a16
-	k8s.io/apimachinery v0.36.0
+	k8s.io/apimachinery v0.36.3
 )
 
 require (

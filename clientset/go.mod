@@ -1,12 +1,14 @@
 module github.com/openshift-online/rosa-hyperfleet-api/clientset
 
-go 1.26.3
+go 1.26.5
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.43.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.37
 	github.com/openshift-online/rosa-hyperfleet-api/api v0.0.0
-	k8s.io/apimachinery v0.36.0
+	github.com/openshift/hypershift/api v0.0.0-20260625052409-9acec4759a16
+	gopkg.in/yaml.v3 v3.0.1
+	k8s.io/apimachinery v0.36.3
 	k8s.io/client-go v0.36.0
 )
 
@@ -33,11 +35,11 @@ require (
 	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80 // indirect
-	github.com/openshift/hypershift/api v0.0.0-20260625052409-9acec4759a16 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect

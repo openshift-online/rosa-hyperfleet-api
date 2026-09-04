@@ -236,6 +236,13 @@ func (s *MarkerScanner) isRootType(typeName string) bool {
 		return true
 	}
 
+	// Upstream-reduced types are root types regardless of naming convention,
+	// because their fields carry explicit +hyperfleet:write-mode markers that
+	// generateSyntheticPaths must be able to read from byOwner.
+	if _, ok := s.upstreamReducedTypes[typeName]; ok {
+		return true
+	}
+
 	// Fallback for testing and special types: use the original heuristic
 	// This handles types that are not registered CRDs but should still be scanned as roots
 	return !strings.HasSuffix(typeName, "Spec") &&

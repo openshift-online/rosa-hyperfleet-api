@@ -2,6 +2,8 @@
 
 package conversion
 
+import "strings"
+
 // MirrorTypeMapping defines a type that we mirror from HyperShift upstream
 // and need automatic conversion logic for
 type MirrorTypeMapping struct {
@@ -32,6 +34,23 @@ var mirrorTypeMappings = []MirrorTypeMapping{
 		ConversionStrategy: "json-roundtrip",
 	},
 
+	// Platform: HyperFleet owns a reduced mirror (api/v1alpha1/cluster_types.go) that exposes only
+	// the AWS platform, excluding Azure, GCP, OpenStack, and other non-supported platforms.
+	{
+		FieldName:          "Platform",
+		HyperFleetType:     "v1alpha1.PlatformSpec",
+		HyperShiftType:     "v1beta1.PlatformSpec",
+		ConversionStrategy: "json-roundtrip",
+	},
+
+	// NodePool Platform: same as above for node pool platform configuration.
+	{
+		FieldName:          "Platform",
+		HyperFleetType:     "v1alpha1.NodePoolPlatform",
+		HyperShiftType:     "v1beta1.NodePoolPlatform",
+		ConversionStrategy: "json-roundtrip",
+	},
+
 	// Add more mirror types here as needed when types diverge between CRD and REST
 	// Example:
 	// {
@@ -42,8 +61,8 @@ var mirrorTypeMappings = []MirrorTypeMapping{
 	// },
 }
 
-// GetMirrorMapping returns the mirror type mapping for a given field name
-// Returns nil if the field is not a mirror type
+// GetMirrorMapping returns the mirror type mapping for a given field name.
+// Returns nil if the field is not a mirror type.
 func GetMirrorMapping(fieldName string) *MirrorTypeMapping {
 	for i := range mirrorTypeMappings {
 		if mirrorTypeMappings[i].FieldName == fieldName {
@@ -53,7 +72,30 @@ func GetMirrorMapping(fieldName string) *MirrorTypeMapping {
 	return nil
 }
 
-// IsMirrorType returns true if the field name is registered as a mirror type
+// GetMirrorMappingByHyperShiftType returns the mirror mapping whose upstream
+// HyperShift type matches hsTypeName (the base name without a package prefix,
+// e.g. "PlatformSpec"). This is used to disambiguate when the same field name
+// appears in multiple passthrough types with different HyperShift base types.
+func GetMirrorMappingByHyperShiftType(hsTypeName string) *MirrorTypeMapping {
+	for i := range mirrorTypeMappings {
+		// HyperShiftType is "v1beta1.Foo" — compare just the base name.
+		parts := strings.SplitN(mirrorTypeMappings[i].HyperShiftType, ".", 2)
+		baseName := parts[len(parts)-1]
+		if baseName == hsTypeName {
+			return &mirrorTypeMappings[i]
+		}
+	}
+	return nil
+}
+
+// LocalTypeName returns the base (unqualified) Go type name from HyperFleetType.
+// e.g. "v1alpha1.PlatformSpec" → "PlatformSpec".
+func (m *MirrorTypeMapping) LocalTypeName() string {
+	parts := strings.SplitN(m.HyperFleetType, ".", 2)
+	return parts[len(parts)-1]
+}
+
+// IsMirrorType returns true if the field name is registered as a mirror type.
 func IsMirrorType(fieldName string) bool {
 	return GetMirrorMapping(fieldName) != nil
 }

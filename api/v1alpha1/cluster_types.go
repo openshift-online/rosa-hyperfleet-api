@@ -183,3 +183,22 @@ func init() {
 		return nil
 	})
 }
+
+// PlatformSpec mirrors PlatformSpec from upstream HyperShift, exposing only the AWS
+// platform. Azure, GCP, OpenStack, and other platforms are intentionally omitted —
+// HyperFleet only supports AWS-backed clusters.
+// +hyperfleet:upstream-reduced-object=hypershiftv1beta1.PlatformSpec
+// +k8s:openapi-gen=true
+type PlatformSpec struct {
+	// type specifies the underlying infrastructure provider for the cluster.
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=immutable
+	// +required
+	Type hypershiftv1beta1.PlatformType `json:"type"`
+
+	// aws specifies AWS-specific configuration for the cluster.
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=mutable
+	// +optional
+	AWS *hypershiftv1beta1.AWSPlatformSpec `json:"aws,omitempty"`
+}

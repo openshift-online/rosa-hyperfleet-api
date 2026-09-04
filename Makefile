@@ -48,6 +48,7 @@ GOLANGCI_LINT    := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
 CONTROLLER_GEN   := $(abspath $(TOOLS_BIN_DIR)/controller-gen)
 CLIENT_GEN       := $(abspath $(TOOLS_BIN_DIR)/client-gen)
 BRIDGE_GEN         := $(abspath $(TOOLS_BIN_DIR)/bridge-gen)
+PATHBIND_GEN       := $(abspath $(TOOLS_BIN_DIR)/pathbind-gen)
 SETUP_ENVTEST    := $(abspath $(TOOLS_BIN_DIR)/setup-envtest)
 GINKGO           := $(abspath $(TOOLS_BIN_DIR)/ginkgo)
 
@@ -86,6 +87,9 @@ $(CLIENT_GEN): $(TOOLS_DIR)/go.mod
 
 $(BRIDGE_GEN): hack/clientset/cmd/bridge-gen/main.go
 	cd hack/clientset/cmd/bridge-gen && go build -o $(BRIDGE_GEN) .
+
+$(PATHBIND_GEN): $(wildcard clientset/cmd/pathbind-gen/*.go clientset/cmd/pathbind-gen/templates/*.go.tmpl)
+	cd clientset && go build -o $(PATHBIND_GEN) ./cmd/pathbind-gen
 
 $(GINKGO): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); go build -tags=tools -o $(abspath $(TOOLS_BIN_DIR))/ginkgo github.com/onsi/ginkgo/v2/ginkgo
@@ -338,7 +342,7 @@ deps:
 CRD_VARIANTS     := $(abspath bin/crd-variants)
 CRD_BASES_DIR    := hyperfleet-operator/config/crd/bases
 
-manifests: $(CONTROLLER_GEN) build-api-codegen
+manifests: codegen-conversion $(CONTROLLER_GEN) build-api-codegen
 	cd hyperfleet-operator && $(CONTROLLER_GEN) crd:allowDangerousTypes=true paths="../api/v1alpha1" output:crd:dir=config/crd/bases
 	$(CRD_VARIANTS) --strip-passthrough-cel --api-dir api/v1alpha1 --crd-dir $(CRD_BASES_DIR)
 
@@ -384,7 +388,7 @@ codegen-passthrough-clobber:
   		-package v1alpha1 \
 		-registry ../hack/api-codegen/pkg/registry/field_metadata.json
 
-codegen-registry: generate-deepcopy build-api-codegen
+codegen-registry: build-api-codegen
 	./bin/marker-scanner \
 		-input-dirs api/v1alpha1 \
 		-output-file hack/api-codegen/pkg/registry/field_metadata.go \
@@ -401,11 +405,24 @@ verify-codegen: codegen
 	git diff --exit-code hack/api-codegen/pkg/registry/
 
 # generate runs all code generators in dependency order.
-# codegen-registry already depends on codegen-passthrough and generate-deepcopy,
-# so those are transitively covered; they are listed explicitly here for clarity.
-generate: codegen-registry manifests codegen-conversion generate-clientset generate-openapi
+# manifests depends on codegen-conversion, ensuring conversion REST types are
+# generated before deepcopy processes passthrough files that reference them.
+generate-pathbind-draft: $(PATHBIND_GEN) codegen-registry generate-openapi
+	$(PATHBIND_GEN) \
+		--mode=init \
+		--registry=hack/api-codegen/pkg/registry/field_metadata.json \
+		--openapi=api/v1alpha1/public/openapi.yaml \
+		--output=clientset/pathbind/pathbind-draft.yaml
 
-verify: verify-codegen verify-conversion verify-clientset verify-openapi verify-mod
+# codegen-conversion must run before manifests (generate-deepcopy) because
+# conversion-gen creates public REST types (e.g. platformspec_types.go) that
+# the deepcopy generator needs to resolve type references in passthrough files.
+generate: codegen-registry codegen-conversion generate-deepcopy manifests generate-clientset generate-openapi generate-pathbind-draft
+
+verify-pathbind-draft: generate-pathbind-draft
+	git diff --exit-code clientset/pathbind/pathbind-draft.yaml
+
+verify: verify-codegen verify-conversion verify-clientset verify-openapi verify-pathbind-draft verify-mod
 
 CONVERSION_OUTPUT_DIR   ?= platform-api/pkg/conversion/v1alpha1
 CONVERSION_OUTPUT_PKG   ?= github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/conversion
@@ -431,7 +448,7 @@ verify-conversion: codegen-conversion
 generate-openapi: codegen-conversion
 	cd hack/api-codegen && go build -o ../../bin/openapi-gen ./cmd/openapi-gen
 	./bin/openapi-gen \
-		-input-dirs ./api/v1alpha1 \
+		-input-dirs ./api/v1alpha1/public \
 		-output-file $(OPENAPI_GENERATED)
 	# TODO: auto-discover schemas via +hyperfleet:public-api=true marker so new CRDs
 	# are included automatically — requires extending openapi-merge to scan
@@ -439,7 +456,7 @@ generate-openapi: codegen-conversion
 	./bin/openapi-merge \
 		-spec $(OPENAPI_SPEC) \
 		-generated $(OPENAPI_GENERATED) \
-		-schemas Cluster,ClusterList,ClusterSpec,ClusterStatus,NodePool,NodePoolList,NodePoolSpec,NodePoolStatus,OidcConfig,OidcConfigList,OidcConfigStatus,PlacementReference,HostedClusterSpecPassthrough,NodePoolSpecPassthrough,ClusterConfiguration,KubeletConfig,MachineConfigSpec
+		-schemas Cluster,ClusterList,ClusterSpec,ClusterStatus,NodePool,NodePoolList,NodePoolSpec,NodePoolStatus,OidcConfig,OidcConfigList,OidcConfigStatus,PlacementReference,HostedClusterSpecPassthrough,NodePoolSpecPassthrough,ClusterConfiguration,KubeletConfig,MachineConfigSpec,PlatformSpec,NodePoolPlatform
 
 verify-openapi: generate-openapi
 	git diff --exit-code $(OPENAPI_SPEC)

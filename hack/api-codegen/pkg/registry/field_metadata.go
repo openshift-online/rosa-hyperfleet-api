@@ -464,9 +464,15 @@ var FieldRegistry = TypedFieldRegistry{
 			OwnerType: "Cluster",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
 		},
-		"spec.hostedCluster.platform": {
-			FieldPath: "spec.hostedCluster.platform",
+		"spec.hostedCluster.platform.aws": {
+			FieldPath: "spec.hostedCluster.platform.aws",
 			WriteMode: Mutable,
+			OwnerType: "Cluster",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
+		},
+		"spec.hostedCluster.platform.type": {
+			FieldPath: "spec.hostedCluster.platform.type",
+			WriteMode: Immutable,
 			OwnerType: "Cluster",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
 		},
@@ -957,6 +963,50 @@ var FieldRegistry = TypedFieldRegistry{
 			OwnerGVK:  "",
 		},
 	},
+	"MachineConfigSpec": {
+		"allowedKernelArguments": {
+			FieldPath:   "allowedKernelArguments",
+			WriteMode:   Immutable,
+			FeatureGate: "HyperFleetMachineConfig",
+			OwnerType:   "MachineConfigSpec",
+			OwnerGVK:    "",
+		},
+		"extensions": {
+			FieldPath: "extensions",
+			WriteMode: ServiceSet,
+			Hidden:    true,
+			OwnerType: "MachineConfigSpec",
+			OwnerGVK:  "",
+		},
+		"files": {
+			FieldPath: "files",
+			WriteMode: ServiceSet,
+			Hidden:    true,
+			OwnerType: "MachineConfigSpec",
+			OwnerGVK:  "",
+		},
+		"kernelArguments": {
+			FieldPath: "kernelArguments",
+			WriteMode: ServiceSet,
+			Hidden:    true,
+			OwnerType: "MachineConfigSpec",
+			OwnerGVK:  "",
+		},
+		"kernelType": {
+			FieldPath: "kernelType",
+			WriteMode: ServiceSet,
+			Hidden:    true,
+			OwnerType: "MachineConfigSpec",
+			OwnerGVK:  "",
+		},
+		"systemdUnits": {
+			FieldPath: "systemdUnits",
+			WriteMode: ServiceSet,
+			Hidden:    true,
+			OwnerType: "MachineConfigSpec",
+			OwnerGVK:  "",
+		},
+	},
 	"NodePool": {
 		"spec.accountId": {
 			FieldPath: "spec.accountId",
@@ -1059,9 +1109,15 @@ var FieldRegistry = TypedFieldRegistry{
 			OwnerType: "NodePool",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.NodePool",
 		},
-		"spec.nodePool.platform": {
-			FieldPath: "spec.nodePool.platform",
+		"spec.nodePool.platform.aws": {
+			FieldPath: "spec.nodePool.platform.aws",
 			WriteMode: Mutable,
+			OwnerType: "NodePool",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.NodePool",
+		},
+		"spec.nodePool.platform.type": {
+			FieldPath: "spec.nodePool.platform.type",
+			WriteMode: Immutable,
 			OwnerType: "NodePool",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.NodePool",
 		},
@@ -1090,6 +1146,20 @@ var FieldRegistry = TypedFieldRegistry{
 			Hidden:    true,
 			OwnerType: "NodePool",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.NodePool",
+		},
+	},
+	"NodePoolPlatform": {
+		"aws": {
+			FieldPath: "aws",
+			WriteMode: Mutable,
+			OwnerType: "NodePoolPlatform",
+			OwnerGVK:  "",
+		},
+		"type": {
+			FieldPath: "type",
+			WriteMode: Immutable,
+			OwnerType: "NodePoolPlatform",
+			OwnerGVK:  "",
 		},
 	},
 	"OidcConfig": {
@@ -1123,6 +1193,20 @@ var FieldRegistry = TypedFieldRegistry{
 			WriteMode: Immutable,
 			OwnerType: "OidcConfig",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.OidcConfig",
+		},
+	},
+	"PlatformSpec": {
+		"aws": {
+			FieldPath: "aws",
+			WriteMode: Mutable,
+			OwnerType: "PlatformSpec",
+			OwnerGVK:  "",
+		},
+		"type": {
+			FieldPath: "type",
+			WriteMode: Immutable,
+			OwnerType: "PlatformSpec",
+			OwnerGVK:  "",
 		},
 	},
 }

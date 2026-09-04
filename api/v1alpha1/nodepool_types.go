@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -127,4 +128,22 @@ func init() {
 		s.AddKnownTypes(SchemeGroupVersion, &NodePool{}, &NodePoolList{})
 		return nil
 	})
+}
+
+// NodePoolPlatform mirrors NodePoolPlatform from upstream HyperShift, exposing only
+// the AWS platform. Other platforms are intentionally omitted.
+// +hyperfleet:upstream-reduced-object=hypershiftv1beta1.NodePoolPlatform
+// +k8s:openapi-gen=true
+type NodePoolPlatform struct {
+	// type specifies the platform type for this NodePool.
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=immutable
+	// +required
+	Type hypershiftv1beta1.PlatformType `json:"type"`
+
+	// aws specifies the platform-specific AWS configuration for this NodePool.
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=mutable
+	// +optional
+	AWS *hypershiftv1beta1.AWSNodePoolPlatform `json:"aws,omitempty"`
 }

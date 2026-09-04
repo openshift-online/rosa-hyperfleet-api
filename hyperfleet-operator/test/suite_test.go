@@ -91,14 +91,16 @@ var _ = BeforeSuite(func() {
 	dsn := fmt.Sprintf("postgres://test:test@127.0.0.1:%s/pgruntime_test?sslmode=disable", pgPort)
 
 	By("waiting for Postgres to become ready")
+	// TCP port-open is insufficient: the sclorg image initializes the database
+	// after the port starts listening. Use pg_isready so we wait until Postgres
+	// is actually accepting protocol-level connections.
 	Eventually(func() error {
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%s", pgPort), time.Second)
-		if err != nil {
-			return err
-		}
-		_ = conn.Close()
-		return nil
-	}, 30*time.Second, 200*time.Millisecond).Should(Succeed(), "Postgres did not become ready")
+		// Bind the command with a deadline to prevent indefinite blocking.
+		opCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return exec.CommandContext(opCtx, containerTool, "exec", pgContainerName,
+			"pg_isready", "-U", "test", "-d", "pgruntime_test").Run()
+	}, 30*time.Second, 500*time.Millisecond).Should(Succeed(), "Postgres did not become ready")
 
 	// ── DynamoDB Local ──
 
@@ -120,7 +122,10 @@ var _ = BeforeSuite(func() {
 	})
 
 	Eventually(func() error {
-		_, err := dynamoDBCli.ListTables(ctx, &dynamodb.ListTablesInput{})
+		// Bind the ListTables call with a deadline to prevent indefinite blocking.
+		opCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err := dynamoDBCli.ListTables(opCtx, &dynamodb.ListTablesInput{})
 		return err
 	}, 30*time.Second, 500*time.Millisecond).Should(Succeed(), "DynamoDB Local did not become ready")
 

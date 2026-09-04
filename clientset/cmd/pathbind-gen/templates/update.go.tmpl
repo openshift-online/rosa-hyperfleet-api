@@ -1,0 +1,103 @@
+{{$res := .ResourceName}}
+{{$sdk := .SDKShortType}}
+{{$rt  := .RuntimeType}}
+{{$ns  := .Namespaced}}
+
+// {{$res}}UpdateInput holds mutable inputs for {{$res}} update.
+type {{$res}}UpdateInput struct {
+{{- range .UpdateFields}}
+	{{.GoName}} {{.Type}} `hfsdk:"{{.Path}}"`
+{{- end}}
+}
+
+// {{$res}}UpdatePlatformAPIFlags lists the cobra flag names registered by
+// Register{{$res}}UpdateFlags. Consumers use this to mark them in a help section.
+var {{$res}}UpdatePlatformAPIFlags = []string{
+{{- range .UpdateFlagFields}}
+	{{printf "%q" .Flag}},
+{{- end}}
+}
+
+// Register{{$res}}UpdateFlags registers cobra flags for mutable {{$res}} fields.
+func Register{{$res}}UpdateFlags(cmd *cobra.Command, input *{{$res}}UpdateInput) {
+	f := cmd.Flags()
+{{- range .UpdateFlagFields}}
+	{{flagCall .}}
+{{- end}}
+}
+
+// {{$res}}UpdateHandler is implemented by consumers to provide {{$res}} update logic.
+type {{$res}}UpdateHandler interface {
+	// Prompt fills missing inputs interactively (called only when interactive.Enabled()).
+	// Embed Generated{{$res}}UpdatePrompt to inherit auto-generated prompting for required fields.
+	Prompt(ctx context.Context, r {{$rt}}, cmd *cobra.Command, input *{{$res}}UpdateInput) error
+	// PreRequest validates and transforms inputs before Expand.
+	PreRequest(ctx context.Context, r {{$rt}}, input *{{$res}}UpdateInput) error
+	// PostExpand sets SDK fields pathbind cannot express.
+	PostExpand(ctx context.Context, r {{$rt}}, input *{{$res}}UpdateInput, obj *v1alpha1.{{$sdk}}) error
+	// PostResponse handles the SDK response.
+	PostResponse(ctx context.Context, r {{$rt}}, obj *v1alpha1.{{$sdk}}) error
+}
+
+// Generated{{$res}}UpdatePrompt provides auto-generated interactive prompting for required update fields.
+// Embed in your {{$res}}UpdateHandler to inherit it; override Prompt() to extend.
+type Generated{{$res}}UpdatePrompt struct{}
+
+func (Generated{{$res}}UpdatePrompt) Prompt(ctx context.Context, r {{$rt}}, cmd *cobra.Command, input *{{$res}}UpdateInput) error {
+{{- if .RequiredUpdateFlagFields}}
+	var err error
+{{- range .RequiredUpdateFlagFields}}
+	if {{emptyCheck .}} {
+		{{promptAssign .}}
+		if err != nil { return err }
+	}
+{{- end}}
+{{- end}}
+	return nil
+}
+
+// normalize{{$res}}UpdateInput clears numeric pointer fields that were pre-allocated by
+// cobra but not actually set by the user. This allows pathbind.Expand to distinguish
+// between "not set" (nil) and "explicitly set to zero".
+func normalize{{$res}}UpdateInput(cmd *cobra.Command, input *{{$res}}UpdateInput) {
+{{- if .NumericPtrFields}}
+	if cmd == nil {
+		return
+	}
+	{{range .NumericPtrFields}}
+	{{- if contains .Operations "update"}}
+	if cmd.Flags().Lookup({{printf "%q" .FlagName}}) != nil && !cmd.Flag({{printf "%q" .FlagName}}).Changed &&
+		input.{{.GoName}} != nil {
+		input.{{.GoName}} = nil
+	}
+	{{- end}}
+	{{- end}}
+{{- end}}
+}
+
+// RunUpdate{{$res}} executes the update dispatch. Generated; do not edit.
+// uid is the server-assigned UID of the resource to update.
+func RunUpdate{{$res}}(ctx context.Context, r {{$rt}}, cmd *cobra.Command, uid string, input *{{$res}}UpdateInput, h {{$res}}UpdateHandler{{if $ns}}, namespace string{{end}}) error {
+	if interactive.Enabled() {
+		if err := h.Prompt(ctx, r, cmd, input); err != nil {
+			return err
+		}
+	}
+	if err := h.PreRequest(ctx, r, input); err != nil {
+		return err
+	}
+	normalize{{$res}}UpdateInput(cmd, input)
+	obj := &v1alpha1.{{$sdk}}{}
+	if err := pathbind.Expand(ctx, *input, obj); err != nil {
+		return err
+	}
+	obj.Name = uid
+	if err := h.PostExpand(ctx, r, input, obj); err != nil {
+		return err
+	}
+	{{updateSDKCall .}}
+	if err != nil {
+		return err
+	}
+	return h.PostResponse(ctx, r, updated)
+}

@@ -624,6 +624,19 @@ func (g *Generator) generateRESTTypes() error {
 		}
 	}
 
+	// Pre-populate restTypeSet with mirror type local names so the generation loop
+	// renders their REST type files (e.g. platformspec_types.go).
+	for typeName := range g.typeInfos {
+		if GetMirrorMappingByHyperShiftType(typeName) != nil {
+			restTypeSet[typeName] = true
+		}
+	}
+
+	// Transitively expand restTypeSet with all local (non-external) types referenced
+	// by types already in the set. This ensures KubeletConfig, MachineConfigSpec, etc.
+	// are included so qualifyTypeForREST emits them without a package qualifier.
+	g.expandRestTypeSetTransitively(restTypeSet)
+
 	// Find named types referenced by REST type fields and add them to restTypeSet
 	referencedNamedTypes := g.findReferencedNamedTypes(restTypeSet)
 	for _, nt := range referencedNamedTypes {
@@ -662,6 +675,35 @@ func (g *Generator) generateRESTTypes() error {
 		}
 	}
 
+	// Generate REST types for mirror types pre-populated in restTypeSet but not
+	// covered by the resourceTypes or Passthrough loops above.
+	generatedTypes := make(map[string]bool)
+	for _, t := range resourceTypes {
+		generatedTypes[t] = true
+	}
+	for t := range g.typeInfos {
+		if strings.Contains(t, "Passthrough") {
+			generatedTypes[t] = true
+		}
+	}
+	for typeName := range restTypeSet {
+		if generatedTypes[typeName] {
+			continue
+		}
+		ti, ok := g.typeInfos[typeName]
+		if !ok {
+			continue
+		}
+		code, err := g.renderRESTType(ti, restTypeSet, false)
+		if err != nil {
+			return fmt.Errorf("rendering REST mirror type %s: %w", typeName, err)
+		}
+		filename := strings.ToLower(typeName) + "_types.go"
+		if err := g.writeRESTFile(filename, code); err != nil {
+			return fmt.Errorf("writing REST mirror type %s: %w", typeName, err)
+		}
+	}
+
 	// Generate constants file for referenced named types
 	if len(referencedNamedTypes) > 0 {
 		if err := g.generateRESTConstants(referencedNamedTypes); err != nil {
@@ -670,6 +712,38 @@ func (g *Generator) generateRESTTypes() error {
 	}
 
 	return nil
+}
+
+// expandRestTypeSetTransitively adds all local types referenced by types in the set.
+// Walks visible fields of each type, identifying unqualified local types and adding them.
+// Repeats until no new types are found (transitive closure).
+func (g *Generator) expandRestTypeSetTransitively(restTypeSet map[string]bool) {
+	changed := true
+	for changed {
+		changed = false
+		for typeName := range restTypeSet {
+			ti, ok := g.typeInfos[typeName]
+			if !ok {
+				continue
+			}
+			for _, fi := range ti.Fields {
+				if fi.Hidden {
+					continue
+				}
+				base := strings.TrimPrefix(fi.GoType, "*")
+				base = strings.TrimPrefix(base, "[]")
+				if strings.Contains(base, ".") {
+					continue // external package type
+				}
+				if !restTypeSet[base] {
+					if _, inTypeInfos := g.typeInfos[base]; inTypeInfos {
+						restTypeSet[base] = true
+						changed = true
+					}
+				}
+			}
+		}
+	}
 }
 
 // findReferencedNamedTypes returns named types (with const blocks) that are
@@ -866,10 +940,34 @@ func (g *Generator) renderRESTType(ti *typeInfo, restTypeSet map[string]bool, is
 		if fi.Hidden {
 			continue
 		}
-		qualifiedType := g.qualifyTypeForREST(fi.GoType, restTypeSet)
-		// Only track types for import detection that aren't REST-local
-		base := strings.TrimPrefix(fi.GoType, "*")
-		base = strings.TrimPrefix(base, "[]")
+
+		// Substitute mirror types: if this field's HyperShift type has a
+		// HyperFleet-owned reduced mirror, use the local type instead so the
+		// generated REST passthrough references our type, not HyperShift's.
+		effectiveGoType := fi.GoType
+		{
+			// Remove slice prefix first, then pointer prefix, so []*Type → Type.
+			baseType := strings.TrimPrefix(effectiveGoType, "[]")
+			baseType = strings.TrimPrefix(baseType, "*")
+			// baseType may be "hypershiftv1beta1.PlatformSpec" — extract just the name.
+			if idx := strings.LastIndex(baseType, "."); idx >= 0 {
+				typeName := baseType[idx+1:]
+				if mapping := GetMirrorMappingByHyperShiftType(typeName); mapping != nil {
+					localName := mapping.LocalTypeName()
+					// Preserve pointer/slice prefix.
+					prefix := strings.TrimSuffix(effectiveGoType, baseType)
+					effectiveGoType = prefix + localName
+					// Ensure the local type is generated in the REST package.
+					restTypeSet[localName] = true
+				}
+			}
+		}
+
+		qualifiedType := g.qualifyTypeForREST(effectiveGoType, restTypeSet)
+		// Only track types for import detection that aren't REST-local.
+		// Use same normalization as mirror substitution: remove slice first, then pointer.
+		base := strings.TrimPrefix(effectiveGoType, "[]")
+		base = strings.TrimPrefix(base, "*")
 		if !restTypeSet[base] {
 			goTypes = append(goTypes, qualifiedType)
 		}

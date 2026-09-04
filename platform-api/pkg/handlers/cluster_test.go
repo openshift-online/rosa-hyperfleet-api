@@ -287,6 +287,9 @@ func TestClusterHandler_Create_MissingFields(t *testing.T) {
 		{"missing spec key", []byte(`{"metadata":{"name":"my-cluster"}}`)},
 		{"null spec", []byte(`{"metadata":{"name":"my-cluster"},"spec":null}`)},
 		{"empty spec object", clusterBody("my-cluster", map[string]any{})},
+		{"whitespace spec", []byte(`{"metadata":{"name":"my-cluster"},"spec":{ }}`)},
+		{"whitespace with newline spec", []byte(`{"metadata":{"name":"my-cluster"},"spec":{
+}}`)},
 	}
 
 	for _, tt := range tests {
@@ -496,24 +499,36 @@ func TestClusterHandler_Update_NotFound(t *testing.T) {
 }
 
 func TestClusterHandler_Update_MissingSpec(t *testing.T) {
-	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		testClusterCR("cluster-123", "test-cluster", testAccountID),
-	).Build()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
+	tests := []struct {
+		name string
+		body []byte
+	}{
+		{"empty spec object", []byte(`{}`)},
+		{"whitespace spec", []byte(`{"spec":{ }}`)},
+		{"whitespace with newline spec", []byte(`{"spec":{
+}}`)},
+	}
 
-	body, _ := json.Marshal(map[string]any{})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := newTestScheme()
+			fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+				testClusterCR("cluster-123", "test-cluster", testAccountID),
+			).Build()
+			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+			handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "https://oidc.example.com", 0, logger)
 
-	req := httptest.NewRequest(http.MethodPut, "/api/v0/clusters/cluster-123", bytes.NewReader(body))
-	req = req.WithContext(testContext(testAccountID))
-	req = mux.SetURLVars(req, map[string]string{"id": "cluster-123"})
+			req := httptest.NewRequest(http.MethodPut, "/api/v0/clusters/cluster-123", bytes.NewReader(tt.body))
+			req = req.WithContext(testContext(testAccountID))
+			req = mux.SetURLVars(req, map[string]string{"id": "cluster-123"})
 
-	w := httptest.NewRecorder()
-	handler.Update(w, req)
+			w := httptest.NewRecorder()
+			handler.Update(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400, got %d", w.Code)
+			}
+		})
 	}
 }
 

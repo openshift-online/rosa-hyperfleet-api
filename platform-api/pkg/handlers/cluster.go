@@ -130,6 +130,16 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrClusterCreateMissingFields, h.logger)
 		return
 	}
+	// Reject semantically empty specs (nil, empty decoded maps, whitespace variants).
+	var rawSpec map[string]any
+	if err := json.Unmarshal(envelope.Spec, &rawSpec); err != nil {
+		writeAPIError(w, ErrClusterCreateInvalidBody, h.logger)
+		return
+	}
+	if len(rawSpec) == 0 {
+		writeAPIError(w, ErrClusterCreateMissingFields, h.logger)
+		return
+	}
 
 	if len(req.Name) > hyperfleetdb.MaxClusterNameLen {
 		writeAPIError(w, ErrClusterCreateNameTooLong, h.logger)
@@ -236,9 +246,22 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req public.Cluster
-	if err := json.Unmarshal(body, &req); err != nil {
+	// Extract raw "spec" JSON first so we know which fields the caller actually
+	// sent. This is used for both the empty-spec guard and field-presence-aware
+	// validation (avoids false positives from zero-valued absent fields in a
+	// decoded struct).
+	var envelope struct {
+		Spec json.RawMessage `json:"spec"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
 		writeAPIError(w, ErrClusterUpdateInvalidBody, h.logger)
+		return
+	}
+
+	// Reject absent spec (nil) and empty spec object ({}) — both are no-ops
+	// that indicate a malformed request rather than a deliberate partial update.
+	if len(envelope.Spec) == 0 || string(envelope.Spec) == "{}" {
+		writeAPIError(w, ErrClusterUpdateMissingFields, h.logger)
 		return
 	}
 
@@ -255,26 +278,21 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if errs := h.validator.ValidateUpdate(&req.Spec, &cr.Spec, featuregate.Default); errs != nil {
-		writeAPIError(w, ErrClusterValidation.WithErrors(errs), h.logger)
-		return
-	}
-
-	// Extract raw "spec" JSON from the request body so the merge only
-	// overwrites fields the caller actually sent, preserving service-set
-	// fields that lack omitempty (e.g. hostedCluster, nodePool).
-	var envelope struct {
-		Spec json.RawMessage `json:"spec"`
-	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
+	// Validate using the raw spec map so only fields the client actually sent
+	// are checked — avoids false positives from zero-valued absent fields when
+	// the body is decoded into a full struct.
+	var rawSpec map[string]any
+	if err := json.Unmarshal(envelope.Spec, &rawSpec); err != nil {
 		writeAPIError(w, ErrClusterUpdateInvalidBody, h.logger)
 		return
 	}
-
-	// Reject absent spec (nil) and empty spec object ({}) — both are no-ops
-	// that indicate a malformed request rather than a deliberate partial update.
-	if len(envelope.Spec) == 0 || string(envelope.Spec) == "{}" {
+	// Reject semantically empty specs (nil, empty decoded maps, whitespace variants).
+	if len(rawSpec) == 0 {
 		writeAPIError(w, ErrClusterUpdateMissingFields, h.logger)
+		return
+	}
+	if errs := h.validator.ValidateUpdate(rawSpec, &cr.Spec, featuregate.Default); errs != nil {
+		writeAPIError(w, ErrClusterValidation.WithErrors(errs), h.logger)
 		return
 	}
 	if err := hyperfleetdb.MergeSpecJSON(&cr.Spec, envelope.Spec); err != nil {
