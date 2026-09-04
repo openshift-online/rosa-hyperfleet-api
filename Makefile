@@ -223,6 +223,7 @@ test-e2e-api: $(GINKGO)
 test-e2e-cli: $(GINKGO)
 	E2E_BASE_URL="$${BASE_URL}" E2E_ACCOUNT_ID="$${E2E_ACCOUNT_ID}" \
 	E2E_RHOBS_API_URL="$${RHOBS_API_URL}" \
+	E2E_ALERTMANAGER_URL="$${ALERTMANAGER_URL}" \
 	ROSACTL_BIN="$${ROSACTL_BIN}" AWS_REGION="$${AWS_REGION}" \
 	$(GINKGO) -vv --junit-report=junit-cli.xml \
 		$(if $(E2E_LABEL_FILTER),--label-filter="$(E2E_LABEL_FILTER)") \

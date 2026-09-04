@@ -24,6 +24,7 @@ package e2e_cli_test
 // Available labels:
 //   help, login, vpc-create, vpc-list, iam-create, iam-list, account-add,
 //   hcp-create, oidc-create, oidc-list, cluster-status, kubeconfig,
+//   silence-installing, silence-ready,
 //   nodepool-create, nodepool-list, dns-verify, nodepools-wait, nodepool-delete,
 //   hcp-patch, cluster-delete, bundles-delete, bundles-wait, oidc-delete, iam-delete, vpc-delete
 //
@@ -48,6 +49,7 @@ import (
 
 	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	awstest "github.com/openshift-online/rosa-hyperfleet-api/test/helpers/aws"
+	amhelper "github.com/openshift-online/rosa-hyperfleet-api/test/helpers/alertmanager"
 	"github.com/openshift-online/rosa-hyperfleet-api/test/helpers/thanos"
 )
 
@@ -440,6 +442,54 @@ var _ = Describe("ROSACTL CLI E2E Tests", Ordered, func() {
 		GinkgoWriter.Printf("HCP cluster created successfully: %s\n", clusterName)
 	})
 
+	It("should have a lifecycle installing silence while the cluster provisions", Label("silence-installing", "monitor", "create"), func() {
+		amURL := os.Getenv("E2E_ALERTMANAGER_URL")
+		if amURL == "" {
+			Skip("E2E_ALERTMANAGER_URL not set — skipping lifecycle silence test")
+		}
+		id := clusterID
+		if id == "" {
+			id = os.Getenv("HCP_INSTANCE_ID")
+		}
+		Expect(id).ToNot(BeEmpty(), "clusterID required — run hcp-create first or set HCP_INSTANCE_ID")
+		name := clusterName
+		if name == "" {
+			name = os.Getenv("HCP_CLUSTER_NAME")
+		}
+		Expect(name).ToNot(BeEmpty(), "clusterName required — run hcp-create first or set HCP_CLUSTER_NAME")
+
+		sawInstalling := false
+		Eventually(func(g Gomega) {
+			resp, err := customerApiClient.Get("/api/v0/clusters/"+id, customerAccountID)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var cluster v1alpha1.Cluster
+			g.Expect(json.Unmarshal(resp.Body, &cluster)).To(Succeed())
+			phase := cluster.Status.Phase
+			GinkgoWriter.Printf("[%s] silence probe — phase=%s\n", time.Now().Format(time.RFC3339), phase)
+
+			if phase == v1alpha1.ClusterPhaseReady {
+				if !sawInstalling {
+					g.Expect(sawInstalling).To(BeTrue(), "cluster became Ready before an installing silence was observed")
+				}
+				return
+			}
+
+			if phase != v1alpha1.ClusterPhaseWaitingForPlacement && phase != v1alpha1.ClusterPhaseProvisioning {
+				return
+			}
+
+			silences, err := amhelper.ListManagedSilences(context.Background(), amURL, id, name)
+			g.Expect(err).NotTo(HaveOccurred())
+			if amhelper.HasInstallingSilence(silences) {
+				sawInstalling = true
+			}
+			g.Expect(sawInstalling).To(BeTrue(), "expected installing lifecycle silence while phase=%s", phase)
+		}).WithTimeout(20*time.Minute).WithPolling(20*time.Second).Should(Succeed(),
+			"expected an installing lifecycle silence before the cluster becomes Ready")
+	})
+
 	It("should be able to create the cluster-oidc", Label("oidc-create", "setup"), func() {
 		defer recordTiming("hcp-oidc-create")()
 		GinkgoWriter.Printf("Creating new cluster-oidc: %s\n", clusterName)
@@ -531,6 +581,27 @@ var _ = Describe("ROSACTL CLI E2E Tests", Ordered, func() {
 		finalJSON, err := json.MarshalIndent(finalCluster.Status, "", "  ")
 		Expect(err).ToNot(HaveOccurred())
 		GinkgoWriter.Printf("HCP final cluster status:\n%s\n", string(finalJSON))
+	})
+
+	It("should have no active lifecycle silences once the cluster is Ready", Label("silence-ready", "monitor"), func() {
+		amURL := os.Getenv("E2E_ALERTMANAGER_URL")
+		if amURL == "" {
+			Skip("E2E_ALERTMANAGER_URL not set — skipping lifecycle silence test")
+		}
+		id := clusterID
+		if id == "" {
+			id = os.Getenv("HCP_INSTANCE_ID")
+		}
+		Expect(id).ToNot(BeEmpty(), "clusterID required — run cluster-status first or set HCP_INSTANCE_ID")
+		name := clusterName
+		if name == "" {
+			name = os.Getenv("HCP_CLUSTER_NAME")
+		}
+		Expect(name).ToNot(BeEmpty(), "clusterName required — run hcp-create first or set HCP_CLUSTER_NAME")
+
+		silences, err := amhelper.ListManagedSilences(context.Background(), amURL, id, name)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(silences).To(BeEmpty(), "lifecycle silences should be expired once the cluster is Ready")
 	})
 
 	It("should generate a working kubeconfig", Label("kubeconfig", "monitor"), func() {

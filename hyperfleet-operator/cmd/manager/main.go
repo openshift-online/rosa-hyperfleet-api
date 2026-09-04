@@ -34,14 +34,17 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/controller"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo/statusstream"
+	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/metrics"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/oidc"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/render"
+	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/silence"
 )
 
 var setupLog = ctrl.Log.WithName("setup")
@@ -202,6 +205,26 @@ func main() {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "oidcconfig")
 		os.Exit(1)
+	}
+
+	alertmanagerURL := os.Getenv("ALERTMANAGER_URL")
+	if alertmanagerURL != "" {
+		// ALERTMANAGER_URL is the Alertmanager v2 API base URL (for example
+		// https://alertmanager.example.com). When set, the cluster silence
+		// reconciler is registered; when unset, lifecycle silencing is disabled.
+		setupLog.Info("Registering cluster silence reconciler")
+		silenceMetrics := metrics.NewSilenceMetrics(crmetrics.Registry)
+		if err := (&controller.SilenceReconciler{
+			Client:                  mgr.GetClient(),
+			SilenceClient:           silence.NewAlertmanagerClient(alertmanagerURL, nil),
+			Metrics:                 silenceMetrics,
+			MaxConcurrentReconciles: maxConcurrentReconciles,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create controller", "controller", "cluster-silence")
+			os.Exit(1)
+		}
+	} else {
+		setupLog.Info("ALERTMANAGER_URL not set; cluster silence reconciler disabled")
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

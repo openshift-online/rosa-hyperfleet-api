@@ -31,16 +31,20 @@ import (
 	dynamo "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo/statusstream"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/render"
+	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/silence"
 	hd "github.com/rrp-bot/rosa-hyperfleet-kube-applier/hyperfleet-dynamo/dynamodb"
 )
 
 const (
 	ddbContainerName = "hyperfleet-test-dynamodb"
 	pgContainerName  = "hyperfleet-test-postgres"
+	amContainerName  = "hyperfleet-test-alertmanager"
 	mc               = "mc01"
 
-	postgresImage    = "quay.io/sclorg/postgresql-16-c10s"
-	dynamoLocalImage = "public.ecr.aws/aws-dynamodb-local/aws-dynamodb-local:latest"
+	postgresImage      = "quay.io/sclorg/postgresql-16-c10s"
+	dynamoLocalImage   = "public.ecr.aws/aws-dynamodb-local/aws-dynamodb-local:latest"
+	alertmanagerImage  = "quay.io/prometheus/alertmanager:v0.28.1"
+	containerStartTimeout = 5 * time.Minute
 )
 
 var (
@@ -50,9 +54,12 @@ var (
 	k8sClient   client.Client
 	dynamoDBCli *dynamodb.Client
 	dynamoCli   *dynamo.Client
-	ddbPort     string
-	pgPort      string
-	eventRouter *controller.EventRouter
+	ddbPort       string
+	pgPort        string
+	amPort        string
+	amBaseURL     string
+	silenceClient *silence.AlertmanagerClient
+	eventRouter   *controller.EventRouter
 )
 
 func TestIntegration(t *testing.T) {
@@ -128,6 +135,30 @@ var _ = BeforeSuite(func() {
 	createTables(dynamoDBCli)
 	dynamoCli = dynamo.NewClient(dynamoDBCli)
 
+	// ── Alertmanager ──
+
+	By("starting Alertmanager container")
+	amPort = freePort()
+	out, err = runContainerCommand(containerTool, containerStartTimeout,
+		"run", "-d", "--rm",
+		"--name", amContainerName,
+		"-p", fmt.Sprintf("%s:9093", amPort),
+		alertmanagerImage,
+	)
+	Expect(err).NotTo(HaveOccurred(), "start Alertmanager: %s", string(out))
+
+	amBaseURL = fmt.Sprintf("http://127.0.0.1:%s", amPort)
+	silenceClient = silence.NewAlertmanagerClient(amBaseURL, nil)
+
+	Eventually(func() error {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%s", amPort), time.Second)
+		if err != nil {
+			return err
+		}
+		_ = conn.Close()
+		return nil
+	}, 30*time.Second, 200*time.Millisecond).Should(Succeed(), "Alertmanager did not become ready")
+
 	// ── pgruntime Manager ──
 
 	By("creating pgruntime manager")
@@ -193,6 +224,11 @@ var _ = BeforeSuite(func() {
 		Dynamo:       dynamoCli,
 		StatusEvents: manifestStatusEvents,
 		EventRouter:  eventRouter,
+	}).SetupWithManager(mgr)).To(Succeed())
+
+	Expect((&controller.SilenceReconciler{
+		Client:        mgr.GetClient(),
+		SilenceClient: silenceClient,
 	}).SetupWithManager(mgr)).To(Succeed())
 
 	// ── Start pgruntime Manager ──
@@ -344,10 +380,13 @@ var _ = AfterSuite(func() {
 	}
 
 	By("stopping Postgres container")
-	_ = exec.Command(containerTool, "rm", "-f", pgContainerName).Run()
+	removeContainer(containerTool, pgContainerName)
 
 	By("stopping DynamoDB Local container")
-	_ = exec.Command(containerTool, "rm", "-f", ddbContainerName).Run()
+	removeContainer(containerTool, ddbContainerName)
+
+	By("stopping Alertmanager container")
+	removeContainer(containerTool, amContainerName)
 })
 
 func freePort() string {
@@ -356,6 +395,18 @@ func freePort() string {
 	port := l.Addr().(*net.TCPAddr).Port
 	_ = l.Close()
 	return fmt.Sprintf("%d", port)
+}
+
+func runContainerCommand(tool string, timeout time.Duration, args ...string) ([]byte, error) {
+	startCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return exec.CommandContext(startCtx, tool, args...).CombinedOutput()
+}
+
+func removeContainer(tool, name string) {
+	if err := exec.Command(tool, "rm", "-f", name).Run(); err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "failed to remove container %s: %v\n", name, err)
+	}
 }
 
 func createTables(db *dynamodb.Client) {
