@@ -9,10 +9,12 @@ This document describes the migration of platform-api from custom REST types (`p
 ## Problem Statement
 
 Platform-api currently maintains two separate type hierarchies:
+
 1. **Storage & Internal**: v1alpha1.Cluster, v1alpha1.NodePool (K8s-style CRD types)
 2. **API Response**: types.Cluster, types.NodePool (custom REST types)
 
 This creates:
+
 - **Duplication**: Custom types mirror CRD structure already defined in v1alpha1
 - **Inconsistency**: Two different response shapes for the same resource
 - **Maintenance burden**: Changes to CRD types require updates in multiple places
@@ -56,6 +58,7 @@ c, cleanup, err := hyperfleetdb.NewClient(hyperfleetdb.Options{
 ```
 
 **Database storage** (PostgreSQL):
+
 - Table: `kubernetes_resources`
 - Columns: `spec` (JSONB), `status` (JSONB), `metadata` (JSONB)
 - GVK identifier: `"hyperfleet.io/v1alpha1/Cluster"`
@@ -63,6 +66,7 @@ c, cleanup, err := hyperfleetdb.NewClient(hyperfleetdb.Options{
 - Already K8s-native under the hood
 
 **Why this is important:**
+
 - Migration doesn't change storage format
 - Cluster and NodePool records already use v1alpha1 structure
 - No database schema changes needed
@@ -87,6 +91,7 @@ types.Cluster (custom REST format) → HTTP Response
 ```
 
 Custom types add conversion layer between REST and storage:
+
 - `types.Cluster` (flat REST fields: id, name, created_at, updated_at)
 - `types.Condition` (custom condition type with time.Time)
 - `types.APIEndpoint`, `types.PlacementReference`
@@ -108,6 +113,7 @@ public.Cluster (K8s-native format) → HTTP Response
 ```
 
 No conversion to custom types:
+
 - `public.Cluster` (K8s structure: metadata, spec, status)
 - `metav1.Condition` (K8s standard condition type)
 - Full ObjectMeta with namespace, uid, labels, timestamps
@@ -117,6 +123,7 @@ No conversion to custom types:
 ### Cluster Response
 
 **Before (custom REST):**
+
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -134,6 +141,7 @@ No conversion to custom types:
 ```
 
 **After (K8s-native):**
+
 ```json
 {
   "apiVersion": "hyperfleet.openshift.io/v1alpha1",
@@ -155,6 +163,7 @@ No conversion to custom types:
 ```
 
 **Field Mapping:**
+
 - `id` → `metadata.uid`
 - `name` → `metadata.name`
 - `target_project_id` → `metadata.labels["hyperfleet.io/account-id"]`
@@ -168,11 +177,13 @@ No conversion to custom types:
 ## Implementation Phases
 
 ### Phase 1: Conversion Layer
+
 Create wrapper functions that reuse existing Project/Unproject from conversion/v1alpha1:
 
 **New file**: `platform-api/pkg/clients/hyperfleetdb/convert.go`
 
 Functions:
+
 - `PublicToInternalCluster(pub *public.Cluster, accountID, clusterID) *v1alpha1.Cluster`
 - `InternalToPublicCluster(cr *v1alpha1.Cluster) *public.Cluster`
 - `PublicToInternalNodePool(pub *public.NodePool, accountID, clusterID, poolID) *v1alpha1.NodePool`
@@ -182,6 +193,7 @@ Functions:
 - `syncNodePoolPublic(spec *public.NodePoolSpec)` - syncs passthrough to top-level
 
 **Key design decisions:**
+
 - Reuse existing Project/Unproject functions (already handle service-set filtering)
 - Use simple metadata enrichment (no complex reflection or JSON roundtrip)
 - Keep NodePool field syncing logic (autoRepair, labels)
@@ -189,13 +201,16 @@ Functions:
 - Use existing `clusterNamespace()` helper for namespace formatting (handles max length validation)
 
 ### Phase 2: Handler Updates
+
 Update handlers to accept/return public types:
 
 **Modified files:**
+
 - `platform-api/pkg/handlers/cluster.go`
 - `platform-api/pkg/handlers/nodepool.go`
 
 Changes:
+
 - Create endpoint: Accept `public.Cluster` request body
 - Update endpoint: Accept `{spec: public.ClusterSpec}` or raw JSON merge
 - All responses: Return `public.Cluster` or `public.NodePool`
@@ -203,23 +218,29 @@ Changes:
 - Enrichment: Set service-set fields (CreatorARN, InternalID, etc.)
 
 ### Phase 3: Type Deletion
+
 Remove custom types that are now replaced:
 
 **Deleted files:**
+
 - `platform-api/pkg/types/cluster.go`
 - `platform-api/pkg/types/nodepool.go`
 
 ### Phase 4: Testing
+
 Update handler tests and add conversion tests:
 
 **Modified files:**
+
 - `platform-api/pkg/handlers/cluster_test.go`
 - `platform-api/pkg/handlers/nodepool_test.go`
 
 **New file:**
+
 - `platform-api/pkg/clients/hyperfleetdb/convert_test.go`
 
 Test coverage:
+
 - Metadata enrichment (namespace, UID, labels)
 - Service-set field injection and filtering
 - NodePool field syncing (both directions)
@@ -233,12 +254,14 @@ Test coverage:
 FleetDB storage layer is **completely unaffected**:
 
 **Database structure (already using K8s types):**
+
 - Stores v1alpha1.Cluster and v1alpha1.NodePool CRD types
 - Uses PostgreSQL JSONB columns (spec, status, metadata)
 - GVK identifier: `"hyperfleet.io/v1alpha1/Cluster"`
 - Scheme registration: v1alpha1 types only (`hyperfleetv1alpha1.AddToScheme()`)
 
 **Why no migration needed:**
+
 - FleetDB already stores the same v1alpha1 types we'll use in public responses
 - Migration only changes the API response layer, not storage
 - All existing cluster and nodepool records remain valid
@@ -248,6 +271,7 @@ FleetDB storage layer is **completely unaffected**:
 ## Validation
 
 The validator continues working unchanged:
+
 - Operates on spec JSON (structure-agnostic)
 - No changes needed for public types
 - All validation rules preserved (immutable, service-set, feature-gates)
@@ -255,10 +279,12 @@ The validator continues working unchanged:
 ## Service-Set Field Handling
 
 Service-set (platform-managed) fields are:
+
 - **Injected** during public→internal conversion (via UnprojectCluster)
 - **Filtered** during internal→public conversion (via ProjectCluster)
 
 Examples:
+
 - `spec.accountId` - Platform assigns, never user-visible
 - `spec.internalId` - Platform generates, never user-visible
 - `spec.creatorARN` - Platform sets, filtered from public responses
@@ -269,6 +295,7 @@ Examples:
 ### Create Cluster
 
 **Before:**
+
 ```json
 POST /api/v0/clusters
 {
@@ -279,6 +306,7 @@ POST /api/v0/clusters
 ```
 
 **After (K8s-native):**
+
 ```json
 POST /api/v0/clusters
 {
@@ -295,6 +323,7 @@ POST /api/v0/clusters
 ### Update Cluster
 
 **Before:**
+
 ```json
 PATCH /api/v0/clusters/{id}
 {
@@ -303,6 +332,7 @@ PATCH /api/v0/clusters/{id}
 ```
 
 **After (unchanged):**
+
 ```json
 PATCH /api/v0/clusters/{id}
 {
@@ -312,14 +342,14 @@ PATCH /api/v0/clusters/{id}
 
 ## Risk Mitigation
 
-| Risk | Mitigation |
-|------|-----------|
-| Storage incompatibility | No risk - storage already uses v1alpha1 types; GVK unchanged |
-| Existing data loss | All existing cluster/nodepool records remain readable |
-| Metadata mapping errors | Unit tests for namespace/UID/label conversion |
-| Service-set field leakage | Project/Unproject verified via integration tests |
-| Validation regression | Validator is structure-agnostic; full test coverage |
-| Client compatibility | No external customers yet; internal tools coordinated |
+| Risk                        | Mitigation                                                    |
+| --------------------------- | ------------------------------------------------------------- |
+| Storage incompatibility     | No risk - storage already uses v1alpha1 types; GVK unchanged  |
+| Existing data loss          | All existing cluster/nodepool records remain readable         |
+| Metadata mapping errors     | Unit tests for namespace/UID/label conversion                 |
+| Service-set field leakage   | Project/Unproject verified via integration tests              |
+| Validation regression       | Validator is structure-agnostic; full test coverage           |
+| Client compatibility        | No external customers yet; internal tools coordinated         |
 | Namespace length validation | Use existing `clusterNamespace()` helper (handles max length) |
 
 ## Timeline & Success Criteria
