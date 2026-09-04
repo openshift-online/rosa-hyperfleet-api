@@ -57,6 +57,7 @@ type OidcConfigReconciler struct {
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=oidcconfigs,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=oidcconfigs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=oidcconfigs/finalizers,verbs=update
+// +kubebuilder:rbac:groups=hyperfleet.io,resources=oidcissuerreservations,verbs=delete
 
 func (r *OidcConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var oc hyperfleetv1alpha1.OidcConfig
@@ -188,6 +189,14 @@ func (r *OidcConfigReconciler) reconcileDelete(ctx context.Context, oc *hyperfle
 
 	if err := r.OIDC.DeletePrivateKey(ctx, configID); err != nil {
 		return ctrl.Result{}, fmt.Errorf("delete private key: %w", err)
+	}
+
+	if oc.Spec.IssuerUrl != "" {
+		reservation := &hyperfleetv1alpha1.OidcIssuerReservation{}
+		reservation.Name = hyperfleetv1alpha1.OidcIssuerReservationName(oc.Spec.IssuerUrl)
+		if err := r.Delete(ctx, reservation); err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("delete issuer reservation: %w", err)
+		}
 	}
 
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {

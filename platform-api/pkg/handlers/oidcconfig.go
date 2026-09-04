@@ -157,10 +157,19 @@ func (h *OidcConfigHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	cr := hyperfleetdb.PublicToInternalOidcConfig(&req, accountID, configID)
 
-	if err := h.db.CreateOidcConfig(ctx, cr); err != nil {
+	if err := h.db.ReserveOidcIssuerUrl(ctx, accountID, req.Spec.IssuerUrl, cr.Namespace, cr.Name); err != nil {
 		if hyperfleetdb.IsAlreadyExists(err) {
 			writeAPIError(w, ErrOidcConfigCreateDuplicateIssuerUrl, h.logger)
 			return
+		}
+		h.logger.Error("failed to reserve issuer url", "error", err, "account_id", accountID)
+		writeAPIError(w, ErrOidcConfigCreateFailed, h.logger)
+		return
+	}
+
+	if err := h.db.CreateOidcConfig(ctx, cr); err != nil {
+		if delErr := h.db.DeleteOidcIssuerReservation(ctx, req.Spec.IssuerUrl); delErr != nil {
+			h.logger.Error("failed to clean up issuer reservation after oidcconfig create failure", "error", delErr, "account_id", accountID)
 		}
 		h.logger.Error("failed to create oidc config", "error", err, "account_id", accountID)
 		writeAPIError(w, ErrOidcConfigCreateFailed, h.logger)

@@ -120,6 +120,12 @@ var _ = Describe("OidcConfig Controller", func() {
 				_ = k8sClient.Delete(ctx, &list.Items[i])
 			}
 		}
+		resList := &hyperfleetv1alpha1.OidcIssuerReservationList{}
+		if err := k8sClient.List(ctx, resList); err == nil {
+			for i := range resList.Items {
+				_ = k8sClient.Delete(ctx, &resList.Items[i])
+			}
+		}
 	})
 
 	newReconciler := func(infra *fakeOidcInfra) *OidcConfigReconciler {
@@ -614,6 +620,83 @@ var _ = Describe("OidcConfig Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
+			Expect(infra.deleteKeyCalled).To(Equal(1))
+		})
+
+		It("should delete the OidcIssuerReservation when deleting a config", func() {
+			issuerUrl := "https://customer-oidc.example.com/del-reservation"
+			reservation := &hyperfleetv1alpha1.OidcIssuerReservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: hyperfleetv1alpha1.OidcIssuerReservationName(issuerUrl),
+				},
+				Spec: hyperfleetv1alpha1.OidcIssuerReservationSpec{IssuerUrl: issuerUrl},
+			}
+			Expect(k8sClient.Create(ctx, reservation)).To(Succeed())
+
+			oc := &hyperfleetv1alpha1.OidcConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-del-res", Namespace: testNS},
+				Spec: hyperfleetv1alpha1.OidcConfigSpec{
+					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
+					IssuerUrl:        issuerUrl,
+					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
+					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
+				},
+			}
+			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+
+			infra := &fakeOidcInfra{
+				thumbprint:      "thumb",
+				crossAccountKey: generateTestRSAKeyPEM(),
+			}
+			r := newReconciler(infra)
+
+			_, err := reconcileN(r, testNS, "unmanaged-del-res", 2)
+			Expect(err).NotTo(HaveOccurred())
+
+			var latest hyperfleetv1alpha1.OidcConfig
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-del-res"}, &latest)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &latest)).To(Succeed())
+
+			_, err = r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "unmanaged-del-res"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			var deletedRes hyperfleetv1alpha1.OidcIssuerReservation
+			err = k8sClient.Get(ctx, client.ObjectKey{Name: hyperfleetv1alpha1.OidcIssuerReservationName(issuerUrl)}, &deletedRes)
+			Expect(err).To(HaveOccurred())
+			Expect(client.IgnoreNotFound(err)).To(Succeed())
+		})
+
+		It("should tolerate a missing reservation during deletion", func() {
+			oc := &hyperfleetv1alpha1.OidcConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-del-nores", Namespace: testNS},
+				Spec: hyperfleetv1alpha1.OidcConfigSpec{
+					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
+					IssuerUrl:        "https://customer-oidc.example.com/no-reservation",
+					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
+					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
+				},
+			}
+			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+
+			infra := &fakeOidcInfra{
+				thumbprint:      "thumb",
+				crossAccountKey: generateTestRSAKeyPEM(),
+			}
+			r := newReconciler(infra)
+
+			_, err := reconcileN(r, testNS, "unmanaged-del-nores", 2)
+			Expect(err).NotTo(HaveOccurred())
+
+			var latest hyperfleetv1alpha1.OidcConfig
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-del-nores"}, &latest)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &latest)).To(Succeed())
+
+			_, err = r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "unmanaged-del-nores"},
+			})
+			Expect(err).NotTo(HaveOccurred())
 			Expect(infra.deleteKeyCalled).To(Equal(1))
 		})
 

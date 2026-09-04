@@ -4,7 +4,6 @@ package handlers
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -17,9 +16,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -455,6 +452,45 @@ func TestOidcConfigHandler_Create_InvalidFieldsForType(t *testing.T) {
 	}
 }
 
+func TestOidcConfigHandler_Create_CreatesIssuerReservation(t *testing.T) {
+	scheme := newTestScheme()
+	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
+	handler.generateID = func() string { return "generated-config-id" }
+
+	body, _ := json.Marshal(map[string]any{
+		"spec": map[string]any{
+			"type":             "unmanaged",
+			"secretArn":        "arn:aws:secretsmanager:us-east-1:123456789012:secret:foo",
+			"installerRoleArn": "arn:aws:iam::123456789012:role/installer",
+			"issuerUrl":        "https://example.com/oidc",
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/oidc_configs", bytes.NewReader(body))
+	req = req.WithContext(testContext(testAccountID))
+
+	w := httptest.NewRecorder()
+	handler.Create(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var reservation hyperfleetv1alpha1.OidcIssuerReservation
+	resName := hyperfleetv1alpha1.OidcIssuerReservationName("https://example.com/oidc")
+	if err := fc.Get(req.Context(), client.ObjectKey{Name: resName}, &reservation); err != nil {
+		t.Fatalf("expected OidcIssuerReservation to exist, got: %v", err)
+	}
+	if reservation.Spec.IssuerUrl != "https://example.com/oidc" {
+		t.Errorf("expected reservation issuerUrl=https://example.com/oidc, got %q", reservation.Spec.IssuerUrl)
+	}
+	if reservation.Labels["hyperfleet.io/account-id"] != testAccountID {
+		t.Errorf("expected reservation account-id label=%s, got %q", testAccountID, reservation.Labels["hyperfleet.io/account-id"])
+	}
+}
+
 func TestOidcConfigHandler_Create_UnmanagedSuccess(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
@@ -491,18 +527,14 @@ func TestOidcConfigHandler_Create_UnmanagedSuccess(t *testing.T) {
 
 func TestOidcConfigHandler_Create_UnmanagedDuplicateIssuerUrlSameAccount(t *testing.T) {
 	scheme := newTestScheme()
-	existingSpec := hyperfleetv1alpha1.OidcConfigSpec{
-		Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-		IssuerUrl:        "https://example.com/oidc",
-		SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:foo",
-		InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-		AccountID:        testAccountID,
+	issuerUrl := "https://example.com/oidc"
+	existingReservation := &hyperfleetv1alpha1.OidcIssuerReservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: hyperfleetv1alpha1.OidcIssuerReservationName(issuerUrl),
+		},
+		Spec: hyperfleetv1alpha1.OidcIssuerReservationSpec{IssuerUrl: issuerUrl},
 	}
-	innerFC := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		testOidcConfigCR("oidc-existing", testAccountID, existingSpec),
-	).Build()
-
-	fc := &issuerURLUniqueClient{Client: innerFC}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingReservation).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
@@ -511,7 +543,7 @@ func TestOidcConfigHandler_Create_UnmanagedDuplicateIssuerUrlSameAccount(t *test
 			"type":             "unmanaged",
 			"secretArn":        "arn:aws:secretsmanager:us-east-1:123456789012:secret:bar",
 			"installerRoleArn": "arn:aws:iam::123456789012:role/installer2",
-			"issuerUrl":        "https://example.com/oidc",
+			"issuerUrl":        issuerUrl,
 		},
 	})
 
@@ -532,19 +564,17 @@ func TestOidcConfigHandler_Create_UnmanagedDuplicateIssuerUrlSameAccount(t *test
 	}
 }
 
-func TestOidcConfigHandler_Create_UnmanagedDuplicateIssuerUrlDifferentAccountAllowed(t *testing.T) {
-	otherAccount := "999999999999"
+func TestOidcConfigHandler_Create_UnmanagedDuplicateIssuerUrlDifferentAccountRejected(t *testing.T) {
+	issuerUrl := "https://example.com/oidc"
 	scheme := newTestScheme()
-	existingSpec := hyperfleetv1alpha1.OidcConfigSpec{
-		Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
-		IssuerUrl:        "https://example.com/oidc",
-		SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:foo",
-		InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
-		AccountID:        otherAccount,
+	existingReservation := &hyperfleetv1alpha1.OidcIssuerReservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   hyperfleetv1alpha1.OidcIssuerReservationName(issuerUrl),
+			Labels: map[string]string{"hyperfleet.io/account-id": "999999999999"},
+		},
+		Spec: hyperfleetv1alpha1.OidcIssuerReservationSpec{IssuerUrl: issuerUrl},
 	}
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		testOidcConfigCR("oidc-existing", otherAccount, existingSpec),
-	).Build()
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingReservation).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 	handler.generateID = func() string { return "generated-config-id" }
@@ -554,7 +584,7 @@ func TestOidcConfigHandler_Create_UnmanagedDuplicateIssuerUrlDifferentAccountAll
 			"type":             "unmanaged",
 			"secretArn":        "arn:aws:secretsmanager:us-east-1:123456789012:secret:bar",
 			"installerRoleArn": "arn:aws:iam::123456789012:role/installer2",
-			"issuerUrl":        "https://example.com/oidc",
+			"issuerUrl":        issuerUrl,
 		},
 	})
 
@@ -564,45 +594,14 @@ func TestOidcConfigHandler_Create_UnmanagedDuplicateIssuerUrlDifferentAccountAll
 	w := httptest.NewRecorder()
 	handler.Create(w, req)
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected 201 for a duplicate issuerUrl owned by a different account, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409 for cross-account duplicate issuerUrl, got %d: %s", w.Code, w.Body.String())
 	}
-}
-
-// issuerURLUniqueClient wraps a client.Client to enforce uniqueness of
-// (namespace, spec.issuerUrl) among live unmanaged OidcConfigs, modeling the
-// database's idx_oidcconfig_unmanaged_issuer_url partial unique index. The
-// real index is what makes the create atomic; the handler's List-based check
-// (see oidcconfig.go) is only a fast-path for a friendlier error and is
-// racy on its own.
-type issuerURLUniqueClient struct {
-	client.Client
-	mu sync.Mutex
-}
-
-func (c *issuerURLUniqueClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if oc, ok := obj.(*hyperfleetv1alpha1.OidcConfig); ok && oc.Spec.Type == hyperfleetv1alpha1.OidcConfigTypeUnmanaged && oc.Spec.IssuerUrl != "" {
-		var list hyperfleetv1alpha1.OidcConfigList
-		if err := c.Client.List(ctx, &list, client.InNamespace(oc.Namespace)); err != nil {
-			return err
-		}
-		for i := range list.Items {
-			existing := &list.Items[i]
-			if existing.Spec.Type == hyperfleetv1alpha1.OidcConfigTypeUnmanaged && existing.Spec.IssuerUrl == oc.Spec.IssuerUrl {
-				return apierrors.NewAlreadyExists(schema.GroupResource{Resource: "oidcconfigs"}, oc.Name)
-			}
-		}
-	}
-	return c.Client.Create(ctx, obj, opts...)
 }
 
 func TestOidcConfigHandler_Create_ConcurrentUnmanagedDuplicateIssuerUrl(t *testing.T) {
 	scheme := newTestScheme()
-	innerFC := fake.NewClientBuilder().WithScheme(scheme).Build()
-	fc := &issuerURLUniqueClient{Client: innerFC}
+	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)

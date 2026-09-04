@@ -261,6 +261,42 @@ func (c *Client) DeleteOidcConfig(ctx context.Context, accountID, configID strin
 	return c.client.Delete(ctx, oc)
 }
 
+// --- OidcIssuerReservation operations ---
+
+const (
+	oidcconfigNamespaceLabel = "hyperfleet.io/oidcconfig-namespace"
+	oidcconfigNameLabel      = "hyperfleet.io/oidcconfig-name"
+)
+
+// ReserveOidcIssuerUrl creates a cluster-scoped OidcIssuerReservation whose
+// name is the SHA-256 of issuerUrl. Returns AlreadyExists if the URL is taken.
+func (c *Client) ReserveOidcIssuerUrl(ctx context.Context, accountID, issuerUrl, configNamespace, configName string) error {
+	reservation := &hyperfleetv1alpha1.OidcIssuerReservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: hyperfleetv1alpha1.OidcIssuerReservationName(issuerUrl),
+			Labels: map[string]string{
+				accountIDLabel:           accountID,
+				oidcconfigNamespaceLabel: configNamespace,
+				oidcconfigNameLabel:      configName,
+			},
+		},
+		Spec: hyperfleetv1alpha1.OidcIssuerReservationSpec{
+			IssuerUrl: issuerUrl,
+		},
+	}
+	return c.client.Create(ctx, reservation)
+}
+
+// DeleteOidcIssuerReservation removes the reservation for the given issuer URL.
+func (c *Client) DeleteOidcIssuerReservation(ctx context.Context, issuerUrl string) error {
+	reservation := &hyperfleetv1alpha1.OidcIssuerReservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: hyperfleetv1alpha1.OidcIssuerReservationName(issuerUrl),
+		},
+	}
+	return c.client.Delete(ctx, reservation)
+}
+
 // --- Error helpers ---
 
 // IsNotFound returns true if the error is a Kubernetes 404.
