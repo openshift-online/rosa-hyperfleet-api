@@ -125,14 +125,16 @@ func (r *OidcConfigReconciler) reconcileManaged(ctx context.Context, oc *hyperfl
 	})
 }
 
-// isReferencedByCluster reports whether any Cluster owned by oc's account currently sets this oidcConfigId
+// isReferencedByCluster reports whether any live (non-terminating) Cluster owned by oc's account
+// currently sets this oidcConfigId
 func (r *OidcConfigReconciler) isReferencedByCluster(ctx context.Context, oc *hyperfleetv1alpha1.OidcConfig) (bool, error) {
 	var clusters hyperfleetv1alpha1.ClusterList
 	if err := r.List(ctx, &clusters, client.MatchingLabels{accountIDLabel: oc.Spec.AccountID}); err != nil {
 		return false, fmt.Errorf("list clusters: %w", err)
 	}
 	for i := range clusters.Items {
-		if clusters.Items[i].Spec.OidcConfigID == oc.Name {
+		c := &clusters.Items[i]
+		if c.DeletionTimestamp.IsZero() && c.Spec.OidcConfigID == oc.Name {
 			return true, nil
 		}
 	}
