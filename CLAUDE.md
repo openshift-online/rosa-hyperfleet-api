@@ -6,8 +6,8 @@ ROSA Hyperfleet API — ROSA HCP regional cluster management.
 
 Three components:
 
-- **platform-api/** — Stateless REST gateway (SigV4 auth, Cedar/AVP authz)
-- **hyperfleet-operator/** — Kubernetes operator (Cluster, NodePool, Placement, ManagementCluster, Manifest CRDs)
+- **platform-api/** — Stateless REST gateway (SigV4 auth, Cedar authz with in-process policy evaluation)
+- **hyperfleet-operator/** — Kubernetes operator (Cluster, DNSReservation, Index, ManagementCluster, Manifest, NodePool, OIDCConfig, Placement CRDs)
 - **hyperfleet-db/** — PostgreSQL-backed controller-runtime library
 
 ## Build & Test

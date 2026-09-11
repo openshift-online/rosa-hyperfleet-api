@@ -52,11 +52,13 @@ Located at `clientset/pathbind/pathbind.go`.
 Populates `dst` (a non-nil pointer to an SDK struct) from the `hfsdk:`-tagged fields of `src` (a consumer struct or pointer to struct).
 
 For each field in `src` with an `hfsdk:"<dotted.json.path>"` tag:
+
 - Splits the path by `.`, traverses `dst` by JSON tag name
 - Allocates nil intermediate pointer-to-struct fields automatically
 - Sets the leaf value via `toFieldValue` (see type conversion below)
 
 **Fields skipped (not forwarded)**:
+
 - Tagged `hfsdk:"-"`
 - Nil pointer
 - Empty string (`""`)
@@ -78,14 +80,14 @@ Reads `hfsdk:`-tagged fields of `dst` (consumer struct pointer) from `src` (SDK 
 
 Handles conversion between consumer field types and SDK leaf types:
 
-| Source → Target | Mechanism |
-|---|---|
-| `string` → named string type (e.g. `PlatformType`) | `ConvertibleTo` |
-| `int64` → `int32`, etc. | `ConvertibleTo` |
-| RFC3339 `string` → `metav1.Time` | explicit parse |
-| `string` → `[]T` / `map[K]V` / struct | JSON unmarshal |
-| `[]T` / `map[K]V` / struct → `string` | JSON marshal |
-| any → `*T` | recurse on elem, wrap in pointer |
+| Source → Target                                    | Mechanism                        |
+| -------------------------------------------------- | -------------------------------- |
+| `string` → named string type (e.g. `PlatformType`) | `ConvertibleTo`                  |
+| `int64` → `int32`, etc.                            | `ConvertibleTo`                  |
+| RFC3339 `string` → `metav1.Time`                   | explicit parse                   |
+| `string` → `[]T` / `map[K]V` / struct              | JSON unmarshal                   |
+| `[]T` / `map[K]V` / struct → `string`              | JSON marshal                     |
+| any → `*T`                                         | recurse on elem, wrap in pointer |
 
 The JSON round-trip fallback enables consumer string flags to hold JSON-encoded complex types (e.g. `--resource-tags '[{"key":"env","value":"prod"}]'`). Unmarshal errors surface as field-level errors in `Expand`.
 
@@ -194,26 +196,26 @@ resources:
 
 #### Override schema
 
-| Field | Required | Default when absent |
-|---|---|---|
-| `path` | yes (except consumer-only entries) | — |
-| `alias` | no | Minimum unique suffix of `path` in camelCase |
-| `type` | no | Derived from draft `goType` (see below) |
-| `goName` | no | PascalCase of `alias` |
-| `flag` | no | `toKebab(alias)` |
-| `description` | no | `""` |
-| `required` | no | `false` |
-| `operations` | no | Inherited from draft; required for consumer-only entries |
+| Field         | Required                           | Default when absent                                      |
+| ------------- | ---------------------------------- | -------------------------------------------------------- |
+| `path`        | yes (except consumer-only entries) | —                                                        |
+| `alias`       | no                                 | Minimum unique suffix of `path` in camelCase             |
+| `type`        | no                                 | Derived from draft `goType` (see below)                  |
+| `goName`      | no                                 | PascalCase of `alias`                                    |
+| `flag`        | no                                 | `toKebab(alias)`                                         |
+| `description` | no                                 | `""`                                                     |
+| `required`    | no                                 | `false`                                                  |
+| `operations`  | no                                 | Inherited from draft; required for consumer-only entries |
 
 #### `goType` → consumer type defaults
 
-| Draft `goType` | Consumer default |
-|---|---|
-| `string` | `string` |
-| `boolean` | `*bool` |
-| `integer(int32)` | `*int32` |
-| `integer(int64)` | `*int64` |
-| `array`, `map` | `string` (JSON-encoded; override with explicit `type` if needed) |
+| Draft `goType`   | Consumer default                                                 |
+| ---------------- | ---------------------------------------------------------------- |
+| `string`         | `string`                                                         |
+| `boolean`        | `*bool`                                                          |
+| `integer(int32)` | `*int32`                                                         |
+| `integer(int64)` | `*int64`                                                         |
+| `array`, `map`   | `string` (JSON-encoded; override with explicit `type` if needed) |
 
 **Consumer-only entries** (no `path`): generator emits the field with `hfsdk:"-"` — Expand skips it; consumer sets it in `PostExpand` or `PreRequest`.
 
@@ -228,6 +230,7 @@ Located at `clientset/cmd/pathbind-gen/` (part of the `clientset` module so cons
 **`--mode=init`**: reads `field_metadata.json` + `openapi.yaml`, walks each FieldRegistry path to scalar leaves, emits `pathbind-draft.yaml`. Run by the SDK's CI.
 
 **`--mode=cobra`**: reads draft + overrides, emits per-resource, per-operation into the consumer's local `pathbind` package:
+
 1. **Input struct** — `ClusterCreateInput`, etc. with `hfsdk:` tags (all draft fields included)
 2. **`RegisterXxxFlags(cmd, input)`** — cobra flag registration
 3. **`XxxHandler` interface** — the dispatch template
@@ -239,15 +242,15 @@ Located at `clientset/cmd/pathbind-gen/` (part of the `clientset` module so cons
 
 camelCase/PascalCase → kebab-case, with acronym-aware rules:
 
-| Input | Output | Rule |
-|---|---|---|
-| `displayName` | `display-name` | lower→upper = dash |
-| `issuerURL` | `issuer-url` | upper→upper→end = no dash (acronym) |
-| `kubeCloudControllerARN` | `kube-cloud-controller-arn` | trailing acronym |
-| `AWSPlatform` | `aws-platform` | upper→upper→lower = dash before word start |
-| `allocateNodeCIDRs` | `allocate-node-cidrs` | plural `s` after acronym = no dash |
-| `allowedCIDRBlocks` | `allowed-cidr-blocks` | `s` followed by uppercase = still no dash; next upper→lower = dash |
-| `registryPullQPS` | `registry-pull-qps` | trailing all-caps acronym |
+| Input                    | Output                      | Rule                                                               |
+| ------------------------ | --------------------------- | ------------------------------------------------------------------ |
+| `displayName`            | `display-name`              | lower→upper = dash                                                 |
+| `issuerURL`              | `issuer-url`                | upper→upper→end = no dash (acronym)                                |
+| `kubeCloudControllerARN` | `kube-cloud-controller-arn` | trailing acronym                                                   |
+| `AWSPlatform`            | `aws-platform`              | upper→upper→lower = dash before word start                         |
+| `allocateNodeCIDRs`      | `allocate-node-cidrs`       | plural `s` after acronym = no dash                                 |
+| `allowedCIDRBlocks`      | `allowed-cidr-blocks`       | `s` followed by uppercase = still no dash; next upper→lower = dash |
+| `registryPullQPS`        | `registry-pull-qps`         | trailing all-caps acronym                                          |
 
 **Rule summary**: insert a dash before an uppercase letter only at a lower→upper boundary, OR at an upper→upper boundary when the next character is a lowercase letter that is NOT a plural `s` followed by uppercase or end-of-string.
 
@@ -343,6 +346,7 @@ hyperfleet.RegisterAndMarkPlatformAPIFlags(cmd,
 ### `AddPlatformAPIFlagSection(cmd)`
 
 Installs a custom `SetHelpFunc` that renders two additional sections before "Global Flags:":
+
 - **"Shared flags (OCM v1 and Platform API)"** — flags used by both paths
 - **"Platform API flags"** — HF-only flags
 
@@ -403,14 +407,14 @@ The SDK's typed `Update()` (PUT) is used rather than JSON merge patch, so the co
 1. **`marker-scanner`** reads write-mode annotations from CRD types → `field_metadata.json`
 2. **`pathbind-gen --mode=init`** walks the OpenAPI schema from each FieldRegistry entry to its scalar leaves, recording `goType` and `operations` for each leaf path
 
-| FieldRegistry field | `pathbind-draft.yaml` |
-|---|---|
-| `fieldPath` | starting point for OpenAPI walk |
-| `writeMode: mutable` | `operations: [create, update]` |
-| `writeMode: immutable` | `operations: [create]` |
-| `writeMode: service-set` | excluded |
-| `hidden: true` | excluded |
-| `ownerType` | resource grouping (Cluster, NodePool, etc.) |
+| FieldRegistry field      | `pathbind-draft.yaml`                       |
+| ------------------------ | ------------------------------------------- |
+| `fieldPath`              | starting point for OpenAPI walk             |
+| `writeMode: mutable`     | `operations: [create, update]`              |
+| `writeMode: immutable`   | `operations: [create]`                      |
+| `writeMode: service-set` | excluded                                    |
+| `hidden: true`           | excluded                                    |
+| `ownerType`              | resource grouping (Cluster, NodePool, etc.) |
 
 ### Workflow when a new CRD field is added
 
@@ -467,6 +471,7 @@ make generate
 ```
 
 This runs in order:
+
 1. `codegen-registry` — marker-scanner → `field_metadata.json`
 2. `codegen-passthrough` — passthrough type stubs
 3. `generate-deepcopy` — deepcopy methods
@@ -502,11 +507,11 @@ go mod vendor
 
 This updates `go.mod`, `go.sum`, and repopulates `vendor/`. The key vendored files for pathbind are:
 
-| Vendored file | Purpose |
-|---|---|
-| `clientset/pathbind/pathbind.go` | Core Expand/Flatten engine |
-| `clientset/pathbind/pathbind-draft.yaml` | Source of truth for leaf paths |
-| `clientset/cmd/pathbind-gen/*.go` | Generator source (run via `go run` in consumer Makefile) |
+| Vendored file                            | Purpose                                                  |
+| ---------------------------------------- | -------------------------------------------------------- |
+| `clientset/pathbind/pathbind.go`         | Core Expand/Flatten engine                               |
+| `clientset/pathbind/pathbind-draft.yaml` | Source of truth for leaf paths                           |
+| `clientset/cmd/pathbind-gen/*.go`        | Generator source (run via `go run` in consumer Makefile) |
 
 ---
 
@@ -529,11 +534,13 @@ pkg/hyperfleet/pathbind/
 ```
 
 **Changes automatically** — no manual edit required:
+
 - New draft leaf paths appear as struct fields with auto-derived flag names and cobra registration
 - Removed draft paths are removed from the struct and flag list
 - `goType` changes update the default consumer field type
 
 **Requires a manual edit**:
+
 - UX customization (custom flag name, description, `required: true`) → add to `pathbind-overrides.yaml`
 - Fields the consumer does not want to expose → add an override entry with `flag: ""` to suppress
 
@@ -552,7 +559,7 @@ resources:
       - path: spec.hostedCluster.networking.apiServer.port
         flag: api-server-port
         description: "Custom port for the hosted cluster API server."
-        required: true   # if set, auto-prompts in interactive mode
+        required: true # if set, auto-prompts in interactive mode
 ```
 
 If no override is added the field is fully usable with its auto-derived flag name. Clients that don't need to expose a field simply don't pass its flag — pathbind skips unset fields automatically.
@@ -563,14 +570,14 @@ If no override is added the field is fully usable with its auto-derived flag nam
 
 Most new fields require no handler change — the flag is registered, `Expand` sets the value, done.
 
-| Scenario | Where to handle |
-|---|---|
-| Input validation (format, range, cross-field constraints) | `PreRequest` |
-| Field derived from another input (e.g. subnet → VPC/zone) | `PreRequest` |
-| Custom interactive prompt for a non-required field | override `Prompt` |
-| Field is an enum constant set regardless of user input | `PostExpand` |
-| Field is a computed struct (e.g. `RolesRef` from prefix + account ID) | `PostExpand` |
-| Response field must be displayed or stored | `PostResponse` |
+| Scenario                                                              | Where to handle   |
+| --------------------------------------------------------------------- | ----------------- |
+| Input validation (format, range, cross-field constraints)             | `PreRequest`      |
+| Field derived from another input (e.g. subnet → VPC/zone)             | `PreRequest`      |
+| Custom interactive prompt for a non-required field                    | override `Prompt` |
+| Field is an enum constant set regardless of user input                | `PostExpand`      |
+| Field is a computed struct (e.g. `RolesRef` from prefix + account ID) | `PostExpand`      |
+| Response field must be displayed or stored                            | `PostResponse`    |
 
 #### `PreRequest` — validation and derivation
 
@@ -613,27 +620,28 @@ func (h *hyperfleetClusterCreate) Prompt(ctx context.Context, r *rosa.Runtime, c
 
 ### Client expectations summary
 
-| What | Automatic | Manual |
-|---|---|---|
-| New struct field in `ClusterCreateInput` | ✓ after `make generate-hyperfleet` | |
-| New cobra flag with auto-derived name | ✓ | |
-| Interactive prompt for `required: true` fields | ✓ via `GeneratedXxxPrompt` | |
-| Flag name / description customization | | ✓ `pathbind-overrides.yaml` |
-| Mark field as required | | ✓ `required: true` in overrides |
-| Suppress a field from exposure | | ✓ `flag: ""` in overrides |
-| Input validation | | ✓ `PreRequest` |
-| Field derived from another input | | ✓ `PreRequest` |
-| Custom interactive prompting for optional fields | | ✓ override `Prompt` |
-| Enum constant or computed struct | | ✓ `PostExpand` |
-| Help section membership (Platform API vs Shared) | ✓ via annotation | |
-| Dependency bump | | ✓ `go get` + `go mod vendor` |
-| Consumer code regeneration | | ✓ `make generate-hyperfleet` |
+| What                                             | Automatic                          | Manual                          |
+| ------------------------------------------------ | ---------------------------------- | ------------------------------- |
+| New struct field in `ClusterCreateInput`         | ✓ after `make generate-hyperfleet` |                                 |
+| New cobra flag with auto-derived name            | ✓                                  |                                 |
+| Interactive prompt for `required: true` fields   | ✓ via `GeneratedXxxPrompt`         |                                 |
+| Flag name / description customization            |                                    | ✓ `pathbind-overrides.yaml`     |
+| Mark field as required                           |                                    | ✓ `required: true` in overrides |
+| Suppress a field from exposure                   |                                    | ✓ `flag: ""` in overrides       |
+| Input validation                                 |                                    | ✓ `PreRequest`                  |
+| Field derived from another input                 |                                    | ✓ `PreRequest`                  |
+| Custom interactive prompting for optional fields |                                    | ✓ override `Prompt`             |
+| Enum constant or computed struct                 |                                    | ✓ `PostExpand`                  |
+| Help section membership (Platform API vs Shared) | ✓ via annotation                   |                                 |
+| Dependency bump                                  |                                    | ✓ `go get` + `go mod vendor`    |
+| Consumer code regeneration                       |                                    | ✓ `make generate-hyperfleet`    |
 
 ---
 
 ## Extending to Other Consumers
 
 A different consumer (e.g. `terraform-provider-rhcs`) would:
+
 1. Invoke `pathbind-gen --mode=tf` against the same `pathbind-draft.yaml` and its own `pathbind-overrides.yaml`
 2. Receive a generated struct with appropriate framework types and schema declarations
 3. Implement the generated `XxxHandler` interface against the Terraform provider framework
