@@ -204,11 +204,14 @@ func (h *OidcConfigHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		base := strings.TrimRight(h.oidcIssuerBaseURL, "/")
+		// Region is fused into configID's own path segment, not a separate one: HyperShift's InfraID
+		// (and thus its S3 upload key) is derived from this URL's trailing segment alone.
+		segment := configID
 		if h.region != "" {
-			base = base + "/" + h.region
+			segment = h.region + "-" + configID
 		}
 		// Server-generated from a UUID; normalization below is a defensive no-op, not a real gate.
-		req.Spec.IssuerUrl = base + "/" + configID
+		req.Spec.IssuerUrl = base + "/" + segment
 	}
 
 	normalizedIssuerURL, err := normalizeIssuerURL(req.Spec.IssuerUrl)

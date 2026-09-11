@@ -228,7 +228,7 @@ func TestOidcConfigHandler_Create_Success(t *testing.T) {
 	if spec["type"] != "managed" {
 		t.Errorf("expected spec.type=managed, got %v", spec["type"])
 	}
-	wantIssuerURL := testOidcIssuerBaseURL + "/" + testRegion + "/generated-config-id"
+	wantIssuerURL := testOidcIssuerBaseURL + "/" + testRegion + "-generated-config-id"
 	if spec["issuerUrl"] != wantIssuerURL {
 		t.Errorf("expected spec.issuerUrl=%s, got %v", wantIssuerURL, spec["issuerUrl"])
 	}
@@ -298,7 +298,7 @@ func TestOidcConfigHandler_Create_ManagedIgnoresClientIssuerUrl(t *testing.T) {
 	var result map[string]any
 	_ = json.NewDecoder(w.Body).Decode(&result)
 
-	wantIssuerURL := testOidcIssuerBaseURL + "/" + testRegion + "/generated-config-id"
+	wantIssuerURL := testOidcIssuerBaseURL + "/" + testRegion + "-generated-config-id"
 	spec := result["spec"].(map[string]any)
 	if issuerURL, _ := spec["issuerUrl"].(string); issuerURL != wantIssuerURL {
 		t.Errorf("expected client-supplied issuerUrl to be overridden with %q, got %q", wantIssuerURL, issuerURL)
