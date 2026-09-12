@@ -1,0 +1,284 @@
+Test id,Test,e2e file,Runtime,Runs on,Status,Importance,Mapped Jiras,Notes
+76056,is not supported,tests/e2e/classic_tuning_config_test.go,Day 2,Classic only,N/A,Medium,ROSAENG-65166,Classic-only file (SkipNotClassic)
+,Dummy,tests/e2e/dummy_test.go,,Harness,N/A,,,"Harness, not a product case"
+,ProfileParserTest,tests/e2e/dummy_test.go,,Harness,N/A,,,"Harness, not a product case"
+,TestENVSetup,tests/e2e/dummy_test.go,,Harness,N/A,,,"Harness, not a product case"
+,TestPrepareClusterByProfile,tests/e2e/dummy_test.go,,Harness,N/A,,,"Harness, not a product case"
+,TestRemovingFunc,tests/e2e/dummy_test.go,,Harness,N/A,,,"Harness, not a product case"
+,VPCClientTesting,tests/e2e/dummy_test.go,,Harness,N/A,,,"Harness, not a product case"
+,IngressServiceTesting,tests/e2e/dummy_test.go,,Harness,N/A,,,"Harness, not a product case"
+,,tests/e2e/dummy_test.go,,Harness,N/A,,,"Harness, not a product case"
+,,tests/e2e/dummy_test.go,,Harness,N/A,,,"Harness, not a product case"
+,Test,tests/e2e/dummy_test.go,,Harness,N/A,,,"Harness, not a product case"
+,to prepare day2 conf for cluster,tests/e2e/e2e_day2_conf_test.go,Day 2 readiness,Both,TBD,,,Day1/destroy harness — needs rosa-hyperfleet profile before it can run against v2
+,commits-focus,tests/e2e/e2e_pre_check.go,,Harness,N/A,,,"Harness, not a product case"
+,report-portal,tests/e2e/e2e_report.go,,Harness,N/A,,,"Harness, not a product case"
+,by profile,tests/e2e/e2e_setup_test.go,Day 1,Both,TBD,Critical,"ROSAENG-65177, ROSAENG-65213",Day1/destroy harness — needs rosa-hyperfleet profile before it can run against v2
+,to wait for cluster ready,tests/e2e/e2e_setup_test.go,Day 1 readiness,Both,TBD,,,Day1/destroy harness — needs rosa-hyperfleet profile before it can run against v2
+,by profile,tests/e2e/e2e_tear_down_test.go,Destroy,Both,TBD,Critical,,Day1/destroy harness — needs rosa-hyperfleet profile before it can run against v2
+,by profile,tests/e2e/e2e_tear_down_test.go,Destroy (Konflux),Both,TBD,Critical,,Day1/destroy harness — needs rosa-hyperfleet profile before it can run against v2
+86415,Create/Edit/List/Describe/Delete log forwarders on hosted-cp cluster,tests/e2e/hcp_cluster_test.go,Day 2,HyperFleet,TBD,Critical,,
+64491,create and edit hosted-cp cluster with AuditLog Forwarding enabled/disabled via rosacli,tests/e2e/hcp_cluster_test.go,Day 2,HyperFleet,TBD,High,,
+60083,create cluster with the KMS and etcd encryption for hypershift clusters by rosa-cli,tests/e2e/hcp_cluster_test.go,Day 2,HyperFleet,TBD,High,,
+71050,create HCP cluster with network type can work well via rosa cli,tests/e2e/hcp_cluster_test.go,Day 2,HyperFleet,TBD,High,"ROSAENG-65142, ROSAENG-65183",
+71945,create ROSA HCP cluster with external_auth_config config should work well via rosa client,tests/e2e/hcp_cluster_test.go,Day 2,HyperFleet,TBD,High,ROSAENG-65130,
+74556,can edit ROSA HCP cluster with additional allowed principals,tests/e2e/hcp_cluster_test.go,Day 2,HyperFleet,TBD,High,"ROSAENG-65206, ROSAENG-65629",
+54869,rosacli can show the details of HCP cluster well when describe,tests/e2e/hcp_cluster_test.go,Day 2,HyperFleet,TBD,Critical,"ROSAENG-65195, ROSAENG-65213, ROSAENG-65630",
+76394,create ROSA HCP with registry config can work well via rosa cli,tests/e2e/hcp_cluster_test.go,Day 1 post,HyperFleet,TBD,High,"ROSAENG-65119, ROSAENG-65147, ROSAENG-65207, ROSAENG-65225",
+76395,edit ROSA HCP with registry config can work well via rosa cli,tests/e2e/hcp_cluster_test.go,Day 2,HyperFleet,TBD,High,"ROSAENG-65119, ROSAENG-65147, ROSAENG-65207, ROSAENG-65225",
+84981,edit ROSA HCP with autonode configuration via rosa cli,tests/e2e/hcp_cluster_test.go,Day 2,HyperFleet,TBD,High,,
+85689,to create cluster withskip_inflight property,tests/e2e/hcp_cluster_test.go,Day 1 supplemental,HyperFleet,TBD,Medium,ROSAENG-65117,
+72899,to create/list/describe/delete HCP cluster with break_glass_credentials can work well,tests/e2e/hcp_external_auth_test.go,Day 2,HyperFleet,TBD,High,ROSAENG-65130,
+72536,create/list/describe/delete external_auth for a HCP cluster can work well via rosa client,tests/e2e/hcp_external_auth_test.go,Day 2,HyperFleet,TBD,Critical,ROSAENG-65130,
+73018,to validate create/list/describe/delete break_glass_credentials can work well,tests/e2e/hcp_external_auth_test.go,Day 2,HyperFleet,TBD,Medium,ROSAENG-65130,
+71946,to validate create/list/delete idp and user/admin to external_auth_config cluster can work well,tests/e2e/hcp_external_auth_test.go,Day 2,HyperFleet,TBD,Medium,ROSAENG-65130,
+72602,to validate HCP cluster creation/list with external auth,tests/e2e/hcp_external_auth_test.go,Day 2,HyperFleet,TBD,Medium,ROSAENG-65130,
+72195,should succeed with additional security group IDs,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Critical,ROSAENG-65161,
+66872,create machinepool with volume size set,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Critical,ROSAENG-65164,
+73638,machinepool AWS preflight tag validation,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Medium,ROSAENG-65173,
+,Scale up/down a machine pool,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Critical,,
+,Scale up/down a machine pool with invalid replica,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Medium,,
+60278,should succeed to scale with valid parameters,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Medium,"ROSAENG-65139, ROSAENG-65168",
+60278,should raise error message with the invalid parameters,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Medium,"ROSAENG-65139, ROSAENG-65168",
+56786,creation,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Medium,ROSAENG-65188,
+56783,deletion,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Medium,ROSAENG-65150,
+71319,creation in local zone subnet,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Medium,,
+67419,upgrade,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Medium,"ROSAENG-65126, ROSAENG-65132, ROSAENG-65190",
+66874,will validate root volume size,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Medium,ROSAENG-65164,
+78277,validate maximum number of nodes,tests/e2e/hcp_machine_pool_test.go,Day 2,HyperFleet,TBD,Medium,"ROSAENG-65150, ROSAENG-65168",
+63164,can be created/updated/deleted to hosted cluster,tests/e2e/hcp_tuning_config_test.go,Day 2,HyperFleet,TBD,Critical,ROSAENG-65166,
+63169,can validate creation,tests/e2e/hcp_tuning_config_test.go,Day 2,HyperFleet,TBD,Medium,ROSAENG-65166,
+63174,can validate update,tests/e2e/hcp_tuning_config_test.go,Day 2,HyperFleet,TBD,Medium,ROSAENG-65166,
+,creates and deletes an HCP cluster via the Platform API,tests/e2e/hyperfleet_sanity_test.go,,HyperFleet,TBD,,"ROSAENG-65112, ROSAENG-65213",Smoke only (not a v1 FVT case). Do not grow this spec into the matrix.
+79848,Validation info/error about the MaxNodeLimit and MaxNodeLimitation,tests/e2e/rosa_autoscaler_test.go,Day 2,HyperFleet,TBD,Critical,ROSAENG-65202,
+79846,Edit/describe hosted-cp cluster autoscaler and validations for autoscaler operations,tests/e2e/rosa_autoscaler_test.go,Day 2,HyperFleet,TBD,Critical,ROSAENG-65202,
+67275,create/describe/edit/delete cluster autoscaler by rosacli,tests/e2e/rosa_autoscaler_test.go,Day 2,Classic only,N/A,Critical,ROSAENG-65202,Classic-only; skips on HyperFleet HCP
+,for hcp cluster,tests/e2e/rosa_autoscaler_test.go,Day 2,HyperFleet,TBD,Medium,,
+,for classic non-autoscaler cluster,tests/e2e/rosa_autoscaler_test.go,Day 2,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+74468,create/describe/edit/delete autoscaler for autoscaler enabled cluster,tests/e2e/rosa_autoscaler_test.go,Day 1 post,Classic only,N/A,Medium,ROSAENG-65202,Classic-only; skips on HyperFleet HCP
+43070,can create/list/delete account-roles,tests/e2e/test_rosacli_account_roles.go,OCM resources,Both,TBD,High,"ROSAENG-65182, ROSAENG-65184, ROSAENG-65186, ROSAENG-65220, ROSAENG-65633",
+57441,can validate that upgrade account-roles with the managed policies should be forbidden,tests/e2e/test_rosacli_account_roles.go,OCM resources,Both,TBD,High,,
+62083,can delete account-roles with --hosted-cp and --classic,tests/e2e/test_rosacli_account_roles.go,OCM resources,HyperFleet,TBD,High,ROSAENG-65220,
+61322,create/delete hypershift account roles with managed policies,tests/e2e/test_rosacli_account_roles.go,OCM resources,HyperFleet,TBD,Critical,"ROSAENG-65182, ROSAENG-65186, ROSAENG-65220",
+57408,create/delete classic account roles with managed policies,tests/e2e/test_rosacli_account_roles.go,OCM resources,Classic only,N/A,Critical,,Classic-only; skips on HyperFleet HCP
+43067,Validation for account-role creation by user,tests/e2e/test_rosacli_account_roles.go,OCM resources,Both,TBD,Medium,ROSAENG-65184,
+44511,to list account-roles by rosa-cli,tests/e2e/test_rosacli_account_roles.go,OCM resources,Both,TBD,High,ROSAENG-65220,
+75904,to check the trust policy attach information when create account-roles multiple times,tests/e2e/test_rosacli_account_roles.go,OCM resources,Both,TBD,High,"ROSAENG-65186, ROSAENG-65633",
+75246,to create account-roles with invalid version/channel group,tests/e2e/test_rosacli_account_roles.go,OCM resources,Both,TBD,High,,
+54469,to create/Upgrade account-roles by setting version and channel-group via rosacli,tests/e2e/test_rosacli_account_roles.go,OCM resources,Both,TBD,High,,
+77962,Create/Delete account roles for hosted-cp shared vpc cluster in manual mode,tests/e2e/test_rosacli_account_roles.go,OCM resources,HyperFleet,TBD,Critical,,
+77829,Create/Delete account roles for hosted-cp shared vpc cluster in auto mode,tests/e2e/test_rosacli_account_roles.go,OCM resources,HyperFleet,TBD,Critical,,
+81399,can edit cluster channel group,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,Medium,,
+34102,can check the description of the cluster,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,Medium,ROSAENG-65213,
+38850,"can restrict master API endpoint to direct, private connectivity or not",tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,High,"ROSAENG-65115, ROSAENG-65135, ROSAENG-65154",
+45159,can disable workload monitoring on/off,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,High,,
+60275,can edit privacy and workload monitoring via rosa-cli,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,Critical,"ROSAENG-65115, ROSAENG-65135, ROSAENG-65154",
+73161,can verify delete protection on a rosa cluster,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,High,ROSAENG-65121,
+74656,can verify delete protection on a rosa cluster negative,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,Medium,ROSAENG-65121,
+46308,can edit proxy successfully,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,High,ROSAENG-65178,
+75921,Changing billing account for the cluster,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,High,ROSAENG-65433,
+75922,Changing invalid billing account,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,Medium,ROSAENG-65433,
+UWM-HELP-001,does not show UWM example in edit cluster help text,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,Both,TBD,Low,,
+38787,can validate for deletion of upgrade policy of rosa cluster,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,Medium,ROSAENG-65631,
+73814,can validate create/delete upgrade policies for HCP clusters,tests/e2e/test_rosacli_cluster.go,Day 2,HyperFleet,TBD,Medium,"ROSAENG-65190, ROSAENG-65631",
+46310,can validate cluster proxy well,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,Medium,ROSAENG-65178,
+77149,can validate cluster registry config patching well,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,Medium,"ROSAENG-65119, ROSAENG-65207, ROSAENG-65225",
+84982,can validate autonode edit,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,Medium,,
+68971,Create rosa cluster with additional security groups will validate well via rosacli,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Both,TBD,Medium,ROSAENG-65161,
+38770,to check the basic validation for the classic rosa cluster creation by the rosa cli,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+45161,can allow sts cluster installation with compatible policies,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,Classic only,N/A,High,,Classic-only; skips on HyperFleet HCP
+56440,to validate to create the sts cluster with invalid tag,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+66372,Create cluster with invalid volume size,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Medium,ROSAENG-65164,Classic-only; skips on HyperFleet HCP
+52692,to validate to create cluster with availability zones,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+71329,Validate --worker-mp-labels option for ROSA cluster creation,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Medium,ROSAENG-65188,Classic-only; skips on HyperFleet HCP
+74399,to validate to create the cluster with version not in the channel group,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Medium,ROSAENG-65103,Classic-only; skips on HyperFleet HCP
+74436,to validate to create the cluster with setting 'fips' flag but '--etcd-encryption=false',tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Medium,ROSAENG-65101,Classic-only; skips on HyperFleet HCP
+76481,validate use-local-credentials won't work with sts,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+73162,can verify delete protection on HCP cluster creation,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,HyperFleet,TBD,High,ROSAENG-65121,
+73162,can verify delete protection on classic cluster creation,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,Classic only,N/A,High,ROSAENG-65121,Classic-only; skips on HyperFleet HCP
+74657,validate enable-delete-protection flag when create cluster,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Both,TBD,Medium,ROSAENG-65121,
+37177,to validate subnet well when create cluster,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Both,TBD,Medium,ROSAENG-65108,
+38857,to validate the network when create cluster,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Both,TBD,Medium,"ROSAENG-65104, ROSAENG-65120",
+45509,to validate the invalid proxy when create cluster,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Both,TBD,Medium,ROSAENG-65178,
+38778,to validate the ROSA cluster deletion will work via rosacli,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+45176,to validate to create the sts cluster with the version not compatible with the role version,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+41824,to validate to create sts cluster with invalid role arn and operator IAM roles prefix,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Low,,Classic-only; skips on HyperFleet HCP
+72657,to validate creating a cluster with invalid subnets,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Low,,Classic-only; skips on HyperFleet HCP
+74620,to validate to create sts cluster with dulicated role arns,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Low,,Classic-only; skips on HyperFleet HCP
+66761,to validate creating a cluster with invalid autoscaler,tests/e2e/test_rosacli_cluster.go,Day 1 negative,Classic only,N/A,Medium,ROSAENG-65202,Classic-only; skips on HyperFleet HCP
+86119,creating HCP cluster with UWM should fail,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,Medium,,
+73725,create HCP cluster with network type validation can work well via rosa cli,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,Medium,"ROSAENG-65142, ROSAENG-65183",
+75916,to validate creating a hosted cluster with invalid subnets,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,Low,ROSAENG-65108,
+66372,Create a hosted cluster cluster with invalid volume size,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,Medium,ROSAENG-65164,
+70970,to validate creating a hosted cluster with CIDR that doesn't exist,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,Low,"ROSAENG-65104, ROSAENG-65120",
+73755,to validate create cluster with external_auth_config can work well,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,Medium,ROSAENG-65130,
+64078,to validate '--ec2-metadata-http-tokens' flag during creating cluster,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,Medium,"ROSAENG-65118, ROSAENG-65224",
+74433,expose additional allowed principals for HCP negative,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,Medium,"ROSAENG-65206, ROSAENG-65629",
+71174,Updating default ingress settings is not supported for HCP clusters,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,Low,ROSAENG-65133,
+73672,to validate create cluster with audit log forwarding,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,Medium,,
+59547,to validate role's managed policy when creating hcp cluster,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,Medium,"ROSAENG-65210, ROSAENG-65632",
+76396,to validate hcp creation with registry config via rosacli,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,Medium,"ROSAENG-65119, ROSAENG-65207, ROSAENG-65225",
+72538,HCP cluster creation subnets validation,tests/e2e/test_rosacli_cluster.go,Day 1 negative,HyperFleet,TBD,High,"ROSAENG-65108, ROSAENG-65145, ROSAENG-65195",
+52691,User can set availability zones,tests/e2e/test_rosacli_cluster.go,Day 1 post,Classic only,N/A,Critical,,Classic-only; skips on HyperFleet HCP
+53570,to check the IAM roles can be used to create clsuters,tests/e2e/test_rosacli_cluster.go,Day 1 post,HyperFleet,TBD,Critical,ROSAENG-65633,
+45742,to validate to create cluster with existing operator roles prefix,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,Both,TBD,Medium,,
+43053,to create/delete operator-roles and oidc-provider to cluster in manual mode,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,Both,TBD,Critical,"ROSAENG-65187, ROSAENG-65210, ROSAENG-65215",
+60688,to reuse operator-roles prefix and oidc config,tests/e2e/test_rosacli_cluster.go,Day 2,Both,TBD,Critical,ROSAENG-65215,
+75603,Creating cluster with sts external id should succeed,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,Both,TBD,Medium,ROSAENG-65149,
+75925,Check the output of the STS cluster creation with new oidc flow,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,HyperFleet,TBD,Medium,,
+75534,ROSA CLI cluster creation should show install/uninstall logs,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,HyperFleet,TBD,Critical,,
+54413,Check single AZ hosted cluster can be created,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,HyperFleet,TBD,Critical,"ROSAENG-65176, ROSAENG-65213",
+75536,Create hosted cluster in manual mode,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,HyperFleet,TBD,High,ROSAENG-65213,
+75927,Check the trust policy attaching during hosted-cp cluster creation,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,HyperFleet,TBD,Medium,"ROSAENG-65186, ROSAENG-65633",
+56224,User can set availability zones to create rosa multi-az STS cluster,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,Both,TBD,Critical,ROSAENG-65199,
+55701,rosacli makes STS cluster by default,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,Both,TBD,Medium,"ROSAENG-65182, ROSAENG-65197",
+76093,Create STS cluster with oidc config id but no oidc provider via rosacli in auto mode,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,Both,TBD,Critical,ROSAENG-65215,
+65900,Creating cluster with non-sts use-local-credentials should succeed,tests/e2e/test_rosacli_cluster.go,Day 1 supplemental,Both,TBD,Medium,,
+66359,the creation of rosa cluster with volume size will work,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,ROSAENG-65164,
+57056,the creation of ROSA cluster with default-mp-labels option will succeed,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Classic only,N/A,Critical,ROSAENG-65188,Classic-only; skips on HyperFleet HCP
+68172,the additional security groups are working well,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,ROSAENG-65161,
+60082,bring your own kms key functionality works on cluster creation,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,,
+74408,additional allowed principals work on cluster creation,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,"ROSAENG-65206, ROSAENG-65629",
+42188,etcd encryption works on cluster creation,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,,
+73163,delete protection flag is available on cluster creation,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Medium,ROSAENG-65121,
+41549,with private_link will work,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,"ROSAENG-65154, ROSAENG-65629",
+83155,with API private and ingress pravate works on hosted-cp cluster,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,HyperFleet,TBD,Critical,"ROSAENG-65115, ROSAENG-65154, ROSAENG-65189",
+75150,with compute_machine_type will work,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,High,,
+75535,with multiAZ will work,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,HyperFleet,TBD,Critical,"ROSAENG-65199, ROSAENG-65203",
+75526,with private will work,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,"ROSAENG-65115, ROSAENG-65135, ROSAENG-65154",
+75527,with autoscaling will work,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,High,ROSAENG-65202,
+37176,with subnets will work,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,"ROSAENG-65108, ROSAENG-65145, ROSAENG-65195",
+45502,with proxy set will work,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,ROSAENG-65178,
+64040,the windows certificates expiration,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Medium,,
+75114,rosa hcp cluster creation support imdsv2,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,HyperFleet,TBD,Critical,"ROSAENG-65118, ROSAENG-65224",
+46312,rosa cluster with fips enabled can be created successfully,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,ROSAENG-65101,
+75108,cluster is multiarch,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,High,ROSAENG-65139,
+65900,with use-local-credentials will work,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,High,,
+75525,with policy path will work,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,High,,
+35420,User can create cluster with channel group,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,,
+75210,to verifiy the byo oidc cluster is deleted successfully,tests/e2e/test_rosacli_cluster_post.go,Destroy post,Both,TBD,Critical,ROSAENG-65215,
+75256,to verify the sts cluster is deleted successfully,tests/e2e/test_rosacli_cluster_post.go,Destroy post,Both,TBD,High,ROSAENG-65197,
+59530,to verify byo oidc cluster is created successfully,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,"ROSAENG-65182, ROSAENG-65197, ROSAENG-65215",
+41822,to verify sts cluster is created successfully,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,High,"ROSAENG-65182, ROSAENG-65197",
+57410,to verify cluster with the operator-roles attaching managed policy is created successfully,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,HyperFleet,TBD,High,"ROSAENG-65187, ROSAENG-65210, ROSAENG-65632",
+78240,to verify shared-vpc hosted-cp cluster is created successfully and can be edited,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,HyperFleet,TBD,Critical,,
+73141,to verify billing account settings,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,Critical,ROSAENG-65433,
+86415,to verify log forward config,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Both,TBD,High,,
+35894,Create MOA clusters with the --disable-scp-check flag,tests/e2e/test_rosacli_cluster_post.go,Day 1 post,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+72166,to set and get config via rosacli,tests/e2e/test_rosacli_config.go,OCM resources,Both,TBD,High,,
+65793,can create/list/delete dns-domain via rosacli,tests/e2e/test_rosacli_dns_domain.go,OCM resources,Both,TBD,Critical,ROSAENG-65122,
+42832,to hibernate and resume then delete cluster via rosacli,tests/e2e/test_rosacli_hibernate.go,Hibernate,Classic only,N/A,Critical,,Classic hibernation — not a v2 requirement
+84391,"can create, list, describe, and delete IAM service account role in auto mode",tests/e2e/test_rosacli_iam_service_account.go,Day 2,HyperFleet,TBD,High,"ROSAENG-65140, ROSAENG-65184",
+84626,can delete IAM service account role in manual mode,tests/e2e/test_rosacli_iam_service_account.go,Day 2,HyperFleet,TBD,High,ROSAENG-65140,
+35878,can create/describe/delete admin user,tests/e2e/test_rosacli_idp.go,Day 2,Both,TBD,Critical,"ROSAENG-65152, ROSAENG-65156, ROSAENG-65163, ROSAENG-65177",
+35896,can create/List/Delete IDPs for rosa clusters,tests/e2e/test_rosacli_idp.go,Day 2,Both,TBD,Critical,"ROSAENG-65102, ROSAENG-65137, ROSAENG-65146, ROSAENG-65157, ROSAENG-65169",
+49137,can create/delete the HTPasswd IDPs,tests/e2e/test_rosacli_idp.go,Day 2,Both,TBD,Critical,"ROSAENG-65123, ROSAENG-65163",
+53031,Validation for Create/Delete the HTPasswd IDPs by the rosacli command,tests/e2e/test_rosacli_idp.go,Day 2,Both,TBD,Critical,ROSAENG-65163,
+38788,Check the help message and the validation for the IDP creation commands by the rosa cli,tests/e2e/test_rosacli_idp.go,Day 2,Both,TBD,Medium,,
+,Create admin first,tests/e2e/test_rosacli_idp.go,Day 2,Both,TBD,Medium,,
+,Create admin last,tests/e2e/test_rosacli_idp.go,Day 2,Both,TBD,Medium,,
+36128,can grant/list/revoke users,tests/e2e/test_rosacli_idp_user.go,Day 2,Both,TBD,Critical,"ROSAENG-65123, ROSAENG-65152, ROSAENG-65156",
+66362,"try to create cluster with invalid usernames, passwords or unsupported configurations",tests/e2e/test_rosacli_idp_user.go,Day 2,Both,TBD,Critical,ROSAENG-65123,
+84761,"can create, list, edit, and delete image mirror on cluster",tests/e2e/test_rosacli_image_mirror.go,Day 2,HyperFleet,TBD,High,"ROSAENG-65148, ROSAENG-65153",
+63323,can update on rosa HCP cluster,tests/e2e/test_rosacli_ingress.go,Day 2,HyperFleet,TBD,Critical,"ROSAENG-65133, ROSAENG-65189",
+73538,can describe ingress of a cluster,tests/e2e/test_rosacli_ingress.go,Day 2,Both,TBD,Low,"ROSAENG-65133, ROSAENG-65189",
+75052,can describe ingress of a cluster negative,tests/e2e/test_rosacli_ingress.go,Day 2,Both,TBD,Low,,
+64767,change load balancer type,tests/e2e/test_rosacli_ingress.go,Day 2,Classic only,N/A,Critical,"ROSAENG-65198, ROSAENG-65620",Classic-only; skips on HyperFleet HCP
+65798,can customize ingress controller at install,tests/e2e/test_rosacli_ingress.go,Day 1 post,Classic only,N/A,High,"ROSAENG-65205, ROSAENG-65625, ROSAENG-65627, ROSAENG-65628",Classic-only; skips on HyperFleet HCP
+65799,can update ingress controller attributes,tests/e2e/test_rosacli_ingress.go,Day 2,Classic only,N/A,Critical,"ROSAENG-65205, ROSAENG-65625, ROSAENG-65627, ROSAENG-65628",Classic-only; skips on HyperFleet HCP
+38835,can change labels and private,tests/e2e/test_rosacli_ingress.go,Day 2,Classic only,N/A,Critical,ROSAENG-65189,Classic-only; skips on HyperFleet HCP
+38837,can validate well,tests/e2e/test_rosacli_ingress.go,Day 2,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+38780,will fail as expected on incorrect deletions (negative),tests/e2e/test_rosacli_ingress.go,Day 2,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+68828,can create podPidLimit via rosacli will work well,tests/e2e/test_rosacli_kubelet_config.go,Day 2,Classic only,N/A,Critical,ROSAENG-65216,Classic-only; skips on HyperFleet HCP
+68835,can update podPidLimit via rosacli will work well,tests/e2e/test_rosacli_kubelet_config.go,Day 2,Classic only,N/A,Critical,ROSAENG-65216,Classic-only; skips on HyperFleet HCP
+68836,can delete podPidLimit via rosacli will work well,tests/e2e/test_rosacli_kubelet_config.go,Day 2,Classic only,N/A,Critical,ROSAENG-65216,Classic-only; skips on HyperFleet HCP
+73753,can be created/updated/deleted successfully,tests/e2e/test_rosacli_kubelet_config.go,Day 2,HyperFleet,TBD,High,ROSAENG-65216,
+73754,can validate when create/edit/delete/describe,tests/e2e/test_rosacli_kubelet_config.go,Day 2,HyperFleet,TBD,Medium,ROSAENG-65216,
+73765,can be attach to machinepool successfully,tests/e2e/test_rosacli_kubelet_config.go,Day 2,HyperFleet,TBD,High,ROSAENG-65216,
+73766,can validate well when attach to machinepool,tests/e2e/test_rosacli_kubelet_config.go,Day 2,HyperFleet,TBD,Medium,ROSAENG-65216,
+36293,can create/list machinepool,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,Critical,,Classic-only; skips on HyperFleet HCP
+66872,can create machinepool with volume size set,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,Critical,ROSAENG-65164,Classic-only; skips on HyperFleet HCP
+73308,List newly added instance-types,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+43251,can create spot machinepool,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,High,ROSAENG-65151,Classic-only; skips on HyperFleet HCP
+43252,validate inputs for create spot machinepool,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,Medium,ROSAENG-65151,Classic-only; skips on HyperFleet HCP
+73469,can create machinepool with tags,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,High,ROSAENG-65173,Classic-only; skips on HyperFleet HCP
+52352,can create machinepool with availibility zone,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,High,,Classic-only; skips on HyperFleet HCP
+52764,can create machinepool with another subnet,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,High,,Classic-only; skips on HyperFleet HCP
+68173,can create machinepool with additional security groups,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,High,ROSAENG-65161,Classic-only; skips on HyperFleet HCP
+55979,can create local zone machinepool,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,High,,Classic-only; skips on HyperFleet HCP
+67057,will validate name/replicas/labels/taints,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,Medium,ROSAENG-65188,Classic-only; skips on HyperFleet HCP
+38775,will validate machine pool creation,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+38783,will validate machine pool deletion,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+66874,will validate root volume size,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,Medium,ROSAENG-65164,Classic-only; skips on HyperFleet HCP
+68219,will validate the security groups correctly,tests/e2e/test_rosacli_machine_pool.go,,Classic only,N/A,,ROSAENG-65161,Classic-only; skips on HyperFleet HCP
+38838,will succeed,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,High,,Classic-only; skips on HyperFleet HCP
+57102,can edit the default machinepool labels and taints,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,High,ROSAENG-65188,Classic-only; skips on HyperFleet HCP
+66750,can list/edit/delete the default worker pool,tests/e2e/test_rosacli_machine_pool.go,Destructive,Classic only,N/A,High,,Classic-only; skips on HyperFleet HCP
+38194,enable/disable/update autoscaling will work well,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,High,,Classic-only; skips on HyperFleet HCP
+57105,will validate labels and taints for default worker pool,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,Medium,ROSAENG-65188,Classic-only; skips on HyperFleet HCP
+44776,will validate replicas on multi-az classic cluster,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,Medium,ROSAENG-65199,Classic-only; skips on HyperFleet HCP
+38840,will validate replicas on single-az classic cluster,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+76200,should not be supported on Classic clusters,tests/e2e/test_rosacli_machine_pool.go,Day 2,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+81295,should be created successfully with default template successfully,tests/e2e/test_rosacli_network_resources.go,OCM resources,Both,TBD,High,ROSAENG-65145,
+77140,should be created with local template successfully,tests/e2e/test_rosacli_network_resources.go,OCM resources,Both,TBD,High,ROSAENG-65145,
+77159,should be validated successfully,tests/e2e/test_rosacli_network_resources.go,OCM resources,Both,TBD,Medium,ROSAENG-65145,
+64917,can verify network,tests/e2e/test_rosacli_network_verifier.go,Day 2,Both,TBD,High,ROSAENG-65209,
+68751,validation should work well,tests/e2e/test_rosacli_network_verifier.go,Day 2,Both,TBD,Medium,ROSAENG-65209,
+70370,verify that network will be failed if it can't reach to cluster subnet via the rosa cli,tests/e2e/test_rosacli_network_verifier.go,Destructive,Both,TBD,Medium,"ROSAENG-65117, ROSAENG-65209",
+56782,can create/edit/list/delete nodepool,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,Critical,ROSAENG-65188,
+60202,can create nodepool with defined subnets,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,Critical,ROSAENG-65108,
+63178,can create nodepool with tuning config,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,Critical,ROSAENG-65166,
+63179,create nodepool with tuning config will validate well,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,Medium,ROSAENG-65166,
+61138,does support 'version' parameter on nodepool,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,High,"ROSAENG-65103, ROSAENG-65126, ROSAENG-65190",
+61139,can validate the version parameter on nodepool creation/editing,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,Medium,"ROSAENG-65126, ROSAENG-65190",
+67414,can list/describe/delete nodepool upgrade policies,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,Critical,"ROSAENG-65126, ROSAENG-65132, ROSAENG-65190",
+67412,can upgrade machinepool of hosted cluster,tests/e2e/test_rosacli_node_pool.go,Upgrade,HyperFleet,TBD,Critical,"ROSAENG-65126, ROSAENG-65132, ROSAENG-65190",
+72715,create/edit nodepool with node_drain_grace_period to HCP cluster via ROSA cli can work well,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,High,"ROSAENG-65107, ROSAENG-65132",
+73391,validations will work for editing machinepool via rosa cli,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,Medium,,
+73492,create/describe machinepool with user tags for HCP,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,High,ROSAENG-65173,
+74387,create/edit/describe maxunavailable/maxsurge for HCP nodepools,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,Critical,"ROSAENG-65132, ROSAENG-65192",
+74430,validation for create/edit HCP nodepool with maxunavailable/maxsurge,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,Medium,"ROSAENG-65132, ROSAENG-65192",
+59430,can enable/disable/update autoscaling,tests/e2e/test_rosacli_node_pool.go,,HyperFleet,TBD,,"ROSAENG-65168, ROSAENG-65202",
+75227,create/describe rosa hcp machinepool support imdsv2,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,Critical,"ROSAENG-65118, ROSAENG-65224",
+56778,Edit machine pool to the ROSA Hypershift cluster,tests/e2e/test_rosacli_node_pool.go,Day 2,HyperFleet,TBD,High,ROSAENG-65188,
+46187,can create/delete/unlink/link ocm-roles in auto mode,tests/e2e/test_rosacli_ocm_role.go,OCM resources,OCM,N/A,High,,OCM tenancy — not a v2 requirement
+57570,can create/list/delete BYO oidc config in auto mode,tests/e2e/test_rosacli_oidc_config.go,OCM resources,Both,TBD,High,ROSAENG-65215,
+64620,to register successfully,tests/e2e/test_rosacli_oidc_config.go,OCM resources,Both,TBD,High,ROSAENG-65215,
+43046,validate when user create oidc-provider to cluster,tests/e2e/test_rosacli_oidc_provider.go,Day 2,Both,TBD,Medium,"ROSAENG-65112, ROSAENG-65182",
+74761,to delete in-used operator-roles and byo oidc-config,tests/e2e/test_rosacli_operator_roles.go,Day 2,Both,TBD,Critical,"ROSAENG-65187, ROSAENG-65210, ROSAENG-65215",
+43051,can validate when user create operator-roles to cluster,tests/e2e/test_rosacli_operator_roles.go,Day 2,Both,TBD,Medium,"ROSAENG-65182, ROSAENG-65187, ROSAENG-65210",
+70859,to validate operator roles and oidc provider will work well,tests/e2e/test_rosacli_operator_roles.go,Day 2,Both,TBD,Medium,"ROSAENG-65187, ROSAENG-65210",
+60971,can create operator-roles prior to cluster creation,tests/e2e/test_rosacli_operator_roles.go,OCM resources,Both,TBD,High,"ROSAENG-65184, ROSAENG-65187, ROSAENG-65210",
+74661,to create operator-roles which were created with cluster forcely,tests/e2e/test_rosacli_operator_roles.go,Destructive,Classic only,N/A,Critical,"ROSAENG-65187, ROSAENG-65210",Classic-only; skips on HyperFleet HCP
+59551,to create account-roles and prior-to-cluster operator-roles forcely,tests/e2e/test_rosacli_operator_roles.go,OCM resources,Both,TBD,Critical,"ROSAENG-65187, ROSAENG-65210",
+60956,to delete operator-roles and byo oidc-config in manual mode,tests/e2e/test_rosacli_operator_roles.go,OCM resources,Both,TBD,Critical,"ROSAENG-65187, ROSAENG-65210, ROSAENG-65215",
+75504,to create and delete operatorroles attaching managed policies in manual mode,tests/e2e/test_rosacli_operator_roles.go,Day 1 supplemental,Both,TBD,Critical,"ROSAENG-65187, ROSAENG-65210",
+45745,to create and upgrade operator roles in auto mode,tests/e2e/test_rosacli_operator_roles.go,Day 1 supplemental,Both,TBD,Critical,"ROSAENG-65187, ROSAENG-65210",
+77910,Create/Delete operator roles for hosted-cp shared vpc cluster in manual mode,tests/e2e/test_rosacli_operator_roles.go,OCM resources,HyperFleet,TBD,Critical,"ROSAENG-65187, ROSAENG-65210",
+77866,Create/Delete operator roles for hosted-cp shared vpc cluster in auto mode,tests/e2e/test_rosacli_operator_roles.go,OCM resources,HyperFleet,TBD,Critical,"ROSAENG-65187, ROSAENG-65210",
+73449,can attach and detach arbitrary policies on existing roles in auto mode,tests/e2e/test_rosacli_policy.go,Day 2,Both,TBD,Critical,"ROSAENG-65174, ROSAENG-65632",
+74225,to check the validations for attaching and detaching arbitrary policies,tests/e2e/test_rosacli_policy.go,Day 2,Both,TBD,Medium,"ROSAENG-65174, ROSAENG-65632",
+74402,can be upgraded and deleted successfully,tests/e2e/test_rosacli_policy.go,Day 2,Both,TBD,Critical,ROSAENG-65632,
+74403,can be deleted successfully,tests/e2e/test_rosacli_policy.go,OCM resources,Both,TBD,Critical,ROSAENG-65632,
+55729,can list regions,tests/e2e/test_rosacli_region.go,OCM resources,Both,TBD,High,,
+34950,Available regions can be listed by ROSA cli,tests/e2e/test_rosacli_region.go,OCM resources,Both,TBD,Medium,,
+72174,List instance-types with region flag,tests/e2e/test_rosacli_region.go,OCM resources,Both,TBD,Low,,
+72162,Generate token via `rosa token` command and check all flags of it,tests/e2e/test_rosacli_token.go,OCM resources,OCM,N/A,High,,OCM token — not a v2 requirement
+73731,to upgrade roles/operator-roles and cluster,tests/e2e/test_rosacli_upgrade.go,Upgrade,HyperFleet,TBD,Critical,ROSAENG-65190,
+37499,to upgrade NON-STS rosa cluster across Y stream,tests/e2e/test_rosacli_upgrade.go,Upgrade,Both,TBD,Critical,,
+67168,to upgrade shared VPC cluster across Y stream,tests/e2e/test_rosacli_upgrade.go,Upgrade,Both,TBD,High,,
+57444,to upgrade wide AMI roles with the managed policies in auto mode,tests/e2e/test_rosacli_upgrade.go,Upgrade,Both,TBD,Critical,,
+75445,to upgrade wide AMI roles with the managed policies in manual mode,tests/e2e/test_rosacli_upgrade.go,Upgrade,Both,TBD,Critical,,
+57094,to list/describe rosa upgrade via ROSA CLI,tests/e2e/test_rosacli_upgrade.go,Day 2,Both,TBD,High,"ROSAENG-65190, ROSAENG-65631",
+38827,List upgrades of cluster via ROSA cli will succeed,tests/e2e/test_rosacli_upgrade.go,Day 2,Classic only,N/A,Medium,ROSAENG-65631,Classic-only; skips on HyperFleet HCP
+64187,automatic upgrade for HCP cluster,tests/e2e/test_rosacli_upgrade.go,Upgrade,HyperFleet,TBD,Critical,"ROSAENG-65190, ROSAENG-65631",
+62929,manual upgrade for hcp upgrade,tests/e2e/test_rosacli_upgrade.go,Upgrade,HyperFleet,TBD,Critical,"ROSAENG-65190, ROSAENG-65631",
+62161,to validate role's policy when upgrade hcp cluster,tests/e2e/test_rosacli_upgrade.go,Upgrade,HyperFleet,TBD,Medium,ROSAENG-65190,
+38829,Validation for creating upgrade policy via ROSA cli will work,tests/e2e/test_rosacli_upgrade.go,Day 2,Classic only,N/A,Medium,,Classic-only; skips on HyperFleet HCP
+52580,can validate create/link/unlink user-role,tests/e2e/test_rosacli_user_role.go,OCM resources,OCM,N/A,Medium,,OCM tenancy — not a v2 requirement
+52419,can create/link/unlink/delete user-role in auto mode,tests/e2e/test_rosacli_user_role.go,OCM resources,OCM,N/A,High,,OCM tenancy — not a v2 requirement
+52693,can create/link/unlink/delete user-role in manual mode,tests/e2e/test_rosacli_user_role.go,OCM resources,OCM,N/A,High,,OCM tenancy — not a v2 requirement
+38851,to verify oc/permission/quota/rosa client via rosacli,tests/e2e/test_rosacli_verify.go,OCM resources,Both,TBD,Medium,ROSAENG-65111,
+73743,can get the version of rosa CLI while logged out,tests/e2e/test_rosacli_version.go,OCM resources,Both,TBD,Medium,,
+62088,list versions can work correctly for hosted-cp cluster via ROSA cli,tests/e2e/test_rosacli_version.go,OCM resources,HyperFleet,TBD,High,"ROSAENG-65103, ROSAENG-65630",
+38810,list versions can work correctly via ROSA cli,tests/e2e/test_rosacli_version.go,OCM resources,Both,TBD,High,ROSAENG-65103,
