@@ -87,13 +87,11 @@
       ]
     },
     {
-      "description": "Sync all module go.mod/go.sum after Go updates (ci/prow/verify)",
+      "description": "gobwas/glob v1 breaks golangci-lint build in hack/tools",
       "matchManagers": ["gomod"],
-      "postUpgradeTasks": {
-        "commands": ["make mod-tidy"],
-        "executionMode": "branch",
-        "fileFilters": ["**/go.mod", "**/go.sum"]
-      }
+      "matchPackageNames": ["github.com/gobwas/glob"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     },
     {
       "description": "Batch + automerge Konflux Tekton reference updates when Prow + Konflux pass",
