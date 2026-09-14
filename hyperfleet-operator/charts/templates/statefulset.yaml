@@ -44,10 +44,6 @@ spec:
                   key: {{ .Values.postgres.secretKey | default "dsn" }}
             - name: REPLICA_COUNT
               value: {{ .Values.replicaCount | quote }}
-            {{- if .Values.alertmanager.url }}
-            - name: ALERTMANAGER_URL
-              value: {{ .Values.alertmanager.url | quote }}
-            {{- end }}
           ports:
             - name: health
               containerPort: 8081

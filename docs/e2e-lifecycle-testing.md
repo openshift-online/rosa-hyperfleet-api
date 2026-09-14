@@ -93,24 +93,6 @@ The `hcp:available` phase is distinct from `hcp:monitor` — it represents the w
 | ---------------------- | ---------------- | --------------------------------------------------------------------------------------- |
 | Wait for cluster ready | `cluster-status` | Poll `/clusters/{id}/statuses` until all controller conditions are True (20min timeout) |
 | Wait for nodepools     | `nodepools-wait` | Wait 5min for nodepools to deploy                                                       |
-| Installing lifecycle silence | `silence-installing` | While phase is `Provisioning`, assert an installing silence exists in Alertmanager (requires `E2E_ALERTMANAGER_URL`) |
-| Ready lifecycle silence cleanup | `silence-ready` | After cluster is `Ready`, assert installing silences are expired (requires `E2E_ALERTMANAGER_URL`) |
-
-The `silence-installing` and `silence-ready` specs are **opt-in**: they skip unless `E2E_ALERTMANAGER_URL` is set. They are not run in standard PR CI.
-
-#### Ephemeral / int validation (Alertmanager tunnel)
-
-The e2e runner has no direct network path to the regional Alertmanager. Manual validation on ephemeral or int requires a tunnel:
-
-1. Bastion: `kubectl port-forward svc/monitoring-alertmanager 9093:9093 -n monitoring --address 0.0.0.0`
-2. Laptop: SSM port-forward bastion port 9093 → `localhost:9093`
-3. e2e-cli: set `E2E_ALERTMANAGER_URL` to the forwarded endpoint
-   - Linux (podman `--network host`): `http://127.0.0.1:9093`
-   - macOS: run e2e on the host (not in podman) with `http://127.0.0.1:9093` — podman user-mode networking cannot reach the SSM forward
-
-The hyperfleet-operator writes silences in-cluster via `ALERTMANAGER_URL` (e.g. `http://monitoring-alertmanager.monitoring.svc:9093`). The e2e specs only **read** silences through the tunnel to assert reconciler behaviour.
-
-Operator integration tests (`hyperfleet-operator/test`) exercise the silence reconciler against a real Alertmanager container and are the automated CI gate for reconciler logic.
 
 #### `hcp:post-monitor`
 
