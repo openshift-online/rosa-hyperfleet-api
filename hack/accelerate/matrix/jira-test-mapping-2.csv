@@ -1,0 +1,102 @@
+Jira,Capability,Jira status,Priority,Tests,TBD,N/A,Runtimes,Complexity,Test ids,Join
+ROSAENG-65633,AWS STS Credential Requests,To Do,Undefined,4,4,0,"OCM resources, Day 1 post, Day 1 supplemental",passthrough,"43070, 75904, 53570, 75927",STS credential/trust-policy coverage on account-roles and hosted-cp create
+ROSAENG-65632,AWS STS Policies Inquiry,To Do,Undefined,6,6,0,"Day 1 negative, Day 1 post, Day 2, OCM resources",passthrough,"59547, 57410, 73449, 74225, 74402, 74403",STS policy attach/upgrade and managed-policy operator-role checks
+ROSAENG-65631,Control Plane Upgrade Policies,To Do,Undefined,6,5,1,"Day 2, Upgrade",complex,"38787, 73814, 57094, 38827, 64187, 62929",Control-plane upgrade policy list/create/delete (HCP + classic)
+ROSAENG-65630,Hypershift Info,To Do,Undefined,2,2,0,"Day 2, OCM resources",passthrough,"54869, 62088",HCP describe + hosted-cp version list as Hypershift/HCP info
+ROSAENG-65629,PrivateLink Principals (Day-2),To Do,Undefined,4,4,0,"Day 2, Day 1 negative, Day 1 post",passthrough,"74556, 74433, 74408, 41549",Additional allowed principals + PrivateLink day1-post
+ROSAENG-65628,Ingress Namespace Selectors,To Do,Undefined,2,0,2,"Day 1 post, Day 2",passthrough,"65798, 65799",Ingress route selectors (Classic SkipNotClassic → N/A on HCP profile)
+ROSAENG-65627,Wildcard Policies,To Do,Undefined,2,0,2,"Day 1 post, Day 2",passthrough,"65798, 65799",Ingress wildcard-policy (Classic SkipNotClassic → N/A on HCP profile)
+ROSAENG-65626,AWS Infrastructure Access Roles,To Do,Undefined,0,0,0,,passthrough,,No CLI FVT for infrastructure-access roles; ocm-role suite is OCM tenancy (N/A)
+ROSAENG-65625,Namespace Ownership Policies,To Do,Undefined,2,0,2,"Day 1 post, Day 2",passthrough,"65798, 65799",Ingress namespace-ownership-policy (Classic → N/A on HCP profile)
+ROSAENG-65620,NLB Ingress Support,To Do,Undefined,1,0,1,Day 2,complex,64767,Ingress --lb-type nlb/classic (Classic SkipNotClassic → N/A on HCP profile)
+ROSAENG-65434,Export Control,New,Undefined,0,0,0,,unknown,,No CLI FVT match found
+ROSAENG-65433,Metering & Billing,New,Undefined,3,3,0,"Day 2, Day 1 post",complex,"75921, 75922, 73141",Billing-account day1-post and day2 edit; likely shim (OCM-shaped)
+ROSAENG-65431,OSC on ROSA validated,New,Undefined,0,0,0,,passthrough,,No CLI FVT match found
+ROSAENG-65225,Additional Trusted CAs for Registries,To Do,Undefined,4,4,0,"Day 1 post, Day 2, Day 1 negative",passthrough,"76394, 76395, 77149, 76396",Registry config additional-trusted-ca on HCP create/edit/validate
+ROSAENG-65224,IMDSv2 Enforcement,To Do,Undefined,3,3,0,"Day 1 negative, Day 1 post, Day 2",passthrough,"64078, 75114, 75227",IMDSv2 / ec2-metadata-http-tokens on HCP cluster and machinepool
+ROSAENG-65223,Limited Support Reasons,To Do,Undefined,0,0,0,,passthrough,,No CLI FVT match found
+ROSAENG-65220,AWS STS Account Roles Inquiry,To Do,Undefined,4,4,0,OCM resources,passthrough,"43070, 62083, 61322, 44511",Account-roles list/create including hosted-cp
+ROSAENG-65216,Kubelet Configs,To Do,Undefined,7,4,3,Day 2,passthrough,"68828, 68835, 68836, 73753, 73754, 73765, 73766",KubeletConfig HCP CRUD/attach; Classic Its are N/A on HyperFleet profile
+ROSAENG-65215,Bring Your Own OIDC,To Do,Undefined,9,9,0,"Day 1 supplemental, Day 2, Destroy post, Day 1 post, OCM resources",complex,"43053, 60688, 76093, 75210, 59530, 57570, 64620, 74761, 60956",BYO OIDC config/provider create/reuse/delete
+ROSAENG-65213,ROSA HCP (Hosted Control Planes),To Do,Undefined,6,6,0,"Day 1, Day 2, Day 1 supplemental",passthrough,"54869, 34102, 54413, 75536","Umbrella HCP capability — representative describe/create/day1/sanity, not every HCP-named file"
+ROSAENG-65212,Terraform import ability,To Do,Undefined,0,0,0,,unknown,,Terraform is out of this workstream (CLI FVT only)
+ROSAENG-65211,Windows License Included Node Pools,To Do,Undefined,0,0,0,,passthrough,,"No Windows-license node pool CLI FVT (id:64040 is cert expiry, not this capability)"
+ROSAENG-65210,STS Operator Roles (Day-2),To Do,Undefined,14,13,1,"Day 1 negative, Day 1 supplemental, Day 1 post, Day 2, OCM resources, Destructive",passthrough,"59547, 43053, 57410, 74761, 43051, 70859, 60971, 74661, 59551, 60956, 75504, 45745, 77910, 77866",Operator-roles CRUD/validation + hosted-cp managed policy
+ROSAENG-65209,Network Verification,To Do,Undefined,3,3,0,"Day 2, Destructive",passthrough,"64917, 68751, 70370",rosa verify network
+ROSAENG-65207,Registry Allowlists,To Do,Undefined,4,4,0,"Day 1 post, Day 2, Day 1 negative",passthrough,"76394, 76395, 77149, 76396",Registry allowlists via registry-config flags
+ROSAENG-65206,Additional Allowed Principals,To Do,Undefined,3,3,0,"Day 2, Day 1 negative, Day 1 post",complex,"74556, 74433, 74408",Additional allowed principals create/edit/negative
+ROSAENG-65205,Excluded Namespaces / Selectors,To Do,Undefined,2,0,2,"Day 1 post, Day 2",passthrough,"65798, 65799",Ingress excluded-namespaces / route selectors (Classic → N/A on HCP profile)
+ROSAENG-65204,GPU Machine Pools,To Do,Undefined,0,0,0,,passthrough,,No GPU instance-type node pool CLI FVT (autoscaler --gpu-limit is a different capability)
+ROSAENG-65203,always-HA Control-planes (multi-AZ),To Do,Undefined,1,1,0,Day 1 post,passthrough,75535,HCP multi-AZ day1-post
+ROSAENG-65202,Cluster Autoscaler,To Do,Undefined,7,4,3,"Day 2, Day 1 post, Day 1 negative",passthrough,"79848, 79846, 67275, 74468, 66761, 75527, 59430",Cluster autoscaler HCP + Classic; nodepool autoscaling; Classic Its N/A on HCP profile
+ROSAENG-65200,Zero Egress,To Do,Undefined,0,0,0,,passthrough,,No CLI FVT match found
+ROSAENG-65199,Multi-AZ Clusters,To Do,Undefined,3,2,1,"Day 1 supplemental, Day 1 post, Day 2",passthrough,"56224, 75535, 44776",Multi-AZ HCP day1-post + Classic multi-AZ machinepool (Classic N/A)
+ROSAENG-65198,NLB,To Do,Undefined,1,0,1,Day 2,complex,64767,Ingress NLB lb-type (Classic → N/A on HCP profile)
+ROSAENG-65197,CCS (Customer Cloud Subscription),To Do,Undefined,4,4,0,"Day 1 supplemental, Destroy post, Day 1 post",complex,"55701, 75256, 59530, 41822",CCS ≈ customer-owned AWS via STS cluster create/delete
+ROSAENG-65195,Cluster VPC Info,To Do,Undefined,3,3,0,"Day 2, Day 1 negative, Day 1 post",passthrough,"54869, 72538, 37176","Subnet/VPC day1-post, HCP subnet validation, HCP describe"
+ROSAENG-65192,maxUnavailable configurable,To Do,Undefined,2,2,0,Day 2,unknown,"74387, 74430",HCP nodepool maxUnavailable/maxSurge
+ROSAENG-65191,Global Pull Secret Updates,To Do,Undefined,0,0,0,,passthrough,,No global pull-secret CLI FVT match found
+ROSAENG-65190,Upgrade Policies & Version Control,To Do,Undefined,11,11,0,"Day 2, Upgrade",complex,"67419, 73814, 61138, 61139, 67414, 67412, 73731, 57094, 64187, 62929, 62161",Cluster + nodepool upgrade policies and version parameter
+ROSAENG-65189,Private / Public Ingress,To Do,Undefined,4,3,1,"Day 1 post, Day 2",complex,"83155, 63323, 73538, 38835",HCP default ingress private + API/ingress private; Classic labels/private is N/A
+ROSAENG-65188,Node Labels & Taints,To Do,Undefined,8,3,5,"Day 2, Day 1 negative, Day 1 post",passthrough,"56786, 71329, 57056, 67057, 57102, 57105, 56782, 56778",Nodepool/machinepool labels and taints (HCP + Classic)
+ROSAENG-65187,Operator IAM Roles,To Do,Undefined,13,12,1,"Day 1 supplemental, Day 1 post, Day 2, OCM resources, Destructive",passthrough,"43053, 57410, 74761, 43051, 70859, 60971, 74661, 59551, 60956, 75504, 45745, 77910, 77866",Operator IAM roles CLI FVT file
+ROSAENG-65186,STS Support Jump Role,To Do,Undefined,4,4,0,"OCM resources, Day 1 supplemental",passthrough,"43070, 61322, 75904, 75927",Account-role trust policy / Support role created with account-roles
+ROSAENG-65184,Permission Boundaries,To Do,Undefined,4,4,0,"OCM resources, Day 2",passthrough,"43070, 43067, 84391, 60971","--permissions-boundary on account-roles, operator-roles, IAM service account"
+ROSAENG-65183,CNI=none,To Do,Undefined,2,2,0,"Day 2, Day 1 negative",passthrough,"71050, 73725",HCP network type selection/validation (CNI=none / other)
+ROSAENG-65182,All AWS STS capabilities,To Do,Undefined,7,7,0,"OCM resources, Day 1 supplemental, Day 1 post, Day 2",complex,"43070, 61322, 55701, 59530, 41822, 43046, 43051",Umbrella STS — representative account-role/operator-role/OIDC/STS create tests
+ROSAENG-65178,Transparent Forward Proxies,To Do,Undefined,4,4,0,"Day 2, Day 1 negative, Day 1 post",complex,"46308, 46310, 45509, 45502",Cluster proxy day1-post / day2 / negative
+ROSAENG-65177,cluster-admin day1,To Do,Undefined,2,2,0,"Day 1, Day 2",unknown,35878,cluster-admin via rosa create admin is day2 (35878); day1 admin is profile-driven
+ROSAENG-65176,Single-AZ Clusters,To Do,Undefined,1,1,0,Day 1 supplemental,passthrough,54413,Single-AZ hosted cluster create
+ROSAENG-65175,Trusted IPs,To Do,Undefined,0,0,0,,complex,,No Trusted IPs CLI FVT match found
+ROSAENG-65174,AWS STS Arbitrary Policies,To Do,Undefined,2,2,0,Day 2,passthrough,"73449, 74225",Attach/detach arbitrary policies on existing roles
+ROSAENG-65173,Custom Node Pool Tags,To Do,Undefined,3,2,1,Day 2,passthrough,"73638, 73469, 73492",HCP machinepool user tags + preflight; Classic tags N/A on HCP profile
+ROSAENG-65169,Identity Provider - Google,To Do,Undefined,1,1,0,Day 2,passthrough,35896,IDP create/list/delete includes Google
+ROSAENG-65168,Scaling to Zero,To Do,Undefined,4,4,0,Day 2,passthrough,"60278, 78277, 59430",HCP scale/autoscaling/max-nodes; confirm replicas=0 is actually asserted
+ROSAENG-65166,Tuning Configs,To Do,Undefined,6,5,1,Day 2,complex,"76056, 63164, 63169, 63174, 63178, 63179",HCP tuning configs + nodepool attach; Classic file is N/A
+ROSAENG-65164,Custom Worker Disk Size,To Do,Undefined,7,4,3,"Day 2, Day 1 negative, Day 1 post",passthrough,"66872, 66874, 66372, 66359",Worker disk / root volume size on cluster and machinepool
+ROSAENG-65163,Identity Provider - HTPasswd,To Do,Undefined,3,3,0,Day 2,passthrough,"35878, 49137, 53031",HTPasswd IDP CRUD + cluster-admin
+ROSAENG-65162,Version Gates,To Do,Undefined,0,0,0,,complex,,No feature-gates CLI FVT in tests/e2e
+ROSAENG-65161,Additional Security Groups,To Do,Undefined,5,3,2,"Day 2, Day 1 negative, Day 1 post",passthrough,"72195, 68971, 68172, 68173, 68219",Additional security groups on HCP machinepool and cluster
+ROSAENG-65157,Identity Provider - GitHub,To Do,Undefined,1,1,0,Day 2,passthrough,35896,IDP create/list/delete includes GitHub
+ROSAENG-65156,Cluster Groups & Users,To Do,Undefined,2,2,0,Day 2,passthrough,"35878, 36128",IDP users grant/list/revoke + cluster-admin
+ROSAENG-65154,Private Clusters,To Do,Undefined,5,5,0,"Day 2, Day 1 post",passthrough,"38850, 60275, 41549, 83155, 75526",Private cluster / PrivateLink / API privacy
+ROSAENG-65153,Image Digest Mirror Sets (IDMS),To Do,Undefined,1,1,0,Day 2,complex,84761,Image mirror (IDMS) CRUD
+ROSAENG-65152,cluster-admin day2,To Do,Undefined,2,2,0,Day 2,unknown,"35878, 36128",rosa create admin / IDP user management (day2)
+ROSAENG-65151,Spot Instance Support,To Do,Undefined,2,0,2,Day 2,passthrough,"43251, 43252",Spot machinepool (Classic file → N/A on HCP profile unless an HCP equivalent exists)
+ROSAENG-65150,allow zero nodepools/machinepools,To Do,Undefined,2,2,0,Day 2,passthrough,"56783, 78277",HCP machinepool deletion / max nodes — weak proxy for 'zero nodepools'
+ROSAENG-65149,Installer & Support Trusts with Custom External ID,To Do,Undefined,1,1,0,Day 1 supplemental,complex,75603,STS cluster create with external id
+ROSAENG-65148,IDMS & Zero-Egress Mirrors,To Do,Undefined,1,1,0,Day 2,complex,84761,IDMS image-mirror only; no zero-egress-specific CLI FVT found
+ROSAENG-65147,Additional Trust Bundle,To Do,Undefined,2,2,0,"Day 1 post, Day 2",passthrough,"76394, 76395",Registry additional-trusted-ca — may not be cluster additional-trust-bundle
+ROSAENG-65146,Identity Provider - LDAP,To Do,Undefined,1,1,0,Day 2,passthrough,35896,IDP create/list/delete includes LDAP
+ROSAENG-65145,AWS VPC Inquiry,To Do,Undefined,5,5,0,"Day 1 negative, Day 1 post, OCM resources",passthrough,"72538, 37176, 81295, 77140, 77159",Subnets day1-post + HCP subnet validation + network-resources (VPC create)
+ROSAENG-65144,API Server SLA,To Do,Undefined,0,0,0,,unknown,,No CLI FVT match found
+ROSAENG-65142,Network Type Selection,To Do,Undefined,2,2,0,"Day 2, Day 1 negative",passthrough,"71050, 73725",HCP network type create/validate
+ROSAENG-65140,IRSA,To Do,Undefined,2,2,0,Day 2,passthrough,"84391, 84626",IAM service account roles (IRSA)
+ROSAENG-65139,Multi-Architecture Support,To Do,Undefined,3,3,0,"Day 2, Day 1 post",passthrough,"60278, 75108",Multiarch day1-post + HCP machinepool amd64/arm64 scale table
+ROSAENG-65137,Identity Provider - GitLab,To Do,Undefined,1,1,0,Day 2,passthrough,35896,IDP create/list/delete includes GitLab
+ROSAENG-65135,Public Clusters,To Do,Undefined,3,3,0,"Day 2, Day 1 post",passthrough,"38850, 60275, 75526",Privacy edit / public-vs-private; no dedicated 'public only' spec
+ROSAENG-65133,Multiple Ingress Controllers,To Do,Undefined,3,3,0,"Day 1 negative, Day 2",complex,"71174, 63323, 73538",HCP default ingress update/describe; 71174 asserts default-ingress edit limits on HCP
+ROSAENG-65132,Node Pool Upgrade Strategy & Drain,To Do,Undefined,6,6,0,"Day 2, Upgrade",complex,"67419, 67414, 67412, 72715, 74387, 74430",Node drain grace period + maxUnavailable/maxSurge + nodepool upgrade
+ROSAENG-65130,External Authentication,To Do,Undefined,7,7,0,"Day 2, Day 1 negative",passthrough,"71945, 72899, 72536, 73018, 71946, 72602, 73755",External auth provider + break-glass + create validation
+ROSAENG-65127,End-of-Life Grace Period,To Do,Undefined,0,0,0,,passthrough,,No CLI FVT match found
+ROSAENG-65126,Node Pool Upgrade Strategy,To Do,Undefined,5,5,0,"Day 2, Upgrade",complex,"67419, 61138, 61139, 67414, 67412",HCP nodepool upgrade policies and version parameter
+ROSAENG-65124,AWS EFS CSI Driver,To Do,Undefined,0,0,0,,passthrough,,No AWS EFS CSI CLI FVT match found
+ROSAENG-65123,HTPasswd User Management,To Do,Undefined,3,3,0,Day 2,passthrough,"49137, 36128, 66362",HTPasswd user grant/revoke and IDP user validation
+ROSAENG-65122,Custom DNS Domains,To Do,Undefined,1,1,0,OCM resources,passthrough,65793,rosa create/list/delete dns-domain
+ROSAENG-65121,Delete Protection,To Do,Undefined,6,5,1,"Day 2, Day 1 supplemental, Day 1 negative, Day 1 post",complex,"73161, 74656, 73162, 74657, 73163",Delete protection create/edit/negative (HCP + Classic)
+ROSAENG-65120,Custom Network CIDRs,To Do,Undefined,2,2,0,Day 1 negative,passthrough,"38857, 70970",Network CIDR validation on create (Classic + hosted)
+ROSAENG-65119,Blocked / Allowed / Insecure Registries,To Do,Undefined,4,4,0,"Day 1 post, Day 2, Day 1 negative",passthrough,"76394, 76395, 77149, 76396",Blocked/allowed/insecure registries via registry-config
+ROSAENG-65118,VM identity,To Do,Undefined,3,3,0,"Day 1 negative, Day 1 post, Day 2",unknown,"64078, 75114, 75227",Overlaps IMDSv2 (ec2-metadata-http-tokens / VM identity)
+ROSAENG-65117,Inflight Checks,To Do,Undefined,2,2,0,"Day 1 supplemental, Destructive",passthrough,"85689, 70370",skip_inflight property + network verifier inflight sync
+ROSAENG-65115,Private/Public Cluster Configuration,To Do,Undefined,4,4,0,"Day 2, Day 1 post",complex,"38850, 60275, 83155, 75526",Private/public cluster and API/ingress privacy
+ROSAENG-65114,Custom Component Routes,To Do,Undefined,0,0,0,,complex,,No custom component-routes CLI FVT match found
+ROSAENG-65113,Multipath & iSCSI,To Do,Undefined,0,0,0,,passthrough,,No multipath/iSCSI CLI FVT match found
+ROSAENG-65112,AWS OIDC Thumbprint,To Do,Undefined,2,2,0,Day 2,passthrough,43046,"OIDC provider validation; thumbprint is computed in sanity AWS setup, not a dedicated FVT id"
+ROSAENG-65111,AWS Credential Validation,To Do,Undefined,1,1,0,OCM resources,passthrough,38851,"rosa verify permissions/quota/client — OCM-shaped, likely shim/N/A"
+ROSAENG-65108,BYOVPC (Bring Your Own VPC),To Do,Undefined,5,5,0,"Day 1 negative, Day 1 post, Day 2",passthrough,"37177, 75916, 72538, 37176, 60202",BYOVPC/subnets on cluster and HCP nodepool
+ROSAENG-65107,Node Drain Grace Period,To Do,Undefined,1,1,0,Day 2,passthrough,72715,HCP nodepool node_drain_grace_period
+ROSAENG-65104,CIDR Block Access Control,To Do,Undefined,2,2,0,Day 1 negative,passthrough,"38857, 70970",Machine CIDR validation — weak proxy for CIDR access-control / trusted IPs
+ROSAENG-65103,Product Minimal Versions,To Do,Undefined,4,3,1,"Day 1 negative, Day 2, OCM resources",passthrough,"74399, 61138, 62088, 38810",Version list (hosted-cp) + nodepool version + channel-group negative
+ROSAENG-65102,Identity Provider - OpenID Connect,To Do,Undefined,1,1,0,Day 2,passthrough,35896,IDP create/list/delete includes OpenID
+ROSAENG-65101,FIPS Mode,To Do,Undefined,2,1,1,"Day 1 negative, Day 1 post",passthrough,"74436, 46312",FIPS cluster create + FIPS/etcd-encryption negative
+ROSAENG-65100,CSI snapshot support,To Do,Undefined,0,0,0,,unknown,,No CSI snapshot CLI FVT match found

@@ -11,7 +11,11 @@
     codegen-passthrough-clobber \
 	codegen-conversion verify-conversion \
 	generate-openapi verify-openapi swagger-ui \
-	image-api image-operator image-push-api image-push-operator
+	image-api image-operator image-push-api image-push-operator \
+	accel-build-setup accel-build-ledger accel-build-clean \
+	accel-validate-markers accel-marker-setup accel-marker-clean \
+	accel-test-mapper accel-test-mapper-setup accel-test-mapper-clean \
+	accel-review-helper accel-report
 
 # ── Configuration ────────────────────────────────────────────────────────
 
@@ -151,6 +155,19 @@ help:
 	@echo "Images:"
 	@echo "  image-api            Platform API image"
 	@echo "  image-operator       Hyperfleet operator image"
+	@echo ""
+	@echo "Acceleration Pipeline:"
+	@echo "  accel-report             Show pipeline status report (Stage 1-3 summary)"
+	@echo "  accel-build-ledger       Stage 1: Build field delivery ledger (177 fields)"
+	@echo "  accel-validate-markers   Stage 2: Validate marker assignments (optional QC)"
+	@echo "  accel-test-mapper        Stage 1+3: Build ledger + map fields to JIRA tickets"
+	@echo "  accel-review-helper      Generate JIRA suggestions for unmatched fields"
+	@echo "  accel-build-setup        Setup Python venv for ledger builder"
+	@echo "  accel-marker-setup       Setup Python venv for marker validator"
+	@echo "  accel-test-mapper-setup  Setup Python venv for test mapper"
+	@echo "  accel-build-clean        Clean ledger builder artifacts"
+	@echo "  accel-marker-clean       Clean marker validator artifacts"
+	@echo "  accel-test-mapper-clean  Clean test mapper artifacts"
 
 # ── Build ────────────────────────────────────────────────────────────────
 
@@ -495,6 +512,136 @@ image-push-api: image-api
 image-push-operator: image-operator
 	$(CONTAINER_ENGINE) push $(IMAGE_REPO_OPERATOR):$(IMAGE_TAG)
 	$(CONTAINER_ENGINE) push $(IMAGE_REPO_OPERATOR):$(GIT_SHA)
+
+# ── Acceleration Pipeline ────────────────────────────────────────────────
+
+ACCEL_DIR               := hack/accelerate/ledger-builder
+ACCEL_VENV              := $(ACCEL_DIR)/.venv
+ACCEL_PYTHON            := $(ACCEL_VENV)/bin/python3
+ACCEL_PIP               := $(ACCEL_VENV)/bin/pip
+ACCEL_SCRIPT            := $(ACCEL_DIR)/build_ledger.py
+ACCEL_REQUIREMENTS      := $(ACCEL_DIR)/requirements.txt
+ACCEL_OUTPUT            := $(ACCEL_DIR)/output/ledger.csv
+FIELD_METADATA_JSON     := hack/api-codegen/pkg/registry/field_metadata.json
+
+$(ACCEL_VENV): $(ACCEL_REQUIREMENTS)
+	@echo "Setting up Python virtual environment for ledger builder..."
+	python3 -m venv $(ACCEL_VENV)
+	$(ACCEL_PIP) install --upgrade pip
+	$(ACCEL_PIP) install -r $(ACCEL_REQUIREMENTS)
+	@touch $(ACCEL_VENV)
+
+accel-build-setup: $(ACCEL_VENV)
+	@echo "✓ Virtual environment ready at $(ACCEL_VENV)"
+
+accel-build-ledger: $(ACCEL_VENV)
+	@echo "Building delivery ledger from field registry..."
+	$(ACCEL_PYTHON) $(ACCEL_SCRIPT) \
+		--input $(FIELD_METADATA_JSON) \
+		--output $(ACCEL_OUTPUT) \
+		--verbose
+	@echo "✓ Ledger built: $(ACCEL_OUTPUT)"
+
+accel-build-clean:
+	rm -rf $(ACCEL_VENV)
+	rm -f $(ACCEL_DIR)/output/*.csv
+	@echo "✓ Acceleration build artifacts cleaned"
+
+# Stage 2: Marker Validator
+MARKER_DIR              := hack/accelerate/marker-suggester
+MARKER_VENV             := $(MARKER_DIR)/.venv
+MARKER_PYTHON           := $(MARKER_VENV)/bin/python3
+MARKER_PIP              := $(MARKER_VENV)/bin/pip
+MARKER_SCRIPT           := $(MARKER_DIR)/validate_markers.py
+MARKER_REQUIREMENTS     := $(MARKER_DIR)/requirements.txt
+MARKER_REPORT_OUTPUT    := $(MARKER_DIR)/output/marker-validation-report.md
+
+$(MARKER_VENV): $(MARKER_REQUIREMENTS)
+	@echo "Setting up Python virtual environment for marker validator..."
+	python3 -m venv $(MARKER_VENV)
+	$(MARKER_PIP) install --upgrade pip
+	$(MARKER_PIP) install -r $(MARKER_REQUIREMENTS)
+	@touch $(MARKER_VENV)
+
+accel-marker-setup: $(MARKER_VENV)
+	@echo "✓ Virtual environment ready at $(MARKER_VENV)"
+
+accel-validate-markers: $(MARKER_VENV) accel-build-ledger
+	@echo "Validating marker assignments (Stage 2)..."
+	$(MARKER_PYTHON) $(MARKER_SCRIPT) \
+		--ledger $(ACCEL_OUTPUT) \
+		--output $(MARKER_REPORT_OUTPUT)
+	@echo ""
+	@echo "Validation report ready! Open it with:"
+	@echo "  open $(MARKER_REPORT_OUTPUT)"
+
+accel-marker-clean:
+	rm -rf $(MARKER_VENV)
+	rm -f $(MARKER_DIR)/output/*.md
+	@echo "✓ Marker validator artifacts cleaned"
+
+# Stage 3: Test Mapper
+MAPPER_DIR              := hack/accelerate/test-mapper
+MAPPER_VENV             := $(MAPPER_DIR)/.venv
+MAPPER_PYTHON           := $(MAPPER_VENV)/bin/python3
+MAPPER_PIP              := $(MAPPER_VENV)/bin/pip
+MAPPER_SCRIPT           := $(MAPPER_DIR)/map_tests.py
+MAPPER_REQUIREMENTS     := $(MAPPER_DIR)/requirements.txt
+MAPPER_OUTPUT           := $(ACCEL_DIR)/output/ledger-mapped.csv
+MATRIX_DIR              := hack/accelerate/matrix
+
+$(MAPPER_VENV): $(MAPPER_REQUIREMENTS)
+	@echo "Setting up Python virtual environment for test mapper..."
+	python3 -m venv $(MAPPER_VENV)
+	$(MAPPER_PIP) install --upgrade pip
+	$(MAPPER_PIP) install -r $(MAPPER_REQUIREMENTS)
+	@touch $(MAPPER_VENV)
+
+accel-test-mapper-setup: $(MAPPER_VENV)
+	@echo "✓ Virtual environment ready at $(MAPPER_VENV)"
+
+accel-test-mapper: $(MAPPER_VENV) accel-build-ledger
+	@echo "Mapping fields to JIRA tickets and classifying delivery buckets..."
+	$(MAPPER_PYTHON) $(MAPPER_SCRIPT) \
+		--ledger $(ACCEL_OUTPUT) \
+		--matrix $(MATRIX_DIR) \
+		--output $(MAPPER_OUTPUT) \
+		--verbose
+	@echo "✓ Test mapping complete: $(MAPPER_OUTPUT)"
+
+accel-test-mapper-clean:
+	rm -rf $(MAPPER_VENV)
+	rm -f $(ACCEL_DIR)/output/ledger-mapped.csv
+	@echo "✓ Test mapper artifacts cleaned"
+
+# Review helper for manual JIRA assignment
+REVIEW_HELPER            := $(MAPPER_DIR)/review_helper.py
+REVIEW_GUIDE_OUTPUT      := $(MAPPER_DIR)/output/review-guide.md
+
+accel-review-helper: $(MAPPER_VENV) accel-test-mapper
+	@echo "Generating review guide for unmatched fields..."
+	$(MAPPER_PYTHON) $(REVIEW_HELPER) \
+		--ledger $(MAPPER_OUTPUT) \
+		--matrix $(MATRIX_DIR) \
+		--output $(REVIEW_GUIDE_OUTPUT)
+	@echo ""
+	@echo "Review guide ready! Open it with:"
+	@echo "  open $(REVIEW_GUIDE_OUTPUT)"
+	@echo "  or"
+	@echo "  cat $(REVIEW_GUIDE_OUTPUT) | less"
+
+# Pipeline status report
+REPORT_SCRIPT           := hack/accelerate/report.py
+
+accel-report:
+	@# Try to use mapper venv if it exists, otherwise try ledger venv, otherwise system python
+	@if [ -f $(MAPPER_PYTHON) ]; then \
+		$(MAPPER_PYTHON) $(REPORT_SCRIPT); \
+	elif [ -f $(ACCEL_PYTHON) ]; then \
+		$(ACCEL_PYTHON) $(REPORT_SCRIPT); \
+	else \
+		python3 $(REPORT_SCRIPT); \
+	fi
 
 # ── Clean ────────────────────────────────────────────────────────────────
 
