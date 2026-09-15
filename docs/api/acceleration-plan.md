@@ -12,10 +12,10 @@ We have to deliver ~70 `complexity:passthrough` + `ROSAHyperfleet:APIv1` feature
 
 `ROSA-848` is a Feature. It already has two child epics:
 
-| Epic                                                            | Summary                                    | Status      | Owner     |
-| -------------------------------------------------------------- | ------------------------------------------ | ----------- | --------- |
-| [ROSAENG-62084](https://redhat.atlassian.net/browse/ROSAENG-62084) | V2 SDK for Regional Platform API           | In Progress | Guilherme |
-| [ROSAENG-65538](https://redhat.atlassian.net/browse/ROSAENG-65538) | Adopt v1 OIDC Config/Provider flow         | Refinement  | Chris     |
+| Epic                                                               | Summary                            | Status      | Owner     |
+| ------------------------------------------------------------------ | ---------------------------------- | ----------- | --------- |
+| [ROSAENG-62084](https://redhat.atlassian.net/browse/ROSAENG-62084) | V2 SDK for Regional Platform API   | In Progress | Guilherme |
+| [ROSAENG-65538](https://redhat.atlassian.net/browse/ROSAENG-65538) | Adopt v1 OIDC Config/Provider flow | Refinement  | Chris     |
 
 No existing ticket captures this acceleration effort. It should be a **new Epic, sibling to ROSAENG-62084**, because:
 
@@ -29,10 +29,10 @@ A passthrough feature carries no bespoke logic. The field flows through. So per-
 
 The accelerator is a **single source of truth produced once**: extend the **Field Registry into a delivery ledger**, one row per field, where each row ties together the field, its markers, the passthrough feature it belongs to, and the test that proves its behaviour.
 
-| field path                | resource      | markers           | feature ref | test ref                    | status            |
-| ------------------------- | ------------- | ----------------- | ----------- | --------------------------- | ----------------- |
-| `HostedCluster.spec.foo`  | HostedCluster | public, immutable | ROSA-xxxx   | `e2e/create_cluster: foo`   | passthrough-clean |
-| `NodePool.spec.bar`       | NodePool      | public, mutable   | ROSA-yyyy   | none                        | needs-test        |
+| field path               | resource      | markers           | feature ref | test ref                  | status            |
+| ------------------------ | ------------- | ----------------- | ----------- | ------------------------- | ----------------- |
+| `HostedCluster.spec.foo` | HostedCluster | public, immutable | ROSA-xxxx   | `e2e/create_cluster: foo` | passthrough-clean |
+| `NodePool.spec.bar`      | NodePool      | public, mutable   | ROSA-yyyy   | none                      | needs-test        |
 
 Populate this once. After that everything is derived:
 
@@ -73,15 +73,15 @@ Deterministic wherever structure exists (codegen, enumeration). AI wherever the 
 
 ### Pipeline stages
 
-| #   | Tool                                                                                                          | AI or deterministic             | Verified by                                          | Build status                                     |
-| --- | ----------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------- | ------------------------------------------------ |
-| 1   | **Ledger builder**: walk HyperShift types/CRD, emit one registry row per field                              | Deterministic (AST/schema walk) | Row count matches API; compiles                      | New, small                                       |
-| 2   | **Marker suggester**: propose serviceset/mutable/immutable/public per field from godoc + sibling convention | AI                              | Human + BU review the table; generation compiles     | New, optional AI, highest leverage               |
-| 3   | **Test mapper/triager**: find the existing v1 test per field; classify the row into a bucket                | AI recall + deterministic confirm | Static ref check or instrumented run                 | New, AI-assisted                                 |
-| 4   | **Codegen**: markers &rarr; OpenAPI + CRD + Field Registry + clientset                                      | Deterministic                   | Build + golden files                                 | Mostly exists (passthrough-gen, conversion-gen)  |
-| 5   | **Command-to-SDK translator + client wiring**: CLI/v1-SDK invocation &rarr; v2 clientset calls              | AI drafts, hybrid               | The reused v1 test is the oracle                     | New, AI high-leverage                            |
-| 6   | **Missing-test generator**: draft positive + negative/constraint tests from the markers                     | AI drafts from the marker spec  | Runs in CI, fails closed                             | New, AI-assisted, handles the tail               |
-| 7   | **Batch PR orchestrator**: open + chain PR1-4, wire ephemeral env, gate on CI                               | Deterministic automation        | CI + ephemeral e2e                                   | Partly exists (Konflux renovate)                 |
+| #   | Tool                                                                                                        | AI or deterministic               | Verified by                                      | Build status                                    |
+| --- | ----------------------------------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------ | ----------------------------------------------- |
+| 1   | **Ledger builder**: walk HyperShift types/CRD, emit one registry row per field                              | Deterministic (AST/schema walk)   | Row count matches API; compiles                  | New, small                                      |
+| 2   | **Marker suggester**: propose serviceset/mutable/immutable/public per field from godoc + sibling convention | AI                                | Human + BU review the table; generation compiles | New, optional AI, highest leverage              |
+| 3   | **Test mapper/triager**: find the existing v1 test per field; classify the row into a bucket                | AI recall + deterministic confirm | Static ref check or instrumented run             | New, AI-assisted                                |
+| 4   | **Codegen**: markers &rarr; OpenAPI + CRD + Field Registry + clientset                                      | Deterministic                     | Build + golden files                             | Mostly exists (passthrough-gen, conversion-gen) |
+| 5   | **Command-to-SDK translator + client wiring**: CLI/v1-SDK invocation &rarr; v2 clientset calls              | AI drafts, hybrid                 | The reused v1 test is the oracle                 | New, AI high-leverage                           |
+| 6   | **Missing-test generator**: draft positive + negative/constraint tests from the markers                     | AI drafts from the marker spec    | Runs in CI, fails closed                         | New, AI-assisted, handles the tail              |
+| 7   | **Batch PR orchestrator**: open + chain PR1-4, wire ephemeral env, gate on CI                               | Deterministic automation          | CI + ephemeral e2e                               | Partly exists (Konflux renovate)                |
 
 ```mermaid
 flowchart TD

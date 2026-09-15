@@ -89,12 +89,12 @@ The `hcp:available` phase is distinct from `hcp:monitor` — it represents the w
 **Purpose**: Poll for readiness.
 **Current tests**:
 
-| Test                   | Label            | Description                                                                             |
-| ---------------------- | ---------------- | --------------------------------------------------------------------------------------- |
-| Wait for cluster ready | `cluster-status` | Poll `/clusters/{id}/statuses` until all controller conditions are True (20min timeout) |
-| Wait for nodepools     | `nodepools-wait` | Wait 5min for nodepools to deploy                                                       |
-| Installing lifecycle silence | `silence-installing` | While phase is `Provisioning`, assert an installing silence exists in Alertmanager (requires `E2E_ALERTMANAGER_URL`) |
-| Ready lifecycle silence cleanup | `silence-ready` | After cluster is `Ready`, assert installing silences are expired (requires `E2E_ALERTMANAGER_URL`) |
+| Test                            | Label                | Description                                                                                                          |
+| ------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Wait for cluster ready          | `cluster-status`     | Poll `/clusters/{id}/statuses` until all controller conditions are True (20min timeout)                              |
+| Wait for nodepools              | `nodepools-wait`     | Wait 5min for nodepools to deploy                                                                                    |
+| Installing lifecycle silence    | `silence-installing` | While phase is `Provisioning`, assert an installing silence exists in Alertmanager (requires `E2E_ALERTMANAGER_URL`) |
+| Ready lifecycle silence cleanup | `silence-ready`      | After cluster is `Ready`, assert installing silences are expired (requires `E2E_ALERTMANAGER_URL`)                   |
 
 The `silence-installing` and `silence-ready` specs are **opt-in**: they skip unless `E2E_ALERTMANAGER_URL` is set. They are not run in standard PR CI.
 
