@@ -342,9 +342,26 @@
     "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
   },
   {
-    "fieldPath": "spec.hostedCluster.dns",
+    "fieldPath": "spec.hostedCluster.dns.baseDomain",
     "writeMode": "service-set",
-    "hidden": true,
+    "ownerType": "Cluster",
+    "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.dns.baseDomainPrefix",
+    "writeMode": "service-set",
+    "ownerType": "Cluster",
+    "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.dns.privateZoneID",
+    "writeMode": "service-set",
+    "ownerType": "Cluster",
+    "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.dns.publicZoneID",
+    "writeMode": "service-set",
     "ownerType": "Cluster",
     "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
   },
@@ -803,6 +820,30 @@
     "writeMode": "service-set",
     "hidden": true,
     "ownerType": "ClusterConfiguration",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "baseDomain",
+    "writeMode": "service-set",
+    "ownerType": "ClusterDNS",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "baseDomainPrefix",
+    "writeMode": "service-set",
+    "ownerType": "ClusterDNS",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "privateZoneID",
+    "writeMode": "service-set",
+    "ownerType": "ClusterDNS",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "publicZoneID",
+    "writeMode": "service-set",
+    "ownerType": "ClusterDNS",
     "ownerGVK": ""
   },
   {

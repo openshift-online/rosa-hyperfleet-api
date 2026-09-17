@@ -28,6 +28,10 @@ type ServiceSetFields struct {
 	AutoScaling *hypershiftv1beta1.NodePoolAutoScaling `json:"autoScaling,omitempty"`
 	// Autoscaling is service-set (platform-managed, hidden from API)
 	Autoscaling hypershiftv1beta1.ClusterAutoscaling `json:"autoscaling,omitempty"`
+	// BaseDomain is service-set (platform-managed, hidden from API)
+	BaseDomain string `json:"baseDomain,omitempty"`
+	// BaseDomainPrefix is service-set (platform-managed, hidden from API)
+	BaseDomainPrefix *string `json:"baseDomainPrefix,omitempty"`
 	// Capabilities is service-set (platform-managed, hidden from API)
 	Capabilities *hypershiftv1beta1.Capabilities `json:"capabilities,omitempty"`
 	// Channel is service-set (platform-managed, hidden from API)
@@ -48,8 +52,6 @@ type ServiceSetFields struct {
 	CpuManagerReconcilePeriod *metav1.Duration `json:"cpuManagerReconcilePeriod,omitempty"`
 	// CreatorARN is service-set (platform-managed, hidden from API)
 	CreatorARN string `json:"creatorARN,omitempty"`
-	// Dns is service-set (platform-managed, hidden from API)
-	Dns hypershiftv1beta1.DNSSpec `json:"dns,omitempty"`
 	// Etcd is service-set (platform-managed, hidden from API)
 	Etcd hypershiftv1beta1.EtcdSpec `json:"etcd,omitempty"`
 	// EvictionHard is service-set (platform-managed, hidden from API)
@@ -114,8 +116,12 @@ type ServiceSetFields struct {
 	OsImageStream hypershiftv1beta1.OSImageStreamReference `json:"osImageStream,omitempty"`
 	// PausedUntil is service-set (platform-managed, hidden from API)
 	PausedUntil *string `json:"pausedUntil,omitempty"`
+	// PrivateZoneID is service-set (platform-managed, hidden from API)
+	PrivateZoneID string `json:"privateZoneID,omitempty"`
 	// Proxy is service-set (platform-managed, hidden from API)
 	Proxy *v1alpha1.ProxyConfiguration `json:"proxy,omitempty"`
+	// PublicZoneID is service-set (platform-managed, hidden from API)
+	PublicZoneID string `json:"publicZoneID,omitempty"`
 	// PullSecret is service-set (platform-managed, hidden from API)
 	PullSecret corev1.LocalObjectReference `json:"pullSecret,omitempty"`
 	// Scheduler is service-set (platform-managed, hidden from API)
