@@ -10,22 +10,18 @@ type ClusterNetworking struct {
 	// machineNetwork is the list of IP address pools for machines. This might be used among other things to generate appropriate networking security groups in some clouds providers. Currently only one entry or two for dual stack is supported. This field is immutable.
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable
-	// +kubebuilder:default={{cidr: "10.0.0.0/16"}}
 	MachineNetwork []hypershiftv1beta1.MachineNetworkEntry `json:"machineNetwork,omitempty"`
 	// clusterNetwork is the list of IP address pools for pods. Defaults to cidr: "10.132.0.0/14". Currently only one entry is supported. This field is immutable.
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable
-	// +kubebuilder:default={{cidr: "10.132.0.0/14"}}
 	ClusterNetwork []hypershiftv1beta1.ClusterNetworkEntry `json:"clusterNetwork,omitempty"`
 	// serviceNetwork is the list of IP address pools for services. Defaults to cidr: "172.31.0.0/16". Currently only one entry is supported. This field is immutable.
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable
-	// +kubebuilder:default={{cidr: "172.31.0.0/16"}}
 	ServiceNetwork []hypershiftv1beta1.ServiceNetworkEntry `json:"serviceNetwork,omitempty"`
 	// networkType specifies the SDN provider used for cluster networking. Defaults to OVNKubernetes. This field is required and immutable. kubebuilder:validation:XValidation:rule="self == oldSelf", message="networkType is immutable"
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable
-	// +kubebuilder:default="OVNKubernetes"
 	NetworkType hypershiftv1beta1.NetworkType `json:"networkType,omitempty"`
 	// apiServer contains advanced network settings for the API server that affect how the APIServer is exposed inside a hosted cluster node.
 	// +k8s:openapi-gen=true

@@ -175,7 +175,6 @@ build-api-codegen:
 	cd hack/api-codegen && go build -o ../../bin/crd-variants ./cmd/crd-variants
 	cd hack/api-codegen && go build -o ../../bin/featuregate-info ./cmd/featuregate-info
 	cd hack/api-codegen && go build -o ../../bin/verify-configuration ./cmd/verify-configuration
-	cd hack/api-codegen && go build -o ../../bin/default-gen ./cmd/default-gen
 
 # ── Test ─────────────────────────────────────────────────────────────────
 
@@ -426,21 +425,12 @@ generate-pathbind-draft: $(PATHBIND_GEN) codegen-registry generate-openapi
 # codegen-conversion must run before manifests (generate-deepcopy) because
 # conversion-gen creates public REST types (e.g. platformspec_types.go) that
 # the deepcopy generator needs to resolve type references in passthrough files.
-generate: codegen-registry codegen-conversion generate-deepcopy manifests generate-clientset generate-openapi generate-pathbind-draft generate-defaults
-
-generate-defaults: build-api-codegen
-	./bin/default-gen \
-		-source-dir api/v1alpha1 \
-		-output-file api/v1alpha1/public/zz_generated.defaults.go \
-		-package public
-
-verify-defaults: generate-defaults
-	git diff --exit-code api/v1alpha1/public/zz_generated.defaults.go
+generate: codegen-registry codegen-conversion generate-deepcopy manifests generate-clientset generate-openapi generate-pathbind-draft
 
 verify-pathbind-draft: generate-pathbind-draft
 	git diff --exit-code clientset/pathbind/pathbind-draft.yaml
 
-verify: verify-codegen verify-conversion verify-clientset verify-openapi verify-pathbind-draft verify-defaults verify-mod
+verify: verify-codegen verify-conversion verify-clientset verify-openapi verify-pathbind-draft verify-mod
 
 CONVERSION_OUTPUT_DIR   ?= platform-api/pkg/conversion/v1alpha1
 CONVERSION_OUTPUT_PKG   ?= github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/conversion
