@@ -164,6 +164,7 @@ var typeToRegistryPrefix = map[string]string{
 	"NodePoolSpecPassthrough":      "spec.nodePool",
 	"ClusterConfiguration":         "",
 	"ClusterNetworking":            "",
+	"ClusterDNS":                   "",
 	"KubeletConfig":                "kubelet",
 	"MachineConfigSpec":            "machineConfig",
 }

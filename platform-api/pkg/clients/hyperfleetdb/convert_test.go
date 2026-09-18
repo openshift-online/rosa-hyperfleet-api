@@ -11,6 +11,8 @@ import (
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/conversion"
+	v1alpha1conv "github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/conversion/v1alpha1"
 )
 
 const (
@@ -52,6 +54,43 @@ func TestPublicToInternalCluster_InjectsServiceSetFields(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, testAccountID, result.Spec.AccountID)
 	assert.Equal(t, testClusterID, result.Spec.InternalID)
+}
+
+func TestUnprojectCluster_DNSFieldsNestedCorrectly(t *testing.T) {
+	baseDomainPrefix := "my-cluster"
+	pub := &public.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: testClusterName},
+		Spec:       public.ClusterSpec{DisplayName: "Test Cluster"},
+	}
+
+	// Import conversion package for direct UnprojectCluster call
+	enrichment := &conversion.ServiceSetFields{
+		AccountID:  testAccountID,
+		InternalID: testClusterID,
+		HostedCluster: &conversion.ServiceSetFieldsHostedCluster{
+			DNS: &conversion.ServiceSetFieldsDNS{
+				BaseDomain:       "example.com",
+				BaseDomainPrefix: &baseDomainPrefix,
+				PrivateZoneID:    "Z1234PRIVATE",
+				PublicZoneID:     "Z5678PUBLIC",
+			},
+			KubeAPIServerDNSName: "api.my-cluster.example.com",
+		},
+	}
+
+	result := v1alpha1conv.UnprojectCluster(&pub.Spec, enrichment)
+
+	require.NotNil(t, result)
+	// Verify DNS fields are nested under HostedCluster.DNS
+	assert.Equal(t, "example.com", result.HostedCluster.DNS.BaseDomain)
+	assert.Equal(t, &baseDomainPrefix, result.HostedCluster.DNS.BaseDomainPrefix)
+	assert.Equal(t, "Z1234PRIVATE", result.HostedCluster.DNS.PrivateZoneID)
+	assert.Equal(t, "Z5678PUBLIC", result.HostedCluster.DNS.PublicZoneID)
+	// Verify KubeAPIServerDNSName is at HostedCluster level
+	assert.Equal(t, "api.my-cluster.example.com", result.HostedCluster.KubeAPIServerDNSName)
+	// Verify other service-set fields still work
+	assert.Equal(t, testAccountID, result.AccountID)
+	assert.Equal(t, testClusterID, result.InternalID)
 }
 
 func TestPublicToInternalCluster_NilInput(t *testing.T) {

@@ -365,10 +365,27 @@ var FieldRegistry = TypedFieldRegistry{
 			OwnerType: "Cluster",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
 		},
-		"spec.hostedCluster.dns": {
-			FieldPath: "spec.hostedCluster.dns",
+		"spec.hostedCluster.dns.baseDomain": {
+			FieldPath: "spec.hostedCluster.dns.baseDomain",
 			WriteMode: ServiceSet,
-			Hidden:    true,
+			OwnerType: "Cluster",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
+		},
+		"spec.hostedCluster.dns.baseDomainPrefix": {
+			FieldPath: "spec.hostedCluster.dns.baseDomainPrefix",
+			WriteMode: ServiceSet,
+			OwnerType: "Cluster",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
+		},
+		"spec.hostedCluster.dns.privateZoneID": {
+			FieldPath: "spec.hostedCluster.dns.privateZoneID",
+			WriteMode: ServiceSet,
+			OwnerType: "Cluster",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
+		},
+		"spec.hostedCluster.dns.publicZoneID": {
+			FieldPath: "spec.hostedCluster.dns.publicZoneID",
+			WriteMode: ServiceSet,
 			OwnerType: "Cluster",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
 		},
@@ -829,6 +846,32 @@ var FieldRegistry = TypedFieldRegistry{
 			WriteMode: ServiceSet,
 			Hidden:    true,
 			OwnerType: "ClusterConfiguration",
+			OwnerGVK:  "",
+		},
+	},
+	"ClusterDNS": {
+		"baseDomain": {
+			FieldPath: "baseDomain",
+			WriteMode: ServiceSet,
+			OwnerType: "ClusterDNS",
+			OwnerGVK:  "",
+		},
+		"baseDomainPrefix": {
+			FieldPath: "baseDomainPrefix",
+			WriteMode: ServiceSet,
+			OwnerType: "ClusterDNS",
+			OwnerGVK:  "",
+		},
+		"privateZoneID": {
+			FieldPath: "privateZoneID",
+			WriteMode: ServiceSet,
+			OwnerType: "ClusterDNS",
+			OwnerGVK:  "",
+		},
+		"publicZoneID": {
+			FieldPath: "publicZoneID",
+			WriteMode: ServiceSet,
+			OwnerType: "ClusterDNS",
 			OwnerGVK:  "",
 		},
 	},
