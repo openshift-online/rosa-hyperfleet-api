@@ -381,7 +381,7 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 				},
 				Annotations: map[string]string{
 					hypershiftv1beta1.PodSecurityAdmissionLabelOverrideAnnotation: "privileged",
-					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:managed-ingress-dns-bfb95aad1d",
+					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:managed-ingress-dns-6decda8530",
 					hypershiftv1beta1.SkipReleaseImageValidation:                  "true",
 					hypershiftv1beta1.CleanupCloudResourcesAnnotation:             "true",
 					"hypershift.openshift.io/aws-iam-authenticator":               "true",
