@@ -1,8 +1,10 @@
-package main
+package cobra
 
 import (
 	"strings"
 	"testing"
+
+	pkg "github.com/openshift-online/rosa-hyperfleet-api/clientset/cmd/pathbind-gen/pkg"
 )
 
 // TestFlagCall verifies that flagCall emits the correct cobra registration
@@ -11,52 +13,52 @@ import (
 // BoolVar/Int32Var — passing a nil pointer panics at runtime.
 func TestFlagCall(t *testing.T) {
 	funcMap := buildFuncMap()
-	flagCall := funcMap["flagCall"].(func(mergedAlias) string)
+	flagCall := funcMap["flagCall"].(func(pkg.MergedAlias) string)
 
 	cases := []struct {
 		name     string
-		alias    mergedAlias
+		alias    pkg.MergedAlias
 		wantSubs []string // substrings that must appear in the output
 		wantNot  []string // substrings that must NOT appear
 	}{
 		{
 			name:     "plain string",
-			alias:    mergedAlias{GoName: "Name", Type: "string", Flag: "cluster-name", Description: "The name."},
+			alias:    pkg.MergedAlias{GoName: "Name", Type: "string", Flag: "cluster-name", Description: "The name."},
 			wantSubs: []string{`f.StringVar(&input.Name`, `"cluster-name"`, `"The name."`},
 		},
 		{
 			name:     "plain bool",
-			alias:    mergedAlias{GoName: "Fips", Type: "bool", Flag: "fips", Description: "FIPS mode."},
+			alias:    pkg.MergedAlias{GoName: "Fips", Type: "bool", Flag: "fips", Description: "FIPS mode."},
 			wantSubs: []string{`f.BoolVar(&input.Fips`, `"fips"`, `"FIPS mode."`},
 			// Plain bool must NOT pre-allocate.
 			wantNot: []string{"new(bool)"},
 		},
 		{
 			name:  "*bool must pre-allocate",
-			alias: mergedAlias{GoName: "DeleteProtection", Type: "*bool", Flag: "delete-protection", Description: "Enable delete protection."},
+			alias: pkg.MergedAlias{GoName: "DeleteProtection", Type: "*bool", Flag: "delete-protection", Description: "Enable delete protection."},
 			// *bool requires new(bool) so BoolVar receives a non-nil *bool, not a nil pointer.
 			wantSubs: []string{"new(bool)", `input.DeleteProtection`, `"delete-protection"`},
 		},
 		{
 			name:     "plain int32",
-			alias:    mergedAlias{GoName: "Replicas", Type: "int32", Flag: "replicas", Description: "Replica count."},
+			alias:    pkg.MergedAlias{GoName: "Replicas", Type: "int32", Flag: "replicas", Description: "Replica count."},
 			wantSubs: []string{`f.Int32Var(&input.Replicas`, `"replicas"`},
 			wantNot:  []string{"new(int32)"},
 		},
 		{
 			name:     "*int32 must pre-allocate",
-			alias:    mergedAlias{GoName: "Replicas", Type: "*int32", Flag: "replicas", Description: "Replica count."},
+			alias:    pkg.MergedAlias{GoName: "Replicas", Type: "*int32", Flag: "replicas", Description: "Replica count."},
 			wantSubs: []string{"new(int32)", `input.Replicas`, `"replicas"`},
 		},
 		{
 			name:     "plain int64",
-			alias:    mergedAlias{GoName: "Size", Type: "int64", Flag: "size", Description: "Volume size."},
+			alias:    pkg.MergedAlias{GoName: "Size", Type: "int64", Flag: "size", Description: "Volume size."},
 			wantSubs: []string{`f.Int64Var(&input.Size`, `"size"`},
 			wantNot:  []string{"new(int64)"},
 		},
 		{
 			name:     "*int64 must pre-allocate",
-			alias:    mergedAlias{GoName: "Iops", Type: "*int64", Flag: "iops", Description: "Volume IOPS."},
+			alias:    pkg.MergedAlias{GoName: "Iops", Type: "*int64", Flag: "iops", Description: "Volume IOPS."},
 			wantSubs: []string{"new(int64)", `input.Iops`, `"iops"`},
 		},
 	}
@@ -114,16 +116,16 @@ func TestToKebab(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.input, func(t *testing.T) {
-			got := toKebab(tc.input)
+			got := pkg.ToKebab(tc.input)
 			if got != tc.want {
-				t.Errorf("toKebab(%q) = %q, want %q", tc.input, got, tc.want)
+				t.Errorf("ToKebab(%q) = %q, want %q", tc.input, got, tc.want)
 			}
 		})
 	}
 }
 
 func TestCollectUnsetPtrFields_includesBoolPtr(t *testing.T) {
-	aliases := []mergedAlias{
+	aliases := []pkg.MergedAlias{
 		{GoName: "MaxPods", Type: "*int64", Flag: "max-pods", HasFlag: true, Operations: []string{"create"}},
 		{GoName: "SerializeImagePulls", Type: "*bool", Flag: "serialize-image-pulls", HasFlag: true, Operations: []string{"create", "update"}},
 		{GoName: "Name", Type: "string", Flag: "cluster-name", HasFlag: true, Operations: []string{"create"}},
@@ -131,8 +133,8 @@ func TestCollectUnsetPtrFields_includesBoolPtr(t *testing.T) {
 		{GoName: "DeleteProtection", Type: "*bool", Flag: "delete-protection", HasFlag: true, Operations: []string{"create", "update"}},
 	}
 
-	got := collectUnsetPtrFields(aliases)
-	want := map[string]unsetPtrField{
+	got := pkg.CollectUnsetPtrFields(aliases)
+	want := map[string]pkg.UnsetPtrField{
 		"max-pods": {
 			GoName:     "MaxPods",
 			FlagName:   "max-pods",
@@ -151,7 +153,7 @@ func TestCollectUnsetPtrFields_includesBoolPtr(t *testing.T) {
 	}
 
 	if len(got) != len(want) {
-		t.Fatalf("collectUnsetPtrFields() returned %d fields, want %d: %v", len(got), len(want), got)
+		t.Fatalf("CollectUnsetPtrFields() returned %d fields, want %d: %v", len(got), len(want), got)
 	}
 	for _, field := range got {
 		expected, ok := want[field.FlagName]

@@ -7,15 +7,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/openshift-online/rosa-hyperfleet-api/clientset/cmd/pathbind-gen/pkg"
 	"gopkg.in/yaml.v3"
 )
-
-// sdkTypeForOwner maps FieldRegistry ownerType to SDK Go type (package-qualified).
-var sdkTypeForOwner = map[string]string{
-	"Cluster":    "v1alpha1.Cluster",
-	"NodePool":   "v1alpha1.NodePool",
-	"OidcConfig": "v1alpha1.OidcConfig",
-}
 
 // rootSchemaForOwner maps ownerType to the OpenAPI component schema name.
 var rootSchemaForOwner = map[string]string{
@@ -25,16 +19,13 @@ var rootSchemaForOwner = map[string]string{
 }
 
 // runInit reads field_metadata.json (and optionally openapi.yaml) and writes pathbind-draft.yaml.
-// When openapi.yaml is provided, struct-level FieldRegistry paths are expanded to their
-// scalar leaf paths using the OpenAPI schema tree. Without openapi.yaml the struct-level
-// paths are emitted as-is (backward-compatible behavior).
 func runInit(registryPath, openapiPath, outputPath string) error {
 	raw, err := os.ReadFile(registryPath)
 	if err != nil {
 		return fmt.Errorf("reading registry %s: %w", registryPath, err)
 	}
 
-	var entries []RegistryEntry
+	var entries []pkg.RegistryEntry
 	if err := json.Unmarshal(raw, &entries); err != nil {
 		return fmt.Errorf("parsing registry: %w", err)
 	}
@@ -49,7 +40,7 @@ func runInit(registryPath, openapiPath, outputPath string) error {
 	}
 
 	// Group entries by ownerType; skip service-set and hidden fields.
-	byOwner := map[string][]RegistryEntry{}
+	byOwner := map[string][]pkg.RegistryEntry{}
 	for _, e := range entries {
 		if e.WriteMode == "service-set" || e.Hidden {
 			continue
@@ -60,9 +51,9 @@ func runInit(registryPath, openapiPath, outputPath string) error {
 		byOwner[e.OwnerType] = append(byOwner[e.OwnerType], e)
 	}
 
-	draft := Draft{Resources: map[string]DraftResource{}}
-	for _, owner := range sortedKeys(byOwner) {
-		sdkType, ok := sdkTypeForOwner[owner]
+	draft := pkg.Draft{Resources: map[string]pkg.DraftResource{}}
+	for _, owner := range pkg.SortedKeys(byOwner) {
+		sdkType, ok := pkg.SDKTypeForOwner[owner]
 		if !ok {
 			continue
 		}
@@ -73,7 +64,7 @@ func runInit(registryPath, openapiPath, outputPath string) error {
 			rootSchema = rootSchemaForOwner[owner]
 		}
 
-		res := DraftResource{SDKType: sdkType}
+		res := pkg.DraftResource{SDKType: sdkType}
 		// Deduplicate: a shorter FieldRegistry path may be the parent of a longer one.
 		// When OpenAPI expansion is enabled, emit leaves from the shorter path; skip
 		// any longer path that is already covered.
@@ -83,10 +74,20 @@ func runInit(registryPath, openapiPath, outputPath string) error {
 		// It does not appear in the FieldRegistry (ObjectMeta has no write-mode
 		// annotation) but must be in the draft so consumers can bind it.
 		covered["metadata.name"] = true
-		res.Fields = append(res.Fields, DraftField{
+		res.Fields = append(res.Fields, pkg.DraftField{
 			Path:       "metadata.name",
 			GoType:     "string",
 			Operations: []string{"create"},
+		})
+
+		// metadata.uid is computed and read-only on every Kubernetes resource.
+		// It does not appear in the FieldRegistry (ObjectMeta has no write-mode
+		// annotation) but must be in the draft so consumers can use it as a resource ID.
+		covered["metadata.uid"] = true
+		res.Fields = append(res.Fields, pkg.DraftField{
+			Path:       "metadata.uid",
+			GoType:     "string",
+			Operations: []string{"read"},
 		})
 
 		for _, e := range byOwner[owner] {
@@ -103,7 +104,7 @@ func runInit(registryPath, openapiPath, outputPath string) error {
 						continue
 					}
 					covered[leaf.path] = true
-					res.Fields = append(res.Fields, DraftField{
+					res.Fields = append(res.Fields, pkg.DraftField{
 						Path:       leaf.path,
 						GoType:     leaf.goType,
 						Operations: ops,
@@ -113,7 +114,7 @@ func runInit(registryPath, openapiPath, outputPath string) error {
 				// No OpenAPI — emit the struct-level path as-is.
 				if !covered[e.FieldPath] {
 					covered[e.FieldPath] = true
-					res.Fields = append(res.Fields, DraftField{
+					res.Fields = append(res.Fields, pkg.DraftField{
 						Path:       e.FieldPath,
 						Operations: ops,
 					})
@@ -150,246 +151,4 @@ func runInit(registryPath, openapiPath, outputPath string) error {
 	}
 
 	return nil
-}
-
-// ── OpenAPI schema walker ──────────────────────────────────────────────────────
-
-type leafPath struct {
-	path   string
-	goType string // string, boolean, integer, number, array, map
-}
-
-// openAPIWalker holds the parsed OpenAPI YAML and resolves $ref chains.
-type openAPIWalker struct {
-	schemas     map[string]interface{} // components.schemas
-	diagnostics []string               // unresolved paths and schema issues
-}
-
-func newOpenAPIWalker(path string) (*openAPIWalker, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var doc map[string]interface{}
-	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return nil, fmt.Errorf("parsing openapi yaml: %w", err)
-	}
-	components, _ := doc["components"].(map[string]interface{})
-	if components == nil {
-		return nil, fmt.Errorf("openapi yaml has no components section")
-	}
-	schemas, _ := components["schemas"].(map[string]interface{})
-	if schemas == nil {
-		return nil, fmt.Errorf("openapi yaml has no components.schemas section")
-	}
-	return &openAPIWalker{schemas: schemas}, nil
-}
-
-// resolve dereferences a $ref string ("#/components/schemas/Foo") to its schema map.
-func (w *openAPIWalker) resolve(ref string) map[string]interface{} {
-	const prefix = "#/components/schemas/"
-	if !strings.HasPrefix(ref, prefix) {
-		return nil
-	}
-	name := strings.TrimPrefix(ref, prefix)
-	schema, _ := w.schemas[name].(map[string]interface{})
-	return schema
-}
-
-// effective returns the merged effective schema for a node, resolving $ref and merging allOf.
-// Detects cycles and returns nil if a circular reference is found.
-func (w *openAPIWalker) effective(node map[string]interface{}) map[string]interface{} {
-	return w.effectiveWithVisited(node, make(map[string]bool))
-}
-
-// effectiveWithVisited resolves $ref and merges allOf while tracking visited refs to detect cycles.
-func (w *openAPIWalker) effectiveWithVisited(node map[string]interface{}, visited map[string]bool) map[string]interface{} {
-	if node == nil {
-		return nil
-	}
-	// Follow $ref.
-	if ref, ok := node["$ref"].(string); ok {
-		// Detect cycle: if we've already visited this $ref, return nil (schema cycle error).
-		if visited[ref] {
-			w.diagnostics = append(w.diagnostics, fmt.Sprintf("schema cycle detected: %s", ref))
-			return nil
-		}
-		resolved := w.resolve(ref)
-		if resolved == nil {
-			return nil
-		}
-		// Mark this ref as visited before recursing.
-		visited[ref] = true
-		return w.effectiveWithVisited(resolved, visited)
-	}
-	// Merge allOf schemas into a single properties map.
-	if allOf, ok := node["allOf"].([]interface{}); ok {
-		// Initialize merged with node's direct properties and schema keywords.
-		merged := map[string]interface{}{}
-		if props, ok := node["properties"].(map[string]interface{}); ok {
-			merged["properties"] = props
-		}
-		// Preserve other schema keywords from the node.
-		if t, ok := node["type"]; ok {
-			merged["type"] = t
-		}
-		if desc, ok := node["description"]; ok {
-			merged["description"] = desc
-		}
-		// Merge in allOf items, allowing them to override direct properties.
-		for _, item := range allOf {
-			sub, _ := item.(map[string]interface{})
-			if sub == nil {
-				continue
-			}
-			eff := w.effectiveWithVisited(sub, visited)
-			if eff == nil {
-				continue
-			}
-			if props, ok := eff["properties"].(map[string]interface{}); ok {
-				existing, _ := merged["properties"].(map[string]interface{})
-				if existing == nil {
-					existing = map[string]interface{}{}
-				}
-				for k, v := range props {
-					existing[k] = v
-				}
-				merged["properties"] = existing
-			}
-			// Carry through type if not yet set.
-			if _, hasType := merged["type"]; !hasType {
-				if t, ok := eff["type"]; ok {
-					merged["type"] = t
-				}
-			}
-		}
-		if len(merged) > 0 {
-			return merged
-		}
-	}
-	return node
-}
-
-// navigateTo walks the schema tree from the root schema, following each path segment
-// through properties. Returns the schema node at the end of the path, or nil if not found.
-func (w *openAPIWalker) navigateTo(rootSchemaName string, pathSegs []string) map[string]interface{} {
-	cur, _ := w.schemas[rootSchemaName].(map[string]interface{})
-	if cur == nil {
-		return nil
-	}
-	cur = w.effective(cur)
-
-	for _, seg := range pathSegs {
-		if cur == nil {
-			return nil
-		}
-		props, _ := cur["properties"].(map[string]interface{})
-		if props == nil {
-			return nil
-		}
-		next, _ := props[seg].(map[string]interface{})
-		cur = w.effective(next)
-	}
-	return cur
-}
-
-// goTypeFromSchema returns the leaf goType string for a schema node.
-// Returns "" if the node is not a scalar leaf.
-func goTypeFromSchema(schema map[string]interface{}) string {
-	if schema == nil {
-		return ""
-	}
-	typ, _ := schema["type"].(string)
-	switch typ {
-	case "string":
-		return "string"
-	case "boolean":
-		return "boolean"
-	case "integer":
-		format, _ := schema["format"].(string)
-		if format == "int64" {
-			return "integer(int64)"
-		}
-		return "integer(int32)"
-	case "number":
-		return "number"
-	}
-	return ""
-}
-
-// expandLeaves navigates from rootSchemaName to fieldPath and recursively enumerates
-// all scalar leaf sub-paths. The returned paths are relative to the document root
-// (e.g. "spec.hostedCluster.release.image").
-// Depth is capped to prevent runaway recursion on circular references.
-// Unresolved paths are recorded in diagnostics; empty returns signal an unresolved path.
-func (w *openAPIWalker) expandLeaves(rootSchemaName, fieldPath string) []leafPath {
-	segs := strings.Split(fieldPath, ".")
-	node := w.navigateTo(rootSchemaName, segs)
-	if node == nil {
-		// Path not found in schema — report as diagnostic and return empty (no fallback string leaf).
-		w.diagnostics = append(w.diagnostics, fmt.Sprintf("unresolved schema path: %s.%s", rootSchemaName, fieldPath))
-		return nil
-	}
-
-	var out []leafPath
-	w.walkNode(node, fieldPath, &out, 0)
-	if len(out) == 0 {
-		// Non-scalar struct with no resolvable leaves — report as diagnostic and return empty.
-		w.diagnostics = append(w.diagnostics, fmt.Sprintf("schema path has no scalar leaves: %s.%s", rootSchemaName, fieldPath))
-		return nil
-	}
-	return out
-}
-
-const maxDepth = 12 // guard against deep/circular schemas
-
-// walkNode recursively collects scalar leaf paths from a schema node.
-func (w *openAPIWalker) walkNode(node map[string]interface{}, currentPath string, out *[]leafPath, depth int) {
-	if depth > maxDepth || node == nil {
-		return
-	}
-	node = w.effective(node)
-	if node == nil {
-		return
-	}
-
-	// Scalar leaf — emit.
-	if gt := goTypeFromSchema(node); gt != "" {
-		*out = append(*out, leafPath{path: currentPath, goType: gt})
-		return
-	}
-
-	typ, _ := node["type"].(string)
-
-	// Array — emit as a single array-typed leaf (consumer specifies element structure).
-	if typ == "array" {
-		*out = append(*out, leafPath{path: currentPath, goType: "array"})
-		return
-	}
-
-	// Map (additionalProperties) — emit as a single map-typed leaf.
-	if _, hasAdditional := node["additionalProperties"]; hasAdditional {
-		*out = append(*out, leafPath{path: currentPath, goType: "map"})
-		return
-	}
-
-	// Object — recurse into properties.
-	props, _ := node["properties"].(map[string]interface{})
-	if len(props) == 0 {
-		// No properties resolvable — emit as opaque string.
-		*out = append(*out, leafPath{path: currentPath, goType: "string"})
-		return
-	}
-
-	// Sort property names for deterministic output.
-	keys := make([]string, 0, len(props))
-	for k := range props {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	for _, k := range keys {
-		child, _ := props[k].(map[string]interface{})
-		w.walkNode(child, currentPath+"."+k, out, depth+1)
-	}
 }

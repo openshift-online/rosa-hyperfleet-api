@@ -8,6 +8,10 @@ resources:
               goType: string
               operations:
                 - create
+            - path: metadata.uid
+              goType: string
+              operations:
+                - read
             - path: spec.deleteProtection
               goType: boolean
               operations:
@@ -285,6 +289,10 @@ resources:
               goType: string
               operations:
                 - create
+            - path: metadata.uid
+              goType: string
+              operations:
+                - read
             - path: spec.autoRepair
               goType: boolean
               operations:
@@ -421,6 +429,10 @@ resources:
               goType: string
               operations:
                 - create
+            - path: metadata.uid
+              goType: string
+              operations:
+                - read
             - path: spec.installerRoleArn
               goType: string
               operations:

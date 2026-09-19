@@ -9,6 +9,11 @@
 //	              Go source (input struct, RegisterXxxFlags, XxxHandler interface,
 //	              GeneratedXxxPrompt, RunXxx) into the consumer's package.
 //	              Run by the consumer's make generate-hyperfleet target.
+//
+//	--mode=tf     reads pathbind-draft.yaml + pathbind-overrides.yaml and writes
+//	              Go source (input struct, handler interface, resource scaffolding)
+//	              into the consumer's package.
+//	              Run by the consumer's make generate-hyperfleet target.
 package main
 
 import (
@@ -16,10 +21,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+
+	"github.com/openshift-online/rosa-hyperfleet-api/clientset/cmd/pathbind-gen/cobra"
+	"github.com/openshift-online/rosa-hyperfleet-api/clientset/cmd/pathbind-gen/tf"
 )
 
 func main() {
-	mode := flag.String("mode", "", "generation mode: init or cobra (required)")
+	mode := flag.String("mode", "", "generation mode: init, cobra, or tf (required)")
 
 	// init mode
 	registryPath := flag.String("registry", "", "[init] path to field_metadata.json")
@@ -27,14 +35,14 @@ func main() {
 	draftOutput := flag.String("output", "", "[init] path to write pathbind-draft.yaml")
 
 	// cobra mode
-	draftPath := flag.String("draft", "", "[cobra] path to pathbind-draft.yaml (optional)")
-	overridesPath := flag.String("overrides", "", "[cobra] path to pathbind-overrides.yaml")
-	outputDir := flag.String("output-dir", "", "[cobra] directory to write generated Go files")
+	draftPath := flag.String("draft", "", "[cobra/tf] path to pathbind-draft.yaml (optional)")
+	overridesPath := flag.String("overrides", "", "[cobra/tf] path to pathbind-overrides.yaml")
+	outputDir := flag.String("output-dir", "", "[cobra/tf] directory to write generated Go files")
 
 	flag.Parse()
 
 	if *mode == "" {
-		fatalf("--mode is required; use init or cobra")
+		fatalf("--mode is required; use init, cobra, or tf")
 	}
 
 	switch *mode {
@@ -50,13 +58,25 @@ func main() {
 		if *overridesPath == "" || *outputDir == "" {
 			fatalf("--overrides and --output-dir are required for --mode=cobra")
 		}
-		if err := runCobra(*draftPath, *overridesPath, *outputDir); err != nil {
+		if err := cobra.Run(*draftPath, *overridesPath, *outputDir); err != nil {
+			log.Fatalf("pathbind-gen: %v", err)
+		}
+
+	case "tf":
+		if *draftPath == "" || *overridesPath == "" || *outputDir == "" {
+			fatalf("--draft, --overrides, and --output-dir are required for --mode=tf")
+		}
+		if err := runTF(*draftPath, *overridesPath, *outputDir); err != nil {
 			log.Fatalf("pathbind-gen: %v", err)
 		}
 
 	default:
-		fatalf("unknown mode %q; use init or cobra", *mode)
+		fatalf("unknown mode %q; use init, cobra, or tf", *mode)
 	}
+}
+
+func runTF(draftPath, overridesPath, outputDir string) error {
+	return tf.Run(draftPath, overridesPath, outputDir)
 }
 
 func fatalf(format string, args ...any) {
