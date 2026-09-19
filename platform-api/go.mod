@@ -23,15 +23,15 @@ require (
 	github.com/openshift-online/rosa-hyperfleet-api/api v0.0.0
 	github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen v0.0.0-00010101000000-000000000000
 	github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db v0.0.0
-	github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80
+	github.com/openshift/api v0.0.0-20260805160557-b61243060d5f
 	github.com/openshift/hypershift/api v0.0.0-20260625052409-9acec4759a16
 	github.com/prometheus/client_golang v1.24.1
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.36.0
-	k8s.io/apimachinery v0.36.0
+	k8s.io/api v0.36.2
+	k8s.io/apimachinery v0.36.2
 	k8s.io/client-go v0.36.0
 	sigs.k8s.io/controller-runtime v0.24.1
 )
@@ -119,3 +119,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace github.com/openshift/hypershift/api => github.com/typeid/hypershift/api v0.0.0-20260916080119-50a03de4e345

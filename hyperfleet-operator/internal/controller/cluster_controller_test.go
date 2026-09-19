@@ -167,8 +167,8 @@ var _ = Describe("Cluster Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			// 7 cluster manifests → 7 ApplyDesires + 1 ReadDesire.
-			Expect(fd.applyCount).To(Equal(7))
+			// 8 cluster manifests → 8 ApplyDesires + 1 ReadDesire.
+			Expect(fd.applyCount).To(Equal(8))
 			Expect(fd.readCount).To(Equal(1))
 		})
 
@@ -222,13 +222,13 @@ var _ = Describe("Cluster Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			// 8 cluster manifests (7 legacy + oidc-signing-key ExternalSecret)
-			// → 8 ApplyDesires + 1 ReadDesire.
-			Expect(fd.applyCount).To(Equal(8))
+			// 9 cluster manifests (8 base + oidc-signing-key ExternalSecret)
+			// → 9 ApplyDesires + 1 ReadDesire.
+			Expect(fd.applyCount).To(Equal(9))
 			Expect(fd.readCount).To(Equal(1))
 		})
 
-		It("should switch all 7 desires to Type=Delete in-place, wait for confirmation, then remove finalizer", func() {
+		It("should switch all 8 desires to Type=Delete in-place, wait for confirmation, then remove finalizer", func() {
 			resource := newTestCluster(clusterName)
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
@@ -271,14 +271,14 @@ var _ = Describe("Cluster Controller", func() {
 			// Delete the CR — sets DeletionTimestamp.
 			Expect(k8sClient.Delete(ctx, &updated)).To(Succeed())
 
-			// First deletion reconcile: switches all 7 desires to Type=Delete
+			// First deletion reconcile: switches all 8 desires to Type=Delete
 			// in-place; no status yet → requeues.
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Namespace: testNS, Name: clusterName},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			deleteApplies := filterDeleteDesires(fd.applies)
-			Expect(deleteApplies).To(HaveLen(7), "all 7 resources should be switched to Type=Delete")
+			Expect(deleteApplies).To(HaveLen(8), "all 8 resources should be switched to Type=Delete")
 			Expect(result.RequeueAfter).NotTo(BeZero(), "should requeue while waiting for deletion confirmation")
 
 			// Placement should still exist (finalizer not removed yet).
@@ -301,7 +301,7 @@ var _ = Describe("Cluster Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 			deleteApplies = filterDeleteDesires(fd.applies)
-			Expect(deleteApplies).To(HaveLen(14), "7 desires re-upserted on second pass")
+			Expect(deleteApplies).To(HaveLen(16), "8 desires re-upserted on second pass")
 			Expect(result.RequeueAfter).NotTo(BeZero(), "should requeue while resources still terminating")
 
 			// Simulate all resources fully deleted (Successful=True).
@@ -313,23 +313,23 @@ var _ = Describe("Cluster Controller", func() {
 				}},
 			}
 
-			// Third deletion reconcile: all 7 confirmed deleted → cleans up
+			// Third deletion reconcile: all 8 confirmed deleted → cleans up
 			// desire specs and ReadDesire, deletes Placement, removes finalizer.
 			_, err = reconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Namespace: testNS, Name: clusterName},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			deleteApplies = filterDeleteDesires(fd.applies)
-			Expect(deleteApplies).To(HaveLen(21), "7 desires re-upserted on third pass")
+			Expect(deleteApplies).To(HaveLen(24), "8 desires re-upserted on third pass")
 
 			// Verify the Placement was deleted.
 			err = k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + "-placement"}, &p)
 			Expect(err).To(HaveOccurred())
 
 			// Verify desire specs were cleaned up once at the end (not on every pass).
-			// 7 ApplyDesire cleanups + 1 ReadDesire cleanup.
+			// 8 ApplyDesire cleanups + 1 ReadDesire cleanup.
 			applyCleanups, readCleanups := fd.countSpecCleanups()
-			Expect(applyCleanups).To(Equal(7), "should clean up all 7 ApplyDesire specs once deletion confirmed")
+			Expect(applyCleanups).To(Equal(8), "should clean up all 8 ApplyDesire specs once deletion confirmed")
 			Expect(readCleanups).To(Equal(1), "should clean up ReadDesire spec")
 		})
 

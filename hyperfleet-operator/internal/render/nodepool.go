@@ -55,7 +55,7 @@ func NodePoolResource(nodePool *hyperfleetv1alpha1.NodePool, cluster *hyperfleet
 				npSpec.Platform.AWS.RootVolume.Type = "gp3"
 			}
 		}
-		npSpec.Platform.AWS.ResourceTags = appendSystemTags(npSpec.Platform.AWS.ResourceTags, "")
+		npSpec.Platform.AWS.ResourceTags = appendNodePoolSystemTags(npSpec.Platform.AWS.ResourceTags)
 	}
 
 	return Resource{

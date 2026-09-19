@@ -36,6 +36,7 @@ func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExterna
 		awsIAMAuthConfig(clusterID, clusterName, ns, cluster.Spec.CreatorARN),
 		pullSecret(clusterID, ns),
 		apiServingCert(clusterID, clusterName, baseDomain, ns),
+		ingressServingCert(clusterID, clusterName, baseDomain, ns),
 		hc,
 		sshKey(clusterID, ns),
 	}
@@ -252,6 +253,33 @@ func extractUUIDFromIssuerURL(issuerURL string) string {
 	return ""
 }
 
+func ingressServingCert(clusterID, clusterName, baseDomain, ns string) Resource {
+	return Resource{
+		Group: "cert-manager.io", Version: "v1", Resource: "certificates",
+		Name: "ingress-serving-cert", Namespace: ns,
+		Object: &Certificate{
+			TypeMeta: metav1.TypeMeta{APIVersion: "cert-manager.io/v1", Kind: "Certificate"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ingress-serving-cert",
+				Namespace: ns,
+				Labels: map[string]string{
+					"hyperfleet.io/cluster-id": clusterID,
+				},
+			},
+			Spec: CertificateSpec{
+				SecretName: "ingress-serving-cert",
+				IssuerRef: CertificateIssuerRef{
+					Name: "letsencrypt-dns01",
+					Kind: "ClusterIssuer",
+				},
+				DNSNames: []string{
+					fmt.Sprintf("*.apps.in.%s.%s", clusterName, baseDomain),
+				},
+			},
+		},
+	}
+}
+
 func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal bool, baseDomain string) (Resource, error) {
 	clusterID := ClusterIDFromNamespace(cluster.Namespace)
 	clusterName := cluster.Name // human-readable
@@ -282,6 +310,10 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 		hcSpec.Configuration = apiServerConfiguration()
 	} else {
 		hcSpec.Configuration.APIServer = apiServerConfiguration().APIServer
+	}
+	ingressDomain := fmt.Sprintf("apps.in.%s.%s", clusterName, baseDomain)
+	hcSpec.Configuration.Ingress = &configv1.IngressSpec{
+		Domain: ingressDomain,
 	}
 
 	// --- Defaults (only set if customer didn't specify) ---
@@ -317,7 +349,13 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 	// --- Platform overrides ---
 	if hcSpec.Platform.AWS != nil {
 		hcSpec.Platform.AWS.EndpointAccess = hypershiftv1beta1.PublicAndPrivate
-		hcSpec.Platform.AWS.ResourceTags = appendSystemTags(hcSpec.Platform.AWS.ResourceTags, clusterID)
+		hcSpec.Platform.AWS.ResourceTags = appendClusterSystemTags(hcSpec.Platform.AWS.ResourceTags, clusterID)
+		hcSpec.Platform.AWS.ManagedDNS = &hypershiftv1beta1.AWSManagedDNSSpec{
+			IngressDomainPrefix: "in",
+			Delegation: hypershiftv1beta1.AWSManagedDNSDelegationSpec{
+				NSDelegation: hypershiftv1beta1.NSDelegationExternalDNS,
+			},
+		}
 	}
 
 	// References the Secret materialized by oidcSigningKeySecret's ExternalSecret.
@@ -343,7 +381,9 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 				},
 				Annotations: map[string]string{
 					hypershiftv1beta1.PodSecurityAdmissionLabelOverrideAnnotation: "privileged",
-					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:4.23-iam-auth",
+					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:managed-ingress-dns-5afe3c5731",
+					hypershiftv1beta1.SkipReleaseImageValidation:                  "true",
+					hypershiftv1beta1.CleanupCloudResourcesAnnotation:             "true",
 					"hypershift.openshift.io/aws-iam-authenticator":               "true",
 				},
 			},
@@ -415,14 +455,21 @@ func defaultEtcdSpec() hypershiftv1beta1.EtcdSpec {
 	}
 }
 
-func appendSystemTags(existing []hypershiftv1beta1.AWSResourceTag, clusterID string) []hypershiftv1beta1.AWSResourceTag {
-	tags := []hypershiftv1beta1.AWSResourceTag{
+func appendClusterSystemTags(existing []hypershiftv1beta1.AWSClusterResourceTag, clusterID string) []hypershiftv1beta1.AWSClusterResourceTag {
+	tags := []hypershiftv1beta1.AWSClusterResourceTag{
 		{Key: "red-hat-managed", Value: "true"},
 	}
 	if clusterID != "" {
-		tags = append(tags, hypershiftv1beta1.AWSResourceTag{
+		tags = append(tags, hypershiftv1beta1.AWSClusterResourceTag{
 			Key: fmt.Sprintf("kubernetes.io/cluster/%s", clusterID), Value: "owned",
 		})
+	}
+	return append(tags, existing...)
+}
+
+func appendNodePoolSystemTags(existing []hypershiftv1beta1.AWSNodePoolResourceTag) []hypershiftv1beta1.AWSNodePoolResourceTag {
+	tags := []hypershiftv1beta1.AWSNodePoolResourceTag{
+		{Key: "red-hat-managed", Value: "true"},
 	}
 	return append(tags, existing...)
 }

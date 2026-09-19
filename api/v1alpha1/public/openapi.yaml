@@ -3008,6 +3008,67 @@ components:
                                                       x-kubernetes-validations:
                                                           - message: mtu is immutable once set
                                                             rule: self == oldSelf
+                                                  v4InternalSubnet:
+                                                      description: |-
+                                                          v4InternalSubnet configures the IPv4 subnet used by OVN-Kubernetes for gateway
+                                                          router logical router port (LRP) addresses and masquerade/SNAT traffic within
+                                                          the OVN logical topology. It must not overlap with any other subnet being used
+                                                          by OpenShift or by the node network. The size of the subnet must be larger than
+                                                          the number of nodes.
+                                                          This field is distinct from ipv4.internalJoinSubnet, which configures the subnet
+                                                          for the join switch that interconnects per-node gateway routers with the cluster
+                                                          router. Both default to 100.64.0.0/16 but control different OVN-Kubernetes
+                                                          internal networks and can be configured independently to avoid overlaps with
+                                                          existing network infrastructure.
+                                                          Once set, the value is immutable and cannot be modified in subsequent updates.
+                                                          The default is 100.64.0.0/16.
+                                                          The value must be in IPv4 CIDR notation (e.g., 192.168.0.0/16), consisting of
+                                                          four decimal octets (0-255) separated by dots, followed by a slash and a prefix
+                                                          length. The prefix length must be between 0 and 30 inclusive, and the first
+                                                          octet must not be 0.
+                                                          The value must be between 9 and 18 characters in length.
+                                                          This field is immutable once set.
+                                                      maxLength: 18
+                                                      minLength: 9
+                                                      type: string
+                                                      x-kubernetes-validations:
+                                                          - message: v4InternalSubnet is immutable once set
+                                                            rule: self == oldSelf
+                                                          - message: Subnet must be in a valid IPv4 CIDR format
+                                                            rule: isCIDR(self) && cidr(self).ip().family() == 4
+                                                          - message: subnet must be in the range /0 to /30 inclusive
+                                                            rule: isCIDR(self) && cidr(self).prefixLength() <= 30
+                                                          - message: first IP address octet must not be 0
+                                                            rule: isCIDR(self) && cidr(self).ip().family() == 4 && int(self.split('.')[0]) > 0
+                                                  v6InternalSubnet:
+                                                      description: |-
+                                                          v6InternalSubnet configures the IPv6 subnet used by OVN-Kubernetes for gateway
+                                                          router logical router port (LRP) addresses and masquerade/SNAT traffic within
+                                                          the OVN logical topology. It must not overlap with any other subnet being used
+                                                          by OpenShift or by the node network. The size of the subnet must be larger than
+                                                          the number of nodes.
+                                                          This field is distinct from ipv6.internalJoinSubnet, which configures the subnet
+                                                          for the join switch that interconnects per-node gateway routers with the cluster
+                                                          router. Both default to fd98::/64 but control different OVN-Kubernetes internal
+                                                          networks and can be configured independently to avoid overlaps with existing
+                                                          network infrastructure.
+                                                          Once set, the value is immutable and cannot be modified in subsequent updates.
+                                                          The default is fd98::/64.
+                                                          The value must be in IPv6 CIDR notation (e.g., fd98::/64), consisting of an
+                                                          IPv6 address followed by a slash and a prefix length. The prefix length must
+                                                          be between 0 and 125 inclusive.
+                                                          The value must be between 4 and 48 characters in length.
+                                                          This field is immutable once set.
+                                                      maxLength: 48
+                                                      minLength: 4
+                                                      type: string
+                                                      x-kubernetes-validations:
+                                                          - message: v6InternalSubnet is immutable once set
+                                                            rule: self == oldSelf
+                                                          - message: Subnet must be in valid IPv6 CIDR format
+                                                            rule: isCIDR(self) && cidr(self).ip().family() == 6
+                                                          - message: subnet must be in the range /0 to /125 inclusive
+                                                            rule: isCIDR(self) && cidr(self).prefixLength() <= 125
                                               type: object
                                               x-kubernetes-validations:
                                                   - message: internalJoinSubnet and internalTransitSwitchSubnet must not be the same
@@ -3022,6 +3083,10 @@ components:
                                                     rule: '!has(oldSelf.ipv6) || !has(oldSelf.ipv6.internalJoinSubnet) || (has(self.ipv6) && has(self.ipv6.internalJoinSubnet))'
                                                   - message: ipv6.internalTransitSwitchSubnet cannot be removed once set
                                                     rule: '!has(oldSelf.ipv6) || !has(oldSelf.ipv6.internalTransitSwitchSubnet) || (has(self.ipv6) && has(self.ipv6.internalTransitSwitchSubnet))'
+                                                  - message: v4InternalSubnet is immutable once set and cannot be removed
+                                                    rule: '!has(oldSelf.v4InternalSubnet) || has(self.v4InternalSubnet)'
+                                                  - message: v6InternalSubnet is immutable once set and cannot be removed
+                                                    rule: '!has(oldSelf.v6InternalSubnet) || has(self.v6InternalSubnet)'
                                       type: object
                                       x-kubernetes-validations:
                                           - message: ovnKubernetesConfig is immutable once set and cannot be removed
@@ -3037,18 +3102,88 @@ components:
                                                   Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                                                   Defaults to "Normal".
                                               enum:
-                                                  - ""
                                                   - Normal
                                                   - Debug
                                                   - Trace
                                                   - TraceAll
                                               type: string
                                       type: object
+                                  etcd:
+                                      allOf:
+                                          - minProperties: 1
+                                          - minProperties: 1
+                                      description: |-
+                                          etcd configures the etcd component.
+                                          Setting the logLevel field triggers a rolling restart of the component.
+                                          Note: etcd supports fewer log levels than klog-based components,
+                                          etcd supports only Normal and Debug log levels.
+                                          When omitted, this means the user has no opinion and the platform
+                                          chooses a reasonable default, which is subject to change over time.
+                                          The current default log level is Normal.
+                                      properties:
+                                          logLevel:
+                                              description: |-
+                                                  logLevel sets the log verbosity for the component.
+                                                  Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                  When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                  When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                  When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                  When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                  this can cause significant performance impact and produce large volumes of logs.
+                                                  When omitted, this means the user has no opinion and the platform
+                                                  chooses a reasonable default, which is subject to change over time.
+                                                  The current default log level is Normal.
+                                              enum:
+                                                  - Normal
+                                                  - Debug
+                                                  - Trace
+                                                  - TraceAll
+                                              type: string
+                                      type: object
+                                      x-kubernetes-validations:
+                                          - message: etcd only supports Normal and Debug log levels; Trace and TraceAll are not valid for etcd
+                                            rule: '!has(self.logLevel) || self.logLevel in [''Normal'', ''Debug'']'
                                   ingressOperator:
                                       description: |-
                                           ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
                                           This allows configuring how the default ingress controller endpoints are published.
                                       properties:
+                                          defaultCertificate:
+                                              description: |-
+                                                  defaultCertificate is a reference to a secret in the HostedCluster namespace
+                                                  that contains the default certificate served by the default ingress controller.
+                                                  When Routes don't specify their own certificate, defaultCertificate is used.
+                                                  The secret must contain the following keys and data:
+                                                    tls.crt: certificate file contents
+                                                    tls.key: key file contents
+                                                  When set, this certificate replaces the auto-generated wildcard certificate
+                                                  that is normally created by the control plane operator. The secret is synced
+                                                  from the HostedCluster namespace to the control plane, and then propagated
+                                                  to the hosted cluster's openshift-ingress namespace.
+                                                  When the referenced secret is updated, the new certificate data is
+                                                  automatically propagated to the hosted cluster.
+                                                  When not set, the control plane operator generates a wildcard certificate
+                                                  signed by the cluster's root CA.
+                                                  Note: a cluster-admin in the hosted cluster can override the default ingress
+                                                  controller's certificate directly. That override takes precedence and the
+                                                  certificate referenced here is no longer served.
+                                              properties:
+                                                  name:
+                                                      description: |-
+                                                          name is the name of the Secret containing tls.crt and tls.key.
+                                                          The Secret must exist in the same namespace as the HostedCluster.
+                                                          name must be a valid DNS subdomain name (RFC 1123): it must contain only
+                                                          lowercase alphanumeric characters, '-' or '.', and start and end with an
+                                                          alphanumeric character.
+                                                      maxLength: 253
+                                                      minLength: 1
+                                                      type: string
+                                                      x-kubernetes-validations:
+                                                          - message: 'name must be a valid DNS subdomain name: contain no more than 253 characters, contain only lowercase alphanumeric characters, ''-'' or ''.'', and start and end with an alphanumeric character'
+                                                            rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?([.][a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                                              required:
+                                                  - name
+                                              type: object
                                           endpointPublishingStrategy:
                                               description: |-
                                                   endpointPublishingStrategy is used to publish the default ingress controller endpoints.
@@ -3313,6 +3448,32 @@ components:
                                                                                       x-kubernetes-validations:
                                                                                           - message: eipAllocations cannot contain duplicates
                                                                                             rule: self.all(x, self.exists_one(y, x == y))
+                                                                                  protocol:
+                                                                                      description: |-
+                                                                                          protocol specifies whether the Network Load Balancer uses PROXY
+                                                                                          protocol to forward connections to the IngressController.
+                                                                                          When set to "TCP", the NLB uses AWS's native client IP preservation.
+                                                                                          This may cause hairpin connection failures for internal load
+                                                                                          balancers when connections are made from pods to router pods on
+                                                                                          the same node.
+                                                                                          When set to "PROXY", the NLB disables native client IP preservation
+                                                                                          and uses PROXY protocol v2. The IngressController enables PROXY
+                                                                                          protocol on HAProxy so that it can parse PROXY protocol headers to
+                                                                                          obtain the original client IP. This avoids hairpin connection
+                                                                                          failures.
+                                                                                          The following values are valid for this field:
+                                                                                          * "TCP".
+                                                                                          * "PROXY".
+                                                                                          When omitted, this means the user has no opinion and the value is
+                                                                                          left to the platform to choose a reasonable default, which is subject to
+                                                                                          change over time. The current default is "PROXY".
+                                                                                          Note that changing this field may cause brief connection failures
+                                                                                          during the transition as the NLB attribute change and router rollout
+                                                                                          occur independently.
+                                                                                      enum:
+                                                                                          - TCP
+                                                                                          - PROXY
+                                                                                      type: string
                                                                                   subnets:
                                                                                       description: |-
                                                                                           subnets specifies the subnets to which the load balancer will
@@ -3628,6 +3789,216 @@ components:
                                               type: object
                                               x-kubernetes-preserve-unknown-fields: true
                                       type: object
+                                  kubeAPIServer:
+                                      allOf:
+                                          - minProperties: 1
+                                          - minProperties: 1
+                                      description: |-
+                                          kubeAPIServer configures the kube-apiserver component.
+                                          Setting the logLevel field triggers a rolling restart of the component.
+                                          When omitted, this means the user has no opinion and the platform
+                                          chooses a reasonable default, which is subject to change over time.
+                                          The current default log level is Normal.
+                                      properties:
+                                          logLevel:
+                                              description: |-
+                                                  logLevel sets the log verbosity for the component.
+                                                  Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                  When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                  When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                  When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                  When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                  this can cause significant performance impact and produce large volumes of logs.
+                                                  When omitted, this means the user has no opinion and the platform
+                                                  chooses a reasonable default, which is subject to change over time.
+                                                  The current default log level is Normal.
+                                              enum:
+                                                  - Normal
+                                                  - Debug
+                                                  - Trace
+                                                  - TraceAll
+                                              type: string
+                                      type: object
+                                  kubeControllerManager:
+                                      allOf:
+                                          - minProperties: 1
+                                          - minProperties: 1
+                                      description: |-
+                                          kubeControllerManager configures the kube-controller-manager component.
+                                          Setting the logLevel field triggers a rolling restart of the component.
+                                          When omitted, this means the user has no opinion and the platform
+                                          chooses a reasonable default, which is subject to change over time.
+                                          The current default log level is Normal.
+                                      properties:
+                                          logLevel:
+                                              description: |-
+                                                  logLevel sets the log verbosity for the component.
+                                                  Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                  When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                  When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                  When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                  When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                  this can cause significant performance impact and produce large volumes of logs.
+                                                  When omitted, this means the user has no opinion and the platform
+                                                  chooses a reasonable default, which is subject to change over time.
+                                                  The current default log level is Normal.
+                                              enum:
+                                                  - Normal
+                                                  - Debug
+                                                  - Trace
+                                                  - TraceAll
+                                              type: string
+                                      type: object
+                                  kubeScheduler:
+                                      allOf:
+                                          - minProperties: 1
+                                          - minProperties: 1
+                                      description: |-
+                                          kubeScheduler configures the kube-scheduler component.
+                                          Setting the logLevel field triggers a rolling restart of the component.
+                                          When omitted, this means the user has no opinion and the platform
+                                          chooses a reasonable default, which is subject to change over time.
+                                          The current default log level is Normal.
+                                      properties:
+                                          logLevel:
+                                              description: |-
+                                                  logLevel sets the log verbosity for the component.
+                                                  Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                  When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                  When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                  When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                  When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                  this can cause significant performance impact and produce large volumes of logs.
+                                                  When omitted, this means the user has no opinion and the platform
+                                                  chooses a reasonable default, which is subject to change over time.
+                                                  The current default log level is Normal.
+                                              enum:
+                                                  - Normal
+                                                  - Debug
+                                                  - Trace
+                                                  - TraceAll
+                                              type: string
+                                      type: object
+                                  oauthServer:
+                                      allOf:
+                                          - minProperties: 1
+                                          - minProperties: 1
+                                      description: |-
+                                          oauthServer configures the oauth-server component.
+                                          Setting the logLevel field triggers a rolling restart of the component.
+                                          When omitted, this means the user has no opinion and the platform
+                                          chooses a reasonable default, which is subject to change over time.
+                                          The current default log level is Normal.
+                                      properties:
+                                          logLevel:
+                                              description: |-
+                                                  logLevel sets the log verbosity for the component.
+                                                  Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                  When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                  When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                  When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                  When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                  this can cause significant performance impact and produce large volumes of logs.
+                                                  When omitted, this means the user has no opinion and the platform
+                                                  chooses a reasonable default, which is subject to change over time.
+                                                  The current default log level is Normal.
+                                              enum:
+                                                  - Normal
+                                                  - Debug
+                                                  - Trace
+                                                  - TraceAll
+                                              type: string
+                                      type: object
+                                  openShiftAPIServer:
+                                      allOf:
+                                          - minProperties: 1
+                                          - minProperties: 1
+                                      description: |-
+                                          openShiftAPIServer configures the openshift-apiserver component.
+                                          Setting the logLevel field triggers a rolling restart of the component.
+                                          When omitted, this means the user has no opinion and the platform
+                                          chooses a reasonable default, which is subject to change over time.
+                                          The current default log level is Normal.
+                                      properties:
+                                          logLevel:
+                                              description: |-
+                                                  logLevel sets the log verbosity for the component.
+                                                  Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                  When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                  When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                  When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                  When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                  this can cause significant performance impact and produce large volumes of logs.
+                                                  When omitted, this means the user has no opinion and the platform
+                                                  chooses a reasonable default, which is subject to change over time.
+                                                  The current default log level is Normal.
+                                              enum:
+                                                  - Normal
+                                                  - Debug
+                                                  - Trace
+                                                  - TraceAll
+                                              type: string
+                                      type: object
+                                  openShiftControllerManager:
+                                      allOf:
+                                          - minProperties: 1
+                                          - minProperties: 1
+                                      description: |-
+                                          openShiftControllerManager configures the openshift-controller-manager component.
+                                          Setting the logLevel field triggers a rolling restart of the component.
+                                          When omitted, this means the user has no opinion and the platform
+                                          chooses a reasonable default, which is subject to change over time.
+                                          The current default log level is Normal.
+                                      properties:
+                                          logLevel:
+                                              description: |-
+                                                  logLevel sets the log verbosity for the component.
+                                                  Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                  When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                  When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                  When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                  When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                  this can cause significant performance impact and produce large volumes of logs.
+                                                  When omitted, this means the user has no opinion and the platform
+                                                  chooses a reasonable default, which is subject to change over time.
+                                                  The current default log level is Normal.
+                                              enum:
+                                                  - Normal
+                                                  - Debug
+                                                  - Trace
+                                                  - TraceAll
+                                              type: string
+                                      type: object
+                                  openShiftOAuthAPIServer:
+                                      allOf:
+                                          - minProperties: 1
+                                          - minProperties: 1
+                                      description: |-
+                                          openShiftOAuthAPIServer configures the openshift-oauth-apiserver component.
+                                          Setting the logLevel field triggers a rolling restart of the component.
+                                          When omitted, this means the user has no opinion and the platform
+                                          chooses a reasonable default, which is subject to change over time.
+                                          The current default log level is Normal.
+                                      properties:
+                                          logLevel:
+                                              description: |-
+                                                  logLevel sets the log verbosity for the component.
+                                                  Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                  When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                  When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                  When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                  When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                  this can cause significant performance impact and produce large volumes of logs.
+                                                  When omitted, this means the user has no opinion and the platform
+                                                  chooses a reasonable default, which is subject to change over time.
+                                                  The current default log level is Normal.
+                                              enum:
+                                                  - Normal
+                                                  - Debug
+                                                  - Trace
+                                                  - TraceAll
+                                              type: string
+                                      type: object
                               type: object
                           pausedUntil:
                               description: pausedUntil is a field that can be used to pause reconciliation on the HostedCluster controller, resulting in any change to the HostedCluster being ignored.
@@ -3713,6 +4084,49 @@ components:
                                                   - PublicAndPrivate
                                                   - Private
                                               type: string
+                                          managedDNS:
+                                              description: |-
+                                                  managedDNS configures CPO-managed Route53 DNS zones for this cluster.
+                                                  An empty object ({}) enables managed DNS with all defaults.
+                                              minProperties: 0
+                                              properties:
+                                                  delegation:
+                                                      description: |-
+                                                          delegation configures service-side DNS delegation for certificate generation.
+                                                          When set, the CPO creates an ACME DNS01 challenge CNAME in the public ingress
+                                                          zone and handles NS delegation based on the nsDelegation mode.
+                                                          When absent, only zones are created and the consuming platform handles
+                                                          delegation and certificate management.
+                                                      properties:
+                                                          nsDelegation:
+                                                              description: |-
+                                                                  nsDelegation specifies how NS delegation records are created in the parent zone.
+                                                                  "ExternalDNS": the CPO creates a DNSEndpoint CR in the control plane namespace;
+                                                                  external-dns creates NS records in the parent zone.
+                                                                  "Manual": the consuming platform handles NS delegation using nameservers
+                                                                  reported in HostedCluster status.
+                                                              enum:
+                                                                  - ExternalDNS
+                                                                  - Manual
+                                                              type: string
+                                                      required:
+                                                          - nsDelegation
+                                                      type: object
+                                                  ingressDomainPrefix:
+                                                      default: in
+                                                      description: |-
+                                                          ingressDomainPrefix is the subdomain prefix for ingress DNS zones.
+                                                          Zones are created as {prefix}.{baseDomainPrefix}.{baseDomain}.
+                                                          When delegation is configured, the prefix creates a DNS delegation boundary
+                                                          that separates the ingress zone from the cluster domain, enabling ACME
+                                                          challenge CNAME delegation back to the parent zone.
+                                                      maxLength: 63
+                                                      minLength: 1
+                                                      type: string
+                                                      x-kubernetes-validations:
+                                                          - message: ingressDomainPrefix must consist of lowercase alphanumeric characters or '-', and must start and end with an alphanumeric character
+                                                            rule: self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
+                                              type: object
                                           multiArch:
                                               default: false
                                               description: |-
@@ -3741,26 +4155,54 @@ components:
                                                   Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
                                                   These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
                                                   Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
+                                                  For NodePool-created resources (EC2 instances and their initial EBS volumes), these will be merged with NodePool-scoped tags.
+                                                  By default, HostedCluster tags take precedence over NodePool tags when both specify the same key.
+                                                  To allow a NodePool tag to override a specific HostedCluster tag, set overridePolicy to "Allow" on that tag.
+                                                  Cluster-scoped resources (VPC endpoints, security groups) only receive HostedCluster tags.
                                                   These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
                                               items:
-                                                  description: AWSResourceTag is a tag to apply to AWS resources created for the cluster.
+                                                  description: |-
+                                                      AWSClusterResourceTag is a tag to apply to AWS resources created for a
+                                                      HostedCluster. It extends the base tag with an overridePolicy field that
+                                                      controls whether NodePool-level tags can override this tag.
                                                   properties:
                                                       key:
-                                                          description: key is the key of the tag.
+                                                          description: |-
+                                                              key is the key of the tag.
+                                                              Must be between 1 and 128 characters and may only contain letters, digits,
+                                                              spaces, and the characters _ . : / = + - @
                                                           maxLength: 128
                                                           minLength: 1
-                                                          pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                                                          type: string
+                                                          x-kubernetes-validations:
+                                                              - message: 'key must only contain letters, digits, spaces, and the characters _ . : / = + - @'
+                                                                rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
+                                                      overridePolicy:
+                                                          description: |-
+                                                              overridePolicy controls whether a NodePool-level tag with the same key can
+                                                              override this HostedCluster-level tag.
+                                                              When set to "Allow", a NodePool tag with the same key will take precedence
+                                                              over this HostedCluster tag. When set to "Deny" or omitted, the
+                                                              HostedCluster value is preserved and the NodePool tag is ignored for that
+                                                              key.
+                                                          enum:
+                                                              - Allow
+                                                              - Deny
                                                           type: string
                                                       value:
                                                           description: |-
                                                               value is the value of the tag.
+                                                              Must be between 1 and 256 characters and may only contain letters, digits,
+                                                              spaces, and the characters _ . : / = + - @
                                                               Some AWS service do not support empty values. Since tags are added to
                                                               resources in many services, the length of the tag value must meet the
                                                               requirements of all services.
                                                           maxLength: 256
                                                           minLength: 1
-                                                          pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                                           type: string
+                                                          x-kubernetes-validations:
+                                                              - message: 'value must only contain letters, digits, spaces, and the characters _ . : / = + - @'
+                                                                rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                                                   required:
                                                       - key
                                                       - value
@@ -4364,7 +4806,7 @@ components:
                   conditions:
                       description: |-
                           Conditions represent the latest observations of the cluster's state.
-                          Known condition types: Synced, Available, Degraded, ControlPlaneUpgradeState.
+                          Known condition types: Synced, Available, Degraded, ControlPlaneUpgradeState, AWSManagedDNSAvailable.
                       items:
                           description: Condition contains details for one aspect of the current state of this API Resource.
                           properties:
@@ -4448,6 +4890,47 @@ components:
                               format: date-time
                               type: string
                       type: object
+                  dnsZones:
+                      description: |-
+                          DNSZones contains DNS zone information for zones managed by the control plane.
+                          Populated from the HostedCluster's platform status when managed ingress DNS is enabled.
+                      items:
+                          description: AWSDNSZoneStatus represents a managed Route53 DNS zone and its metadata.
+                          properties:
+                              name:
+                                  description: name is the DNS name of the hosted zone.
+                                  maxLength: 253
+                                  minLength: 1
+                                  type: string
+                              nameServers:
+                                  description: |-
+                                      nameServers are the authoritative name servers for this zone.
+                                      Used for NS delegation when external-dns is not available.
+                                  items:
+                                      maxLength: 253
+                                      minLength: 1
+                                      type: string
+                                  maxItems: 10
+                                  minItems: 1
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              zoneID:
+                                  description: zoneID is the Route53 hosted zone ID.
+                                  maxLength: 32
+                                  minLength: 1
+                                  type: string
+                              zoneType:
+                                  description: zoneType indicates the purpose of the zone.
+                                  enum:
+                                      - PublicIngress
+                                      - PrivateIngress
+                                  type: string
+                          required:
+                              - name
+                              - zoneID
+                              - zoneType
+                          type: object
+                      type: array
                   observedGeneration:
                       description: ObservedGeneration is the most recent generation observed by the controller.
                       format: int64
@@ -5317,6 +5800,67 @@ components:
                                                                   x-kubernetes-validations:
                                                                       - message: mtu is immutable once set
                                                                         rule: self == oldSelf
+                                                              v4InternalSubnet:
+                                                                  description: |-
+                                                                      v4InternalSubnet configures the IPv4 subnet used by OVN-Kubernetes for gateway
+                                                                      router logical router port (LRP) addresses and masquerade/SNAT traffic within
+                                                                      the OVN logical topology. It must not overlap with any other subnet being used
+                                                                      by OpenShift or by the node network. The size of the subnet must be larger than
+                                                                      the number of nodes.
+                                                                      This field is distinct from ipv4.internalJoinSubnet, which configures the subnet
+                                                                      for the join switch that interconnects per-node gateway routers with the cluster
+                                                                      router. Both default to 100.64.0.0/16 but control different OVN-Kubernetes
+                                                                      internal networks and can be configured independently to avoid overlaps with
+                                                                      existing network infrastructure.
+                                                                      Once set, the value is immutable and cannot be modified in subsequent updates.
+                                                                      The default is 100.64.0.0/16.
+                                                                      The value must be in IPv4 CIDR notation (e.g., 192.168.0.0/16), consisting of
+                                                                      four decimal octets (0-255) separated by dots, followed by a slash and a prefix
+                                                                      length. The prefix length must be between 0 and 30 inclusive, and the first
+                                                                      octet must not be 0.
+                                                                      The value must be between 9 and 18 characters in length.
+                                                                      This field is immutable once set.
+                                                                  maxLength: 18
+                                                                  minLength: 9
+                                                                  type: string
+                                                                  x-kubernetes-validations:
+                                                                      - message: v4InternalSubnet is immutable once set
+                                                                        rule: self == oldSelf
+                                                                      - message: Subnet must be in a valid IPv4 CIDR format
+                                                                        rule: isCIDR(self) && cidr(self).ip().family() == 4
+                                                                      - message: subnet must be in the range /0 to /30 inclusive
+                                                                        rule: isCIDR(self) && cidr(self).prefixLength() <= 30
+                                                                      - message: first IP address octet must not be 0
+                                                                        rule: isCIDR(self) && cidr(self).ip().family() == 4 && int(self.split('.')[0]) > 0
+                                                              v6InternalSubnet:
+                                                                  description: |-
+                                                                      v6InternalSubnet configures the IPv6 subnet used by OVN-Kubernetes for gateway
+                                                                      router logical router port (LRP) addresses and masquerade/SNAT traffic within
+                                                                      the OVN logical topology. It must not overlap with any other subnet being used
+                                                                      by OpenShift or by the node network. The size of the subnet must be larger than
+                                                                      the number of nodes.
+                                                                      This field is distinct from ipv6.internalJoinSubnet, which configures the subnet
+                                                                      for the join switch that interconnects per-node gateway routers with the cluster
+                                                                      router. Both default to fd98::/64 but control different OVN-Kubernetes internal
+                                                                      networks and can be configured independently to avoid overlaps with existing
+                                                                      network infrastructure.
+                                                                      Once set, the value is immutable and cannot be modified in subsequent updates.
+                                                                      The default is fd98::/64.
+                                                                      The value must be in IPv6 CIDR notation (e.g., fd98::/64), consisting of an
+                                                                      IPv6 address followed by a slash and a prefix length. The prefix length must
+                                                                      be between 0 and 125 inclusive.
+                                                                      The value must be between 4 and 48 characters in length.
+                                                                      This field is immutable once set.
+                                                                  maxLength: 48
+                                                                  minLength: 4
+                                                                  type: string
+                                                                  x-kubernetes-validations:
+                                                                      - message: v6InternalSubnet is immutable once set
+                                                                        rule: self == oldSelf
+                                                                      - message: Subnet must be in valid IPv6 CIDR format
+                                                                        rule: isCIDR(self) && cidr(self).ip().family() == 6
+                                                                      - message: subnet must be in the range /0 to /125 inclusive
+                                                                        rule: isCIDR(self) && cidr(self).prefixLength() <= 125
                                                           type: object
                                                           x-kubernetes-validations:
                                                               - message: internalJoinSubnet and internalTransitSwitchSubnet must not be the same
@@ -5331,6 +5875,10 @@ components:
                                                                 rule: '!has(oldSelf.ipv6) || !has(oldSelf.ipv6.internalJoinSubnet) || (has(self.ipv6) && has(self.ipv6.internalJoinSubnet))'
                                                               - message: ipv6.internalTransitSwitchSubnet cannot be removed once set
                                                                 rule: '!has(oldSelf.ipv6) || !has(oldSelf.ipv6.internalTransitSwitchSubnet) || (has(self.ipv6) && has(self.ipv6.internalTransitSwitchSubnet))'
+                                                              - message: v4InternalSubnet is immutable once set and cannot be removed
+                                                                rule: '!has(oldSelf.v4InternalSubnet) || has(self.v4InternalSubnet)'
+                                                              - message: v6InternalSubnet is immutable once set and cannot be removed
+                                                                rule: '!has(oldSelf.v6InternalSubnet) || has(self.v6InternalSubnet)'
                                                   type: object
                                                   x-kubernetes-validations:
                                                       - message: ovnKubernetesConfig is immutable once set and cannot be removed
@@ -5346,18 +5894,88 @@ components:
                                                               Valid values are: "Normal", "Debug", "Trace", "TraceAll".
                                                               Defaults to "Normal".
                                                           enum:
-                                                              - ""
                                                               - Normal
                                                               - Debug
                                                               - Trace
                                                               - TraceAll
                                                           type: string
                                                   type: object
+                                              etcd:
+                                                  allOf:
+                                                      - minProperties: 1
+                                                      - minProperties: 1
+                                                  description: |-
+                                                      etcd configures the etcd component.
+                                                      Setting the logLevel field triggers a rolling restart of the component.
+                                                      Note: etcd supports fewer log levels than klog-based components,
+                                                      etcd supports only Normal and Debug log levels.
+                                                      When omitted, this means the user has no opinion and the platform
+                                                      chooses a reasonable default, which is subject to change over time.
+                                                      The current default log level is Normal.
+                                                  properties:
+                                                      logLevel:
+                                                          description: |-
+                                                              logLevel sets the log verbosity for the component.
+                                                              Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                              When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                              When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                              When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                              When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                              this can cause significant performance impact and produce large volumes of logs.
+                                                              When omitted, this means the user has no opinion and the platform
+                                                              chooses a reasonable default, which is subject to change over time.
+                                                              The current default log level is Normal.
+                                                          enum:
+                                                              - Normal
+                                                              - Debug
+                                                              - Trace
+                                                              - TraceAll
+                                                          type: string
+                                                  type: object
+                                                  x-kubernetes-validations:
+                                                      - message: etcd only supports Normal and Debug log levels; Trace and TraceAll are not valid for etcd
+                                                        rule: '!has(self.logLevel) || self.logLevel in [''Normal'', ''Debug'']'
                                               ingressOperator:
                                                   description: |-
                                                       ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
                                                       This allows configuring how the default ingress controller endpoints are published.
                                                   properties:
+                                                      defaultCertificate:
+                                                          description: |-
+                                                              defaultCertificate is a reference to a secret in the HostedCluster namespace
+                                                              that contains the default certificate served by the default ingress controller.
+                                                              When Routes don't specify their own certificate, defaultCertificate is used.
+                                                              The secret must contain the following keys and data:
+                                                                tls.crt: certificate file contents
+                                                                tls.key: key file contents
+                                                              When set, this certificate replaces the auto-generated wildcard certificate
+                                                              that is normally created by the control plane operator. The secret is synced
+                                                              from the HostedCluster namespace to the control plane, and then propagated
+                                                              to the hosted cluster's openshift-ingress namespace.
+                                                              When the referenced secret is updated, the new certificate data is
+                                                              automatically propagated to the hosted cluster.
+                                                              When not set, the control plane operator generates a wildcard certificate
+                                                              signed by the cluster's root CA.
+                                                              Note: a cluster-admin in the hosted cluster can override the default ingress
+                                                              controller's certificate directly. That override takes precedence and the
+                                                              certificate referenced here is no longer served.
+                                                          properties:
+                                                              name:
+                                                                  description: |-
+                                                                      name is the name of the Secret containing tls.crt and tls.key.
+                                                                      The Secret must exist in the same namespace as the HostedCluster.
+                                                                      name must be a valid DNS subdomain name (RFC 1123): it must contain only
+                                                                      lowercase alphanumeric characters, '-' or '.', and start and end with an
+                                                                      alphanumeric character.
+                                                                  maxLength: 253
+                                                                  minLength: 1
+                                                                  type: string
+                                                                  x-kubernetes-validations:
+                                                                      - message: 'name must be a valid DNS subdomain name: contain no more than 253 characters, contain only lowercase alphanumeric characters, ''-'' or ''.'', and start and end with an alphanumeric character'
+                                                                        rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?([.][a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                                                          required:
+                                                              - name
+                                                          type: object
                                                       endpointPublishingStrategy:
                                                           description: |-
                                                               endpointPublishingStrategy is used to publish the default ingress controller endpoints.
@@ -5622,6 +6240,32 @@ components:
                                                                                                   x-kubernetes-validations:
                                                                                                       - message: eipAllocations cannot contain duplicates
                                                                                                         rule: self.all(x, self.exists_one(y, x == y))
+                                                                                              protocol:
+                                                                                                  description: |-
+                                                                                                      protocol specifies whether the Network Load Balancer uses PROXY
+                                                                                                      protocol to forward connections to the IngressController.
+                                                                                                      When set to "TCP", the NLB uses AWS's native client IP preservation.
+                                                                                                      This may cause hairpin connection failures for internal load
+                                                                                                      balancers when connections are made from pods to router pods on
+                                                                                                      the same node.
+                                                                                                      When set to "PROXY", the NLB disables native client IP preservation
+                                                                                                      and uses PROXY protocol v2. The IngressController enables PROXY
+                                                                                                      protocol on HAProxy so that it can parse PROXY protocol headers to
+                                                                                                      obtain the original client IP. This avoids hairpin connection
+                                                                                                      failures.
+                                                                                                      The following values are valid for this field:
+                                                                                                      * "TCP".
+                                                                                                      * "PROXY".
+                                                                                                      When omitted, this means the user has no opinion and the value is
+                                                                                                      left to the platform to choose a reasonable default, which is subject to
+                                                                                                      change over time. The current default is "PROXY".
+                                                                                                      Note that changing this field may cause brief connection failures
+                                                                                                      during the transition as the NLB attribute change and router rollout
+                                                                                                      occur independently.
+                                                                                                  enum:
+                                                                                                      - TCP
+                                                                                                      - PROXY
+                                                                                                  type: string
                                                                                               subnets:
                                                                                                   description: |-
                                                                                                       subnets specifies the subnets to which the load balancer will
@@ -5937,6 +6581,216 @@ components:
                                                           type: object
                                                           x-kubernetes-preserve-unknown-fields: true
                                                   type: object
+                                              kubeAPIServer:
+                                                  allOf:
+                                                      - minProperties: 1
+                                                      - minProperties: 1
+                                                  description: |-
+                                                      kubeAPIServer configures the kube-apiserver component.
+                                                      Setting the logLevel field triggers a rolling restart of the component.
+                                                      When omitted, this means the user has no opinion and the platform
+                                                      chooses a reasonable default, which is subject to change over time.
+                                                      The current default log level is Normal.
+                                                  properties:
+                                                      logLevel:
+                                                          description: |-
+                                                              logLevel sets the log verbosity for the component.
+                                                              Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                              When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                              When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                              When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                              When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                              this can cause significant performance impact and produce large volumes of logs.
+                                                              When omitted, this means the user has no opinion and the platform
+                                                              chooses a reasonable default, which is subject to change over time.
+                                                              The current default log level is Normal.
+                                                          enum:
+                                                              - Normal
+                                                              - Debug
+                                                              - Trace
+                                                              - TraceAll
+                                                          type: string
+                                                  type: object
+                                              kubeControllerManager:
+                                                  allOf:
+                                                      - minProperties: 1
+                                                      - minProperties: 1
+                                                  description: |-
+                                                      kubeControllerManager configures the kube-controller-manager component.
+                                                      Setting the logLevel field triggers a rolling restart of the component.
+                                                      When omitted, this means the user has no opinion and the platform
+                                                      chooses a reasonable default, which is subject to change over time.
+                                                      The current default log level is Normal.
+                                                  properties:
+                                                      logLevel:
+                                                          description: |-
+                                                              logLevel sets the log verbosity for the component.
+                                                              Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                              When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                              When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                              When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                              When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                              this can cause significant performance impact and produce large volumes of logs.
+                                                              When omitted, this means the user has no opinion and the platform
+                                                              chooses a reasonable default, which is subject to change over time.
+                                                              The current default log level is Normal.
+                                                          enum:
+                                                              - Normal
+                                                              - Debug
+                                                              - Trace
+                                                              - TraceAll
+                                                          type: string
+                                                  type: object
+                                              kubeScheduler:
+                                                  allOf:
+                                                      - minProperties: 1
+                                                      - minProperties: 1
+                                                  description: |-
+                                                      kubeScheduler configures the kube-scheduler component.
+                                                      Setting the logLevel field triggers a rolling restart of the component.
+                                                      When omitted, this means the user has no opinion and the platform
+                                                      chooses a reasonable default, which is subject to change over time.
+                                                      The current default log level is Normal.
+                                                  properties:
+                                                      logLevel:
+                                                          description: |-
+                                                              logLevel sets the log verbosity for the component.
+                                                              Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                              When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                              When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                              When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                              When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                              this can cause significant performance impact and produce large volumes of logs.
+                                                              When omitted, this means the user has no opinion and the platform
+                                                              chooses a reasonable default, which is subject to change over time.
+                                                              The current default log level is Normal.
+                                                          enum:
+                                                              - Normal
+                                                              - Debug
+                                                              - Trace
+                                                              - TraceAll
+                                                          type: string
+                                                  type: object
+                                              oauthServer:
+                                                  allOf:
+                                                      - minProperties: 1
+                                                      - minProperties: 1
+                                                  description: |-
+                                                      oauthServer configures the oauth-server component.
+                                                      Setting the logLevel field triggers a rolling restart of the component.
+                                                      When omitted, this means the user has no opinion and the platform
+                                                      chooses a reasonable default, which is subject to change over time.
+                                                      The current default log level is Normal.
+                                                  properties:
+                                                      logLevel:
+                                                          description: |-
+                                                              logLevel sets the log verbosity for the component.
+                                                              Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                              When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                              When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                              When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                              When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                              this can cause significant performance impact and produce large volumes of logs.
+                                                              When omitted, this means the user has no opinion and the platform
+                                                              chooses a reasonable default, which is subject to change over time.
+                                                              The current default log level is Normal.
+                                                          enum:
+                                                              - Normal
+                                                              - Debug
+                                                              - Trace
+                                                              - TraceAll
+                                                          type: string
+                                                  type: object
+                                              openShiftAPIServer:
+                                                  allOf:
+                                                      - minProperties: 1
+                                                      - minProperties: 1
+                                                  description: |-
+                                                      openShiftAPIServer configures the openshift-apiserver component.
+                                                      Setting the logLevel field triggers a rolling restart of the component.
+                                                      When omitted, this means the user has no opinion and the platform
+                                                      chooses a reasonable default, which is subject to change over time.
+                                                      The current default log level is Normal.
+                                                  properties:
+                                                      logLevel:
+                                                          description: |-
+                                                              logLevel sets the log verbosity for the component.
+                                                              Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                              When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                              When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                              When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                              When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                              this can cause significant performance impact and produce large volumes of logs.
+                                                              When omitted, this means the user has no opinion and the platform
+                                                              chooses a reasonable default, which is subject to change over time.
+                                                              The current default log level is Normal.
+                                                          enum:
+                                                              - Normal
+                                                              - Debug
+                                                              - Trace
+                                                              - TraceAll
+                                                          type: string
+                                                  type: object
+                                              openShiftControllerManager:
+                                                  allOf:
+                                                      - minProperties: 1
+                                                      - minProperties: 1
+                                                  description: |-
+                                                      openShiftControllerManager configures the openshift-controller-manager component.
+                                                      Setting the logLevel field triggers a rolling restart of the component.
+                                                      When omitted, this means the user has no opinion and the platform
+                                                      chooses a reasonable default, which is subject to change over time.
+                                                      The current default log level is Normal.
+                                                  properties:
+                                                      logLevel:
+                                                          description: |-
+                                                              logLevel sets the log verbosity for the component.
+                                                              Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                              When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                              When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                              When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                              When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                              this can cause significant performance impact and produce large volumes of logs.
+                                                              When omitted, this means the user has no opinion and the platform
+                                                              chooses a reasonable default, which is subject to change over time.
+                                                              The current default log level is Normal.
+                                                          enum:
+                                                              - Normal
+                                                              - Debug
+                                                              - Trace
+                                                              - TraceAll
+                                                          type: string
+                                                  type: object
+                                              openShiftOAuthAPIServer:
+                                                  allOf:
+                                                      - minProperties: 1
+                                                      - minProperties: 1
+                                                  description: |-
+                                                      openShiftOAuthAPIServer configures the openshift-oauth-apiserver component.
+                                                      Setting the logLevel field triggers a rolling restart of the component.
+                                                      When omitted, this means the user has no opinion and the platform
+                                                      chooses a reasonable default, which is subject to change over time.
+                                                      The current default log level is Normal.
+                                                  properties:
+                                                      logLevel:
+                                                          description: |-
+                                                              logLevel sets the log verbosity for the component.
+                                                              Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                                                              When set to Normal, standard operational log messages are produced for auditing and common operations.
+                                                              When set to Debug, more verbose logging is enabled for diagnosing problems.
+                                                              When set to Trace, very verbose logging is enabled including function-level tracing.
+                                                              When set to TraceAll, the most verbose logging is used, including full API body content,
+                                                              this can cause significant performance impact and produce large volumes of logs.
+                                                              When omitted, this means the user has no opinion and the platform
+                                                              chooses a reasonable default, which is subject to change over time.
+                                                              The current default log level is Normal.
+                                                          enum:
+                                                              - Normal
+                                                              - Debug
+                                                              - Trace
+                                                              - TraceAll
+                                                          type: string
+                                                  type: object
                                           type: object
                                       pausedUntil:
                                           description: pausedUntil is a field that can be used to pause reconciliation on the HostedCluster controller, resulting in any change to the HostedCluster being ignored.
@@ -6022,6 +6876,49 @@ components:
                                                               - PublicAndPrivate
                                                               - Private
                                                           type: string
+                                                      managedDNS:
+                                                          description: |-
+                                                              managedDNS configures CPO-managed Route53 DNS zones for this cluster.
+                                                              An empty object ({}) enables managed DNS with all defaults.
+                                                          minProperties: 0
+                                                          properties:
+                                                              delegation:
+                                                                  description: |-
+                                                                      delegation configures service-side DNS delegation for certificate generation.
+                                                                      When set, the CPO creates an ACME DNS01 challenge CNAME in the public ingress
+                                                                      zone and handles NS delegation based on the nsDelegation mode.
+                                                                      When absent, only zones are created and the consuming platform handles
+                                                                      delegation and certificate management.
+                                                                  properties:
+                                                                      nsDelegation:
+                                                                          description: |-
+                                                                              nsDelegation specifies how NS delegation records are created in the parent zone.
+                                                                              "ExternalDNS": the CPO creates a DNSEndpoint CR in the control plane namespace;
+                                                                              external-dns creates NS records in the parent zone.
+                                                                              "Manual": the consuming platform handles NS delegation using nameservers
+                                                                              reported in HostedCluster status.
+                                                                          enum:
+                                                                              - ExternalDNS
+                                                                              - Manual
+                                                                          type: string
+                                                                  required:
+                                                                      - nsDelegation
+                                                                  type: object
+                                                              ingressDomainPrefix:
+                                                                  default: in
+                                                                  description: |-
+                                                                      ingressDomainPrefix is the subdomain prefix for ingress DNS zones.
+                                                                      Zones are created as {prefix}.{baseDomainPrefix}.{baseDomain}.
+                                                                      When delegation is configured, the prefix creates a DNS delegation boundary
+                                                                      that separates the ingress zone from the cluster domain, enabling ACME
+                                                                      challenge CNAME delegation back to the parent zone.
+                                                                  maxLength: 63
+                                                                  minLength: 1
+                                                                  type: string
+                                                                  x-kubernetes-validations:
+                                                                      - message: ingressDomainPrefix must consist of lowercase alphanumeric characters or '-', and must start and end with an alphanumeric character
+                                                                        rule: self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
+                                                          type: object
                                                       multiArch:
                                                           default: false
                                                           description: |-
@@ -6050,26 +6947,54 @@ components:
                                                               Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
                                                               These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
                                                               Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
+                                                              For NodePool-created resources (EC2 instances and their initial EBS volumes), these will be merged with NodePool-scoped tags.
+                                                              By default, HostedCluster tags take precedence over NodePool tags when both specify the same key.
+                                                              To allow a NodePool tag to override a specific HostedCluster tag, set overridePolicy to "Allow" on that tag.
+                                                              Cluster-scoped resources (VPC endpoints, security groups) only receive HostedCluster tags.
                                                               These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
                                                           items:
-                                                              description: AWSResourceTag is a tag to apply to AWS resources created for the cluster.
+                                                              description: |-
+                                                                  AWSClusterResourceTag is a tag to apply to AWS resources created for a
+                                                                  HostedCluster. It extends the base tag with an overridePolicy field that
+                                                                  controls whether NodePool-level tags can override this tag.
                                                               properties:
                                                                   key:
-                                                                      description: key is the key of the tag.
+                                                                      description: |-
+                                                                          key is the key of the tag.
+                                                                          Must be between 1 and 128 characters and may only contain letters, digits,
+                                                                          spaces, and the characters _ . : / = + - @
                                                                       maxLength: 128
                                                                       minLength: 1
-                                                                      pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                                                                      type: string
+                                                                      x-kubernetes-validations:
+                                                                          - message: 'key must only contain letters, digits, spaces, and the characters _ . : / = + - @'
+                                                                            rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
+                                                                  overridePolicy:
+                                                                      description: |-
+                                                                          overridePolicy controls whether a NodePool-level tag with the same key can
+                                                                          override this HostedCluster-level tag.
+                                                                          When set to "Allow", a NodePool tag with the same key will take precedence
+                                                                          over this HostedCluster tag. When set to "Deny" or omitted, the
+                                                                          HostedCluster value is preserved and the NodePool tag is ignored for that
+                                                                          key.
+                                                                      enum:
+                                                                          - Allow
+                                                                          - Deny
                                                                       type: string
                                                                   value:
                                                                       description: |-
                                                                           value is the value of the tag.
+                                                                          Must be between 1 and 256 characters and may only contain letters, digits,
+                                                                          spaces, and the characters _ . : / = + - @
                                                                           Some AWS service do not support empty values. Since tags are added to
                                                                           resources in many services, the length of the tag value must meet the
                                                                           requirements of all services.
                                                                       maxLength: 256
                                                                       minLength: 1
-                                                                      pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                                                       type: string
+                                                                      x-kubernetes-validations:
+                                                                          - message: 'value must only contain letters, digits, spaces, and the characters _ . : / = + - @'
+                                                                            rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                                                               required:
                                                                   - key
                                                                   - value
@@ -6673,7 +7598,7 @@ components:
                               conditions:
                                   description: |-
                                       Conditions represent the latest observations of the cluster's state.
-                                      Known condition types: Synced, Available, Degraded, ControlPlaneUpgradeState.
+                                      Known condition types: Synced, Available, Degraded, ControlPlaneUpgradeState, AWSManagedDNSAvailable.
                                   items:
                                       description: Condition contains details for one aspect of the current state of this API Resource.
                                       properties:
@@ -6757,6 +7682,47 @@ components:
                                           format: date-time
                                           type: string
                                   type: object
+                              dnsZones:
+                                  description: |-
+                                      DNSZones contains DNS zone information for zones managed by the control plane.
+                                      Populated from the HostedCluster's platform status when managed ingress DNS is enabled.
+                                  items:
+                                      description: AWSDNSZoneStatus represents a managed Route53 DNS zone and its metadata.
+                                      properties:
+                                          name:
+                                              description: name is the DNS name of the hosted zone.
+                                              maxLength: 253
+                                              minLength: 1
+                                              type: string
+                                          nameServers:
+                                              description: |-
+                                                  nameServers are the authoritative name servers for this zone.
+                                                  Used for NS delegation when external-dns is not available.
+                                              items:
+                                                  maxLength: 253
+                                                  minLength: 1
+                                                  type: string
+                                              maxItems: 10
+                                              minItems: 1
+                                              type: array
+                                              x-kubernetes-list-type: atomic
+                                          zoneID:
+                                              description: zoneID is the Route53 hosted zone ID.
+                                              maxLength: 32
+                                              minLength: 1
+                                              type: string
+                                          zoneType:
+                                              description: zoneType indicates the purpose of the zone.
+                                              enum:
+                                                  - PublicIngress
+                                                  - PrivateIngress
+                                              type: string
+                                      required:
+                                          - name
+                                          - zoneID
+                                          - zoneType
+                                      type: object
+                                  type: array
                               observedGeneration:
                                   description: ObservedGeneration is the most recent generation observed by the controller.
                                   format: int64
@@ -6922,6 +7888,25 @@ components:
                                                   is chosen based on the NodePool release payload image.
                                               maxLength: 255
                                               type: string
+                                          cpuOptions:
+                                              description: |-
+                                                  cpuOptions specifies CPU configuration for EC2 instances.
+                                                  Supported on C8i, M8i, and R8i instance families.
+                                                  When omitted, AWS defaults are used (nested virtualization is not enabled).
+                                                  To revert to default behavior after setting cpuOptions, remove the entire
+                                                  cpuOptions field rather than clearing individual sub-fields.
+                                              minProperties: 1
+                                              properties:
+                                                  nestedVirtualizationPolicy:
+                                                      description: |-
+                                                          nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+                                                          Supported on C8i, M8i, and R8i instance families.
+                                                          When omitted, nested virtualization is not enabled (AWS default behavior).
+                                                      enum:
+                                                          - Enabled
+                                                          - Disabled
+                                                      type: string
+                                              type: object
                                           imageType:
                                               description: |-
                                                   imageType specifies the type of image to use for node instances.
@@ -7065,34 +8050,56 @@ components:
                                                     rule: '!has(self.spot) || (has(self.marketType) && self.marketType == ''Spot'')'
                                           resourceTags:
                                               description: |-
-                                                  resourceTags is an optional list of additional tags to apply to AWS node
-                                                  instances. Changes to this field will be propagated in-place to AWS EC2 instances and their initial EBS volumes.
-                                                  Volumes created by the storage operator and attached to instances after they are created do not get these tags applied.
-                                                  These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
-                                                  These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
+                                                  resourceTags is a list of additional tags to apply to AWS resources created
+                                                  for the NodePool. Changes to this field will be propagated in-place to AWS
+                                                  EC2 instances and their initial EBS volumes. Volumes created by the storage
+                                                  operator and attached to instances after they are created do not get these
+                                                  tags applied.
+                                                  These are merged with HostedCluster-level tags. By default, HostedCluster
+                                                  tags take precedence when both specify the same key. To allow a NodePool
+                                                  tag to override a specific HostedCluster tag, set overridePolicy to "Allow"
+                                                  on the HostedCluster tag.
+                                                  Tags that only exist at the NodePool level (no conflict) are always applied.
+                                                  These take precedence over tags defined out of band (i.e., tags added
+                                                  manually or by other tools outside of HyperShift) in AWS in case of
+                                                  conflicts.
                                                   See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
                                                   information on tagging AWS resources. AWS supports a maximum of 50 tags per
                                                   resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
                                                   for the user.
                                               items:
-                                                  description: AWSResourceTag is a tag to apply to AWS resources created for the cluster.
+                                                  description: |-
+                                                      AWSNodePoolResourceTag is a tag to apply to AWS resources created for a
+                                                      NodePool. These tags are merged with HostedCluster-level tags. By default,
+                                                      HostedCluster tags take precedence when both specify the same key. To allow
+                                                      a NodePool tag to override a specific HostedCluster tag, set overridePolicy
+                                                      to "Allow" on the HostedCluster tag.
                                                   properties:
                                                       key:
-                                                          description: key is the key of the tag.
+                                                          description: |-
+                                                              key is the key of the tag.
+                                                              Must be between 1 and 128 characters and may only contain letters, digits,
+                                                              spaces, and the characters _ . : / = + - @
                                                           maxLength: 128
                                                           minLength: 1
-                                                          pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                                           type: string
+                                                          x-kubernetes-validations:
+                                                              - message: 'key must only contain letters, digits, spaces, and the characters _ . : / = + - @'
+                                                                rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                                                       value:
                                                           description: |-
                                                               value is the value of the tag.
+                                                              Must be between 1 and 256 characters and may only contain letters, digits,
+                                                              spaces, and the characters _ . : / = + - @
                                                               Some AWS service do not support empty values. Since tags are added to
                                                               resources in many services, the length of the tag value must meet the
                                                               requirements of all services.
                                                           maxLength: 256
                                                           minLength: 1
-                                                          pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                                           type: string
+                                                          x-kubernetes-validations:
+                                                              - message: 'value must only contain letters, digits, spaces, and the characters _ . : / = + - @'
+                                                                rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                                                   required:
                                                       - key
                                                       - value
@@ -7399,6 +8406,25 @@ components:
                                                               is chosen based on the NodePool release payload image.
                                                           maxLength: 255
                                                           type: string
+                                                      cpuOptions:
+                                                          description: |-
+                                                              cpuOptions specifies CPU configuration for EC2 instances.
+                                                              Supported on C8i, M8i, and R8i instance families.
+                                                              When omitted, AWS defaults are used (nested virtualization is not enabled).
+                                                              To revert to default behavior after setting cpuOptions, remove the entire
+                                                              cpuOptions field rather than clearing individual sub-fields.
+                                                          minProperties: 1
+                                                          properties:
+                                                              nestedVirtualizationPolicy:
+                                                                  description: |-
+                                                                      nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+                                                                      Supported on C8i, M8i, and R8i instance families.
+                                                                      When omitted, nested virtualization is not enabled (AWS default behavior).
+                                                                  enum:
+                                                                      - Enabled
+                                                                      - Disabled
+                                                                  type: string
+                                                          type: object
                                                       imageType:
                                                           description: |-
                                                               imageType specifies the type of image to use for node instances.
@@ -7542,34 +8568,56 @@ components:
                                                                 rule: '!has(self.spot) || (has(self.marketType) && self.marketType == ''Spot'')'
                                                       resourceTags:
                                                           description: |-
-                                                              resourceTags is an optional list of additional tags to apply to AWS node
-                                                              instances. Changes to this field will be propagated in-place to AWS EC2 instances and their initial EBS volumes.
-                                                              Volumes created by the storage operator and attached to instances after they are created do not get these tags applied.
-                                                              These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
-                                                              These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
+                                                              resourceTags is a list of additional tags to apply to AWS resources created
+                                                              for the NodePool. Changes to this field will be propagated in-place to AWS
+                                                              EC2 instances and their initial EBS volumes. Volumes created by the storage
+                                                              operator and attached to instances after they are created do not get these
+                                                              tags applied.
+                                                              These are merged with HostedCluster-level tags. By default, HostedCluster
+                                                              tags take precedence when both specify the same key. To allow a NodePool
+                                                              tag to override a specific HostedCluster tag, set overridePolicy to "Allow"
+                                                              on the HostedCluster tag.
+                                                              Tags that only exist at the NodePool level (no conflict) are always applied.
+                                                              These take precedence over tags defined out of band (i.e., tags added
+                                                              manually or by other tools outside of HyperShift) in AWS in case of
+                                                              conflicts.
                                                               See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
                                                               information on tagging AWS resources. AWS supports a maximum of 50 tags per
                                                               resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
                                                               for the user.
                                                           items:
-                                                              description: AWSResourceTag is a tag to apply to AWS resources created for the cluster.
+                                                              description: |-
+                                                                  AWSNodePoolResourceTag is a tag to apply to AWS resources created for a
+                                                                  NodePool. These tags are merged with HostedCluster-level tags. By default,
+                                                                  HostedCluster tags take precedence when both specify the same key. To allow
+                                                                  a NodePool tag to override a specific HostedCluster tag, set overridePolicy
+                                                                  to "Allow" on the HostedCluster tag.
                                                               properties:
                                                                   key:
-                                                                      description: key is the key of the tag.
+                                                                      description: |-
+                                                                          key is the key of the tag.
+                                                                          Must be between 1 and 128 characters and may only contain letters, digits,
+                                                                          spaces, and the characters _ . : / = + - @
                                                                       maxLength: 128
                                                                       minLength: 1
-                                                                      pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                                                       type: string
+                                                                      x-kubernetes-validations:
+                                                                          - message: 'key must only contain letters, digits, spaces, and the characters _ . : / = + - @'
+                                                                            rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                                                                   value:
                                                                       description: |-
                                                                           value is the value of the tag.
+                                                                          Must be between 1 and 256 characters and may only contain letters, digits,
+                                                                          spaces, and the characters _ . : / = + - @
                                                                           Some AWS service do not support empty values. Since tags are added to
                                                                           resources in many services, the length of the tag value must meet the
                                                                           requirements of all services.
                                                                       maxLength: 256
                                                                       minLength: 1
-                                                                      pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                                                       type: string
+                                                                      x-kubernetes-validations:
+                                                                          - message: 'value must only contain letters, digits, spaces, and the characters _ . : / = + - @'
+                                                                            rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                                                               required:
                                                                   - key
                                                                   - value
@@ -8109,7 +9157,7 @@ components:
           conditions:
               description: |-
                   Conditions represent the latest observations of the cluster's state.
-                  Known condition types: Synced, Available, Degraded, ControlPlaneUpgradeState.
+                  Known condition types: Synced, Available, Degraded, ControlPlaneUpgradeState, AWSManagedDNSAvailable.
               items:
                   description: Condition contains details for one aspect of the current state of this API Resource.
                   properties:
@@ -8193,6 +9241,47 @@ components:
                       format: date-time
                       type: string
               type: object
+          dnsZones:
+              description: |-
+                  DNSZones contains DNS zone information for zones managed by the control plane.
+                  Populated from the HostedCluster's platform status when managed ingress DNS is enabled.
+              items:
+                  description: AWSDNSZoneStatus represents a managed Route53 DNS zone and its metadata.
+                  properties:
+                      name:
+                          description: name is the DNS name of the hosted zone.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      nameServers:
+                          description: |-
+                              nameServers are the authoritative name servers for this zone.
+                              Used for NS delegation when external-dns is not available.
+                          items:
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                          maxItems: 10
+                          minItems: 1
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      zoneID:
+                          description: zoneID is the Route53 hosted zone ID.
+                          maxLength: 32
+                          minLength: 1
+                          type: string
+                      zoneType:
+                          description: zoneType indicates the purpose of the zone.
+                          enum:
+                              - PublicIngress
+                              - PrivateIngress
+                          type: string
+                  required:
+                      - name
+                      - zoneID
+                      - zoneType
+                  type: object
+              type: array
           observedGeneration:
               description: ObservedGeneration is the most recent generation observed by the controller.
               format: int64
@@ -8799,6 +9888,25 @@ components:
                           is chosen based on the NodePool release payload image.
                       maxLength: 255
                       type: string
+                  cpuOptions:
+                      description: |-
+                          cpuOptions specifies CPU configuration for EC2 instances.
+                          Supported on C8i, M8i, and R8i instance families.
+                          When omitted, AWS defaults are used (nested virtualization is not enabled).
+                          To revert to default behavior after setting cpuOptions, remove the entire
+                          cpuOptions field rather than clearing individual sub-fields.
+                      minProperties: 1
+                      properties:
+                          nestedVirtualizationPolicy:
+                              description: |-
+                                  nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+                                  Supported on C8i, M8i, and R8i instance families.
+                                  When omitted, nested virtualization is not enabled (AWS default behavior).
+                              enum:
+                                  - Enabled
+                                  - Disabled
+                              type: string
+                      type: object
                   imageType:
                       description: |-
                           imageType specifies the type of image to use for node instances.
@@ -8942,34 +10050,56 @@ components:
                             rule: '!has(self.spot) || (has(self.marketType) && self.marketType == ''Spot'')'
                   resourceTags:
                       description: |-
-                          resourceTags is an optional list of additional tags to apply to AWS node
-                          instances. Changes to this field will be propagated in-place to AWS EC2 instances and their initial EBS volumes.
-                          Volumes created by the storage operator and attached to instances after they are created do not get these tags applied.
-                          These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
-                          These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
+                          resourceTags is a list of additional tags to apply to AWS resources created
+                          for the NodePool. Changes to this field will be propagated in-place to AWS
+                          EC2 instances and their initial EBS volumes. Volumes created by the storage
+                          operator and attached to instances after they are created do not get these
+                          tags applied.
+                          These are merged with HostedCluster-level tags. By default, HostedCluster
+                          tags take precedence when both specify the same key. To allow a NodePool
+                          tag to override a specific HostedCluster tag, set overridePolicy to "Allow"
+                          on the HostedCluster tag.
+                          Tags that only exist at the NodePool level (no conflict) are always applied.
+                          These take precedence over tags defined out of band (i.e., tags added
+                          manually or by other tools outside of HyperShift) in AWS in case of
+                          conflicts.
                           See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
                           information on tagging AWS resources. AWS supports a maximum of 50 tags per
                           resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
                           for the user.
                       items:
-                          description: AWSResourceTag is a tag to apply to AWS resources created for the cluster.
+                          description: |-
+                              AWSNodePoolResourceTag is a tag to apply to AWS resources created for a
+                              NodePool. These tags are merged with HostedCluster-level tags. By default,
+                              HostedCluster tags take precedence when both specify the same key. To allow
+                              a NodePool tag to override a specific HostedCluster tag, set overridePolicy
+                              to "Allow" on the HostedCluster tag.
                           properties:
                               key:
-                                  description: key is the key of the tag.
+                                  description: |-
+                                      key is the key of the tag.
+                                      Must be between 1 and 128 characters and may only contain letters, digits,
+                                      spaces, and the characters _ . : / = + - @
                                   maxLength: 128
                                   minLength: 1
-                                  pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                   type: string
+                                  x-kubernetes-validations:
+                                      - message: 'key must only contain letters, digits, spaces, and the characters _ . : / = + - @'
+                                        rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                               value:
                                   description: |-
                                       value is the value of the tag.
+                                      Must be between 1 and 256 characters and may only contain letters, digits,
+                                      spaces, and the characters _ . : / = + - @
                                       Some AWS service do not support empty values. Since tags are added to
                                       resources in many services, the length of the tag value must meet the
                                       requirements of all services.
                                   maxLength: 256
                                   minLength: 1
-                                  pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                   type: string
+                                  x-kubernetes-validations:
+                                      - message: 'value must only contain letters, digits, spaces, and the characters _ . : / = + - @'
+                                        rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                           required:
                               - key
                               - value
@@ -9181,6 +10311,49 @@ components:
                           - PublicAndPrivate
                           - Private
                       type: string
+                  managedDNS:
+                      description: |-
+                          managedDNS configures CPO-managed Route53 DNS zones for this cluster.
+                          An empty object ({}) enables managed DNS with all defaults.
+                      minProperties: 0
+                      properties:
+                          delegation:
+                              description: |-
+                                  delegation configures service-side DNS delegation for certificate generation.
+                                  When set, the CPO creates an ACME DNS01 challenge CNAME in the public ingress
+                                  zone and handles NS delegation based on the nsDelegation mode.
+                                  When absent, only zones are created and the consuming platform handles
+                                  delegation and certificate management.
+                              properties:
+                                  nsDelegation:
+                                      description: |-
+                                          nsDelegation specifies how NS delegation records are created in the parent zone.
+                                          "ExternalDNS": the CPO creates a DNSEndpoint CR in the control plane namespace;
+                                          external-dns creates NS records in the parent zone.
+                                          "Manual": the consuming platform handles NS delegation using nameservers
+                                          reported in HostedCluster status.
+                                      enum:
+                                          - ExternalDNS
+                                          - Manual
+                                      type: string
+                              required:
+                                  - nsDelegation
+                              type: object
+                          ingressDomainPrefix:
+                              default: in
+                              description: |-
+                                  ingressDomainPrefix is the subdomain prefix for ingress DNS zones.
+                                  Zones are created as {prefix}.{baseDomainPrefix}.{baseDomain}.
+                                  When delegation is configured, the prefix creates a DNS delegation boundary
+                                  that separates the ingress zone from the cluster domain, enabling ACME
+                                  challenge CNAME delegation back to the parent zone.
+                              maxLength: 63
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                                  - message: ingressDomainPrefix must consist of lowercase alphanumeric characters or '-', and must start and end with an alphanumeric character
+                                    rule: self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
+                      type: object
                   multiArch:
                       default: false
                       description: |-
@@ -9209,26 +10382,54 @@ components:
                           Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
                           These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
                           Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
+                          For NodePool-created resources (EC2 instances and their initial EBS volumes), these will be merged with NodePool-scoped tags.
+                          By default, HostedCluster tags take precedence over NodePool tags when both specify the same key.
+                          To allow a NodePool tag to override a specific HostedCluster tag, set overridePolicy to "Allow" on that tag.
+                          Cluster-scoped resources (VPC endpoints, security groups) only receive HostedCluster tags.
                           These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
                       items:
-                          description: AWSResourceTag is a tag to apply to AWS resources created for the cluster.
+                          description: |-
+                              AWSClusterResourceTag is a tag to apply to AWS resources created for a
+                              HostedCluster. It extends the base tag with an overridePolicy field that
+                              controls whether NodePool-level tags can override this tag.
                           properties:
                               key:
-                                  description: key is the key of the tag.
+                                  description: |-
+                                      key is the key of the tag.
+                                      Must be between 1 and 128 characters and may only contain letters, digits,
+                                      spaces, and the characters _ . : / = + - @
                                   maxLength: 128
                                   minLength: 1
-                                  pattern: ^[0-9A-Za-z_.:/=+-@]+$
+                                  type: string
+                                  x-kubernetes-validations:
+                                      - message: 'key must only contain letters, digits, spaces, and the characters _ . : / = + - @'
+                                        rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
+                              overridePolicy:
+                                  description: |-
+                                      overridePolicy controls whether a NodePool-level tag with the same key can
+                                      override this HostedCluster-level tag.
+                                      When set to "Allow", a NodePool tag with the same key will take precedence
+                                      over this HostedCluster tag. When set to "Deny" or omitted, the
+                                      HostedCluster value is preserved and the NodePool tag is ignored for that
+                                      key.
+                                  enum:
+                                      - Allow
+                                      - Deny
                                   type: string
                               value:
                                   description: |-
                                       value is the value of the tag.
+                                      Must be between 1 and 256 characters and may only contain letters, digits,
+                                      spaces, and the characters _ . : / = + - @
                                       Some AWS service do not support empty values. Since tags are added to
                                       resources in many services, the length of the tag value must meet the
                                       requirements of all services.
                                   maxLength: 256
                                   minLength: 1
-                                  pattern: ^[0-9A-Za-z_.:/=+-@]+$
                                   type: string
+                                  x-kubernetes-validations:
+                                      - message: 'value must only contain letters, digits, spaces, and the characters _ . : / = + - @'
+                                        rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                           required:
                               - key
                               - value
