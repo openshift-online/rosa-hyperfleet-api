@@ -5,7 +5,6 @@ go 1.26.3
 replace (
 	github.com/openshift-online/rosa-hyperfleet-api/api => ../api
 	github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db => ../hyperfleet-db
-	github.com/rrp-bot/rosa-hyperfleet-kube-applier/hyperfleet-dynamo => github.com/rrp-bot/rosa-hyperfleet-kube-applier/hyperfleet-dynamo v0.0.0-20260824144737-4b20672ca9a0
 )
 
 require (
@@ -23,11 +22,11 @@ require (
 	github.com/onsi/gomega v1.43.0
 	github.com/openshift-online/rosa-hyperfleet-api/api v0.0.0
 	github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db v0.0.0
+	github.com/openshift-online/rosa-hyperfleet-kube-applier v1.0.1
+	github.com/openshift-online/rosa-hyperfleet-kube-applier/hyperfleet-dynamo v1.0.1
 	github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80
 	github.com/openshift/hypershift/api v0.0.0-20260625052409-9acec4759a16
 	github.com/prometheus/client_golang v1.24.1
-	github.com/rrp-bot/rosa-hyperfleet-kube-applier v0.0.0-20260824144737-4b20672ca9a0
-	github.com/rrp-bot/rosa-hyperfleet-kube-applier/hyperfleet-dynamo v0.0.0
 	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
 	k8s.io/client-go v0.36.1
@@ -107,7 +106,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/apiextensions-apiserver v0.36.0 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
-	k8s.io/kube-openapi v0.0.0-20260317180543-43fb72c5454a // indirect
+	k8s.io/kube-openapi v0.0.0-20260821135717-be32def86098 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect

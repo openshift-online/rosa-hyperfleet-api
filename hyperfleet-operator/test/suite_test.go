@@ -32,7 +32,7 @@ import (
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo/statusstream"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/render"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/silence"
-	hd "github.com/rrp-bot/rosa-hyperfleet-kube-applier/hyperfleet-dynamo/dynamodb"
+	hd "github.com/openshift-online/rosa-hyperfleet-kube-applier/hyperfleet-dynamo/dynamodb"
 )
 
 const (

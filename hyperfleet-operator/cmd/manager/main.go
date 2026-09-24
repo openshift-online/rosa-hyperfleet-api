@@ -28,7 +28,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	hyperfleetdb "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db"
-	hd "github.com/rrp-bot/rosa-hyperfleet-kube-applier/hyperfleet-dynamo/dynamodb"
+	hd "github.com/openshift-online/rosa-hyperfleet-kube-applier/hyperfleet-dynamo/dynamodb"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"

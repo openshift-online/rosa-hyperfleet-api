@@ -16,7 +16,7 @@ import (
 	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	hd "github.com/rrp-bot/rosa-hyperfleet-kube-applier/hyperfleet-dynamo/dynamodb"
+	hd "github.com/openshift-online/rosa-hyperfleet-kube-applier/hyperfleet-dynamo/dynamodb"
 )
 
 // ErrNotFound is returned when a desire item does not exist in DynamoDB.
