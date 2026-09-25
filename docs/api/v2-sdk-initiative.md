@@ -285,9 +285,9 @@ These tests in `test/e2e-cli/` exercise the full lifecycle through `rosactl`:
 
 The `test/e2e-api/` tests exercise the Platform API directly:
 
-| Test file           | What it exercises      |
-| ------------------- | ---------------------- |
-| `e2e_test.go`       | Basic API connectivity |
+| Test file     | What it exercises      |
+| ------------- | ---------------------- |
+| `e2e_test.go` | Basic API connectivity |
 
 ### Acceptance Criteria for V2 SDK
 

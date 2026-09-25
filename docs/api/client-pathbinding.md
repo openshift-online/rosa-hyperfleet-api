@@ -209,15 +209,15 @@ resources:
 
 #### `goType` → consumer type defaults
 
-| Draft `goType`   | Consumer default                                                 |
-| ---------------- | ---------------------------------------------------------------- |
-| `string`         | `string`                                                         |
-| `boolean`        | `*bool`                                                          |
-| `integer(int32)` | `*int32`                                                         |
-| `integer(int64)` | `*int64`                                                         |
+| Draft `goType`   | Consumer default                                                   |
+| ---------------- | ------------------------------------------------------------------ |
+| `string`         | `string`                                                           |
+| `boolean`        | `*bool`                                                            |
+| `integer(int32)` | `*int32`                                                           |
+| `integer(int64)` | `*int64`                                                           |
 | `array(string)`  | `string[]` for supported consumers; Cobra rejects collection flags |
 | `array(object)`  | Unsupported automatically; add an explicit consumer representation |
-| `map`            | `map` for Terraform; Cobra rejects map fields                  |
+| `map`            | `map` for Terraform; Cobra rejects map fields                      |
 
 **Consumer-only entries** (no `path`): generator emits the field with `hfsdk:"-"` — Expand skips it; consumer sets it in `PostExpand` or `PreRequest`.
 
