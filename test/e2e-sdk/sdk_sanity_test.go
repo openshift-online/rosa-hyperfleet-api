@@ -25,7 +25,6 @@ limitations under the License.
 // Optional:
 //
 //	AWS_REGION                — defaults to us-east-1
-//	E2E_ACCOUNT_ID            — RC account ID (derived from STS if absent)
 //	E2E_CUSTOMER_ACCOUNT_ID   — customer account ID (derived from STS if absent)
 //	HCP_CLUSTER_NAME          — fixed cluster name (generated if absent)
 //	HCP_ROSA_ISSUER_URL       — OIDC issuer URL override when not in cluster response
@@ -38,7 +37,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -51,11 +49,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	hyperfleet "github.com/openshift-online/rosa-hyperfleet-api/clientset"
-	hfrest "github.com/openshift-online/rosa-hyperfleet-api/clientset/rest"
-	"github.com/openshift-online/rosa-hyperfleet-api/clientset/platform"
 	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
-	awstest "github.com/openshift-online/rosa-hyperfleet-api/test/helpers/aws"
+	hyperfleet "github.com/openshift-online/rosa-hyperfleet-api/clientset"
+	"github.com/openshift-online/rosa-hyperfleet-api/clientset/platform"
+	hfrest "github.com/openshift-online/rosa-hyperfleet-api/clientset/rest"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -89,7 +86,6 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		rosactlBin        string
 		customerProfile   string
 		region            string
-		accountID         string
 		customerAccountID string
 		version           string
 		instanceType      string
@@ -103,9 +99,8 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		subnetID string
 		iamOut   iamStackOutputs
 
-		awsCfg    aws.Config
-		cs        *hyperfleet.Clientset
-		apiClient *awstest.APIClient
+		awsCfg aws.Config
+		cs     *hyperfleet.Clientset
 
 		vpcCreated           bool
 		iamCreated           bool
@@ -145,15 +140,6 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 			instanceType = defaultInstanceType
 		}
 
-		accountID = os.Getenv("E2E_ACCOUNT_ID")
-		if accountID == "" {
-			cmd := exec.Command("aws", "sts", "get-caller-identity", "--query", "Account", "--output", "text")
-			out, err := cmd.CombinedOutput()
-			Expect(err).ToNot(HaveOccurred(), "getting RC account ID: %s", string(out))
-			accountID = strings.TrimSpace(string(out))
-		}
-		GinkgoWriter.Printf("RC account ID: %s\n", accountID)
-
 		customerAccountID = os.Getenv("E2E_CUSTOMER_ACCOUNT_ID")
 		if customerAccountID == "" {
 			cmd := exec.Command("aws", "sts", "get-caller-identity", "--query", "Account", "--output", "text")
@@ -188,8 +174,6 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 			AWSConfig: awsCfg,
 		})
 		Expect(err).ToNot(HaveOccurred(), "building SDK clientset")
-
-		apiClient = awstest.NewAPIClient(baseURL)
 
 		// Safety-net: runs after the Ordered container finishes using the same
 		// delete helpers as the It block, so teardown behaviour is identical
@@ -271,26 +255,6 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		iamOut, err = iamOutputsFromStack(clusterName, region, customerEnv)
 		Expect(err).ToNot(HaveOccurred(), "reading IAM CloudFormation stack outputs")
 		GinkgoWriter.Printf("InstanceProfile: %s\n", iamOut.InstanceProfile)
-
-		By("registering customer account")
-		resp, err := apiClient.Post("/api/v0/accounts", map[string]interface{}{
-			"accountId":  customerAccountID,
-			"privileged": true,
-		}, accountID)
-		Expect(err).ToNot(HaveOccurred())
-		switch resp.StatusCode {
-		case http.StatusCreated:
-			GinkgoWriter.Printf("Customer account %s registered\n", customerAccountID)
-		case http.StatusConflict:
-			var body map[string]interface{}
-			Expect(json.Unmarshal(resp.Body, &body)).To(Succeed())
-			msg, _ := body["message"].(string)
-			Expect(msg).To(ContainSubstring("ACCOUNTS-MGMT-CREATE-004"),
-				"unexpected 409 body: %s", string(resp.Body))
-			GinkgoWriter.Printf("Customer account %s already registered\n", customerAccountID)
-		default:
-			Fail(fmt.Sprintf("account registration: status %d body: %s", resp.StatusCode, string(resp.Body)))
-		}
 
 		By("creating cluster via SDK")
 		subnetRef := subnetID

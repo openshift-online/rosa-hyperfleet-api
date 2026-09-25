@@ -51,9 +51,11 @@ Resources like OidcConfig are shared across clusters within a tenant. Giving eac
 - **Simplifies Get/Delete**: direct lookup by namespace + name, no list-and-filter.
 - **Scales naturally**: future tenant-scoped resources (e.g. identity providers, billing configs) use the same namespace.
 
-### Authorization
+### Access control
 
-Cedar/AVP handles authorization at the API layer. The namespace provides data isolation (you can only read what's in your namespace), but access control decisions are made by the authz middleware before the request reaches the data layer.
+API Gateway authenticates AWS callers, and the Platform API uses the resulting
+identity for request handling. Account labels and namespaces scope existing
+data lookups.
 
 ## Choosing a Pattern
 

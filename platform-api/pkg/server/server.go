@@ -11,8 +11,6 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
-	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/authz"
-	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/authz/client"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/config"
 	apphandlers "github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/handlers"
@@ -36,8 +34,6 @@ type Server struct {
 // New creates a new Server instance. The dbClient is used by cluster,
 // nodepool, and management cluster handlers.
 func New(cfg *config.Config, dbClient *hyperfleetdb.Client, logger *slog.Logger) (*Server, error) {
-	ctx := context.Background()
-
 	// Create handlers
 	healthHandler := apphandlers.NewHealthHandler(logger)
 	infoHandler := apphandlers.NewInfoHandler(logger)
@@ -45,9 +41,6 @@ func New(cfg *config.Config, dbClient *hyperfleetdb.Client, logger *slog.Logger)
 	clusterHandler := apphandlers.NewClusterHandler(dbClient, cfg.Regional.OIDCIssuerBaseURL, cfg.Regional.DefaultClusterExpiration, logger)
 	nodePoolHandler := apphandlers.NewNodePoolHandler(dbClient, logger)
 	oidcConfigHandler := apphandlers.NewOidcConfigHandler(dbClient, cfg.Regional.OIDCIssuerBaseURL, cfg.Regional.AWSRegion, logger)
-
-	// Create legacy authorization middleware (for non-authz routes)
-	authMiddleware := middleware.NewAuthorization(cfg.AllowedAccounts, logger)
 
 	// Create API router
 	apiRouter := mux.NewRouter()
@@ -106,141 +99,30 @@ func New(cfg *config.Config, dbClient *hyperfleetdb.Client, logger *slog.Logger)
 		apiRouter.Use(rl.Middleware)
 	}
 
-	// Initialize authz components if enabled
-	var privilegedMiddleware *middleware.Privileged
-	var accountCheckMiddleware *middleware.AccountCheck
-	var authzMiddleware *middleware.Authz
-
-	if cfg.Authz != nil && cfg.Authz.Enabled {
-		// Create DynamoDB client
-		dynamoClient, err := client.NewDynamoDBClient(ctx, cfg.Authz.AWSRegion, cfg.Authz.DynamoDBEndpoint)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create DynamoDB client: %w", err)
-		}
-
-		// Create AVP client (or mock for local testing)
-		var avpClient client.AVPClient
-		if cfg.Authz.CedarAgentEndpoint != "" {
-			// Use mock AVP client with cedar-agent for local testing
-			avpClient = client.NewMockAVPClient(cfg.Authz.CedarAgentEndpoint, logger)
-			logger.Info("using MockAVPClient with cedar-agent", "endpoint", cfg.Authz.CedarAgentEndpoint)
-		} else {
-			avpClient, err = client.NewAVPClient(ctx, cfg.Authz.AWSRegion)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create AVP client: %w", err)
-			}
-		}
-
-		// Create authorizer (implements both Checker and Service)
-		authorizer := authz.New(cfg.Authz, dynamoClient, avpClient, logger)
-
-		// Create authz middleware
-		privilegedMiddleware = middleware.NewPrivileged(authorizer, logger)
-		accountCheckMiddleware = middleware.NewAccountCheck(authorizer, logger)
-		adminCheckMiddleware := middleware.NewAdminCheck(authorizer, logger)
-		authzMiddleware = middleware.NewAuthz(authorizer, cfg.Authz.Enabled, cfg.Authz.AWSRegion, logger)
-
-		// Create authz handlers
-		accountsHandler := apphandlers.NewAccountsHandler(authorizer, logger)
-		authzHandler := apphandlers.NewAuthzHandler(authorizer, authorizer, logger)
-
-		// Account management routes (privileged only)
-		accountsRouter := apiRouter.PathPrefix("/api/v0/accounts").Subrouter()
-		accountsRouter.Use(privilegedMiddleware.CheckPrivileged)
-		accountsRouter.Use(privilegedMiddleware.RequirePrivileged)
-		accountsRouter.HandleFunc("", accountsHandler.Create).Methods(http.MethodPost)
-		accountsRouter.HandleFunc("", accountsHandler.List).Methods(http.MethodGet)
-		accountsRouter.HandleFunc("/{id}", accountsHandler.Get).Methods(http.MethodGet)
-		accountsRouter.HandleFunc("/{id}", accountsHandler.Delete).Methods(http.MethodDelete)
-
-		// Authorization check route (requires provisioned account, open to all users)
-		checkRouter := apiRouter.PathPrefix("/api/v0/authz/check").Subrouter()
-		checkRouter.Use(privilegedMiddleware.CheckPrivileged)
-		checkRouter.Use(accountCheckMiddleware.RequireProvisioned)
-		checkRouter.HandleFunc("", authzHandler.CheckAuthorization).Methods(http.MethodPost)
-
-		// Authorization management routes (require provisioned account + admin)
-		authzRouter := apiRouter.PathPrefix("/api/v0/authz").Subrouter()
-		authzRouter.Use(privilegedMiddleware.CheckPrivileged)
-		authzRouter.Use(accountCheckMiddleware.RequireProvisioned)
-		authzRouter.Use(adminCheckMiddleware.RequireAdmin)
-
-		// Policy routes
-		authzRouter.HandleFunc("/policies", authzHandler.CreatePolicy).Methods(http.MethodPost)
-		authzRouter.HandleFunc("/policies", authzHandler.ListPolicies).Methods(http.MethodGet)
-		authzRouter.HandleFunc("/policies/{id}", authzHandler.GetPolicy).Methods(http.MethodGet)
-		authzRouter.HandleFunc("/policies/{id}", authzHandler.UpdatePolicy).Methods(http.MethodPut)
-		authzRouter.HandleFunc("/policies/{id}", authzHandler.DeletePolicy).Methods(http.MethodDelete)
-
-		// Group routes
-		authzRouter.HandleFunc("/groups", authzHandler.CreateGroup).Methods(http.MethodPost)
-		authzRouter.HandleFunc("/groups", authzHandler.ListGroups).Methods(http.MethodGet)
-		authzRouter.HandleFunc("/groups/{id}", authzHandler.GetGroup).Methods(http.MethodGet)
-		authzRouter.HandleFunc("/groups/{id}", authzHandler.DeleteGroup).Methods(http.MethodDelete)
-		authzRouter.HandleFunc("/groups/{id}/members", authzHandler.UpdateGroupMembers).Methods(http.MethodPut)
-		authzRouter.HandleFunc("/groups/{id}/members", authzHandler.ListGroupMembers).Methods(http.MethodGet)
-
-		// Attachment routes
-		authzRouter.HandleFunc("/attachments", authzHandler.CreateAttachment).Methods(http.MethodPost)
-		authzRouter.HandleFunc("/attachments", authzHandler.ListAttachments).Methods(http.MethodGet)
-		authzRouter.HandleFunc("/attachments/{id}", authzHandler.DeleteAttachment).Methods(http.MethodDelete)
-
-		// Admin routes
-		authzRouter.HandleFunc("/admins", authzHandler.AddAdmin).Methods(http.MethodPost)
-		authzRouter.HandleFunc("/admins", authzHandler.ListAdmins).Methods(http.MethodGet)
-		authzRouter.HandleFunc("/admins/{arn:.*}", authzHandler.RemoveAdmin).Methods(http.MethodDelete)
-
-		logger.Info("Cedar/AVP authorization enabled")
-	}
-
-	// Management cluster routes (require allowed account)
+	// Management cluster routes
 	mgmtRouter := apiRouter.PathPrefix("/api/v0/management_clusters").Subrouter()
-	if authzMiddleware != nil {
-		mgmtRouter.Use(privilegedMiddleware.CheckPrivileged)
-		mgmtRouter.Use(authzMiddleware.Authorize)
-	} else {
-		mgmtRouter.Use(authMiddleware.RequireAllowedAccount)
-	}
 	mgmtRouter.HandleFunc("", mgmtClusterHandler.Create).Methods(http.MethodPost)
 	mgmtRouter.HandleFunc("", mgmtClusterHandler.List).Methods(http.MethodGet)
 	mgmtRouter.HandleFunc("/{id}", mgmtClusterHandler.Get).Methods(http.MethodGet)
 
-	// Cluster routes (user-facing, require authz)
+	// Cluster routes
 	clusterRouter := apiRouter.PathPrefix("/api/v0/clusters").Subrouter()
-	if authzMiddleware != nil {
-		clusterRouter.Use(privilegedMiddleware.CheckPrivileged)
-		clusterRouter.Use(authzMiddleware.Authorize)
-	} else {
-		clusterRouter.Use(authMiddleware.RequireAllowedAccount)
-	}
 	clusterRouter.HandleFunc("", clusterHandler.List).Methods(http.MethodGet)
 	clusterRouter.HandleFunc("", clusterHandler.Create).Methods(http.MethodPost)
 	clusterRouter.HandleFunc("/{id}", clusterHandler.Get).Methods(http.MethodGet)
 	clusterRouter.HandleFunc("/{id}", clusterHandler.Update).Methods(http.MethodPatch, http.MethodPut)
 	clusterRouter.HandleFunc("/{id}", clusterHandler.Delete).Methods(http.MethodDelete)
 
-	// NodePool routes (user-facing, require authz)
+	// NodePool routes
 	nodePoolRouter := apiRouter.PathPrefix("/api/v0/nodepools").Subrouter()
-	if authzMiddleware != nil {
-		nodePoolRouter.Use(privilegedMiddleware.CheckPrivileged)
-		nodePoolRouter.Use(authzMiddleware.Authorize)
-	} else {
-		nodePoolRouter.Use(authMiddleware.RequireAllowedAccount)
-	}
 	nodePoolRouter.HandleFunc("", nodePoolHandler.List).Methods(http.MethodGet)
 	nodePoolRouter.HandleFunc("", nodePoolHandler.Create).Methods(http.MethodPost)
 	nodePoolRouter.HandleFunc("/{id}", nodePoolHandler.Get).Methods(http.MethodGet)
 	nodePoolRouter.HandleFunc("/{id}", nodePoolHandler.Update).Methods(http.MethodPut)
 	nodePoolRouter.HandleFunc("/{id}", nodePoolHandler.Delete).Methods(http.MethodDelete)
 
-	// OidcConfig routes (user-facing, require authz)
+	// OidcConfig routes
 	oidcConfigRouter := apiRouter.PathPrefix("/api/v0/oidc_configs").Subrouter()
-	if authzMiddleware != nil {
-		oidcConfigRouter.Use(privilegedMiddleware.CheckPrivileged)
-		oidcConfigRouter.Use(authzMiddleware.Authorize)
-	} else {
-		oidcConfigRouter.Use(authMiddleware.RequireAllowedAccount)
-	}
 	oidcConfigRouter.HandleFunc("", oidcConfigHandler.List).Methods(http.MethodGet)
 	oidcConfigRouter.HandleFunc("", oidcConfigHandler.Create).Methods(http.MethodPost)
 	oidcConfigRouter.HandleFunc("/{id}", oidcConfigHandler.Get).Methods(http.MethodGet)

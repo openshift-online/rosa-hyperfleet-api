@@ -63,84 +63,6 @@ func TestCreateLogger(t *testing.T) {
 	}
 }
 
-func TestParseAllowedAccounts(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected []string
-	}{
-		{
-			name:     "empty string",
-			input:    "",
-			expected: nil,
-		},
-		{
-			name:     "single account",
-			input:    "123456789012",
-			expected: []string{"123456789012"},
-		},
-		{
-			name:     "multiple accounts",
-			input:    "123456789012,987654321098,555555555555",
-			expected: []string{"123456789012", "987654321098", "555555555555"},
-		},
-		{
-			name:     "accounts with spaces",
-			input:    "123456789012, 987654321098 , 555555555555",
-			expected: []string{"123456789012", "987654321098", "555555555555"},
-		},
-		{
-			name:     "accounts with empty values",
-			input:    "123456789012,,987654321098",
-			expected: []string{"123456789012", "987654321098"},
-		},
-		{
-			name:     "only commas",
-			input:    ",,,",
-			expected: nil,
-		},
-		{
-			name:     "spaces only",
-			input:    "   ,   ,   ",
-			expected: nil,
-		},
-		{
-			name:     "trailing comma",
-			input:    "123456789012,987654321098,",
-			expected: []string{"123456789012", "987654321098"},
-		},
-		{
-			name:     "leading comma",
-			input:    ",123456789012,987654321098",
-			expected: []string{"123456789012", "987654321098"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := parseAllowedAccounts(tt.input)
-
-			if tt.expected == nil {
-				if result != nil {
-					t.Errorf("expected nil, got %v", result)
-				}
-				return
-			}
-
-			if len(result) != len(tt.expected) {
-				t.Errorf("expected %d accounts, got %d", len(tt.expected), len(result))
-				return
-			}
-
-			for i, account := range tt.expected {
-				if result[i] != account {
-					t.Errorf("expected account[%d]=%s, got %s", i, account, result[i])
-				}
-			}
-		})
-	}
-}
-
 func TestRootCmd(t *testing.T) {
 	if rootCmd == nil {
 		t.Fatal("expected non-nil rootCmd")
@@ -182,6 +104,8 @@ func TestServeCmd(t *testing.T) {
 		"log-level",
 		"log-format",
 		"allowed-accounts",
+		"dynamodb-region",
+		"dynamodb-prefix",
 		"api-port",
 		"health-port",
 		"metrics-port",
@@ -193,4 +117,5 @@ func TestServeCmd(t *testing.T) {
 			t.Errorf("expected flag %s to be registered", flagName)
 		}
 	}
+
 }

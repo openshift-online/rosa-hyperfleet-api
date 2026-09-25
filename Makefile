@@ -1,9 +1,8 @@
 .PHONY: help build test test-unit test-integration lint clean \
 	build-hyperfleet-db build-operator build-api build-api-codegen \
 	test-hyperfleet-db test-operator test-operator-int test-api test-api-int test-api-codegen test-clientset \
-	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-zoa test-e2e-authz test-e2e-sdk test-e2e-rosa-cli \
-	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-authz test-e2e-sdk \
-	e2e-authz-infra-up e2e-authz-infra-down e2e-init-db \
+	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-zoa test-e2e-sdk test-e2e-rosa-cli \
+	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-sdk \
 	fmt vet verify verify-mod deps mod-tidy \
 	manifests generate generate-deepcopy generate-clientset verify-clientset setup-envtest \
 	codegen-passthrough codegen-registry codegen-verify codegen verify-codegen \
@@ -23,13 +22,10 @@ GOARCH              ?= amd64
 PLATFORMS           ?= linux/amd64,linux/arm64
 
 TEST_OUTPUT_DIR     ?= $(or $(ARTIFACT_DIR),./test-results)
-DYNAMODB_ENDPOINT   ?= http://localhost:8180
-CEDAR_AGENT_ENDPOINT?= http://localhost:8181
 
 AWS_PROFILE ?=
 AWS_REGION  ?=
 FOCUS       ?=
-SKIP        ?= Authz
 
 ROSA_REPO_URL          ?= https://github.com/openshift/rosa
 ROSA_REPO_BRANCH       ?= hyperfleet-v2
@@ -112,7 +108,6 @@ help:
 	@echo "  test-clientset       Clientset unit tests (transport, platform)"
 	@echo "  test-integration     Integration tests: FleetDB + operator (podman) + API handlers"
 	@echo "  test-api-int         API handler integration tests (build tag: integration)"
-	@echo "  test-e2e-authz       E2E authz (starts local infra)"
 	@echo "  test-e2e-api         E2E API"
 	@echo "  test-e2e-cli         E2E CLI"
 	@echo "  test-e2e-sdk         E2E SDK (Go clientset lifecycle)"
@@ -214,7 +209,7 @@ test-e2e: test-e2e-api
 test-e2e-api: $(GINKGO)
 	E2E_BASE_URL="$${BASE_URL}" E2E_ACCOUNT_ID="$${E2E_ACCOUNT_ID}" \
 	E2E_RHOBS_API_URL="$${RHOBS_API_URL}" \
-	$(GINKGO) -vv --skip="Authz" \
+	$(GINKGO) -vv \
 		$(if $(E2E_LABEL_FILTER),--label-filter="$(E2E_LABEL_FILTER)") \
 		--junit-report=junit-api.xml --output-dir=$(TEST_OUTPUT_DIR) \
 		./test/e2e-api
@@ -278,23 +273,6 @@ test-e2e-rosa-cli:
 			$(ROSA_MAKE_TARGET); \
 	fi
 
-
-# ── E2E Infrastructure ──────────────────────────────────────────────────
-
-e2e-authz-infra-up:
-	podman-compose -f hack/podman-compose.e2e-authz.yaml up -d
-	@echo "Waiting for services to be ready..."
-	@sleep 5
-	@$(MAKE) e2e-init-db
-
-e2e-authz-infra-down:
-	podman-compose -f hack/podman-compose.e2e-authz.yaml down -v
-
-e2e-init-db:
-	./scripts/e2e-init-dynamodb.sh
-
-test-e2e-authz: e2e-authz-infra-up
-	@./scripts/run-e2e-authz.sh
 
 # ── Code Quality ─────────────────────────────────────────────────────────
 

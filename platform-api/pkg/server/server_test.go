@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -67,7 +66,6 @@ func TestNew_WithCustomConfig(t *testing.T) {
 			Level:  "debug",
 			Format: "text",
 		},
-		AllowedAccounts: []string{"123456789012"},
 	}
 
 	server, err := New(cfg, nil, logger)
@@ -89,6 +87,8 @@ func TestNew_WithCustomConfig(t *testing.T) {
 }
 
 func TestServer_HealthRoutes(t *testing.T) {
+	// Operational endpoints remain accessible without identity.
+	t.Setenv("TARGET_GROUP_ARN", "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test/id")
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.NewConfig()
 
@@ -112,6 +112,11 @@ func TestServer_HealthRoutes(t *testing.T) {
 			path:           "/api/v0/ready",
 			expectedStatus: http.StatusOK,
 		},
+		{
+			name:           "info on API server",
+			path:           "/api/v0/info",
+			expectedStatus: http.StatusOK,
+		},
 	}
 
 	for _, tt := range tests {
@@ -128,75 +133,9 @@ func TestServer_HealthRoutes(t *testing.T) {
 	}
 }
 
-func TestServer_ManagementClusterRoutes_Unauthorized(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	cfg := config.NewConfig()
-	cfg.AllowedAccounts = []string{"123456789012"}
-
-	server, err := New(cfg, nil, logger)
-	if err != nil {
-		t.Fatalf("unexpected error creating server: %v", err)
-	}
-
-	tests := []struct {
-		name           string
-		method         string
-		path           string
-		accountID      string
-		expectedStatus int
-	}{
-		{
-			name:           "POST without account ID",
-			method:         http.MethodPost,
-			path:           "/api/v0/management_clusters",
-			accountID:      "",
-			expectedStatus: http.StatusForbidden,
-		},
-		{
-			name:           "GET without account ID",
-			method:         http.MethodGet,
-			path:           "/api/v0/management_clusters",
-			accountID:      "",
-			expectedStatus: http.StatusForbidden,
-		},
-		{
-			name:           "GET by ID without account ID",
-			method:         http.MethodGet,
-			path:           "/api/v0/management_clusters/test-id",
-			accountID:      "",
-			expectedStatus: http.StatusForbidden,
-		},
-		{
-			name:           "POST with unauthorized account",
-			method:         http.MethodPost,
-			path:           "/api/v0/management_clusters",
-			accountID:      "999999999999",
-			expectedStatus: http.StatusForbidden,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, nil)
-			if tt.accountID != "" {
-				ctx := context.WithValue(req.Context(), middleware.ContextKeyAccountID, tt.accountID)
-				req = req.WithContext(ctx)
-			}
-			w := httptest.NewRecorder()
-
-			server.apiServer.Handler.ServeHTTP(w, req)
-
-			if w.Code != tt.expectedStatus {
-				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
-			}
-		})
-	}
-}
-
 func TestServer_IdentityMiddleware(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.NewConfig()
-	cfg.AllowedAccounts = []string{"123456789012"}
 
 	server, err := New(cfg, nil, logger)
 	if err != nil {
@@ -385,7 +324,6 @@ func TestServer_ServerAddresses(t *testing.T) {
 			Level:  "info",
 			Format: "json",
 		},
-		AllowedAccounts: []string{},
 	}
 
 	server, err := New(cfg, nil, logger)
