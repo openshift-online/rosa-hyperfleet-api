@@ -20,7 +20,7 @@ graph LR
 
 ### PostgreSQL (pgruntime)
 
-The operator uses [fleetdb](../../../hyperfleet-db/) to implement the controller-runtime `client.Client`, `cache.Cache`, and `manager.Manager` interfaces backed by PostgreSQL. This replaces a traditional Kubernetes API server (etcd) with a relational database, providing fenced writes, stored procedures, composite resource versions, and deterministic lease management.
+The operator uses [fleetdb](../../hyperfleet-db/) to implement the controller-runtime `client.Client`, `cache.Cache`, and `manager.Manager` interfaces backed by PostgreSQL. This replaces a traditional Kubernetes API server (etcd) with a relational database, providing fenced writes, stored procedures, composite resource versions, and deterministic lease management.
 
 ### CRDs
 
