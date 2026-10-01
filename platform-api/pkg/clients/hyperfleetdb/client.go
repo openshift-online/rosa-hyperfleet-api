@@ -8,6 +8,7 @@ import (
 	hyperfleetdb "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -69,10 +70,11 @@ func (c *Client) GetCluster(ctx context.Context, accountID, name string) (*hyper
 	return &cluster, nil
 }
 
-// ListClusters lists the Clusters in accountID's namespace.
-func (c *Client) ListClusters(ctx context.Context, accountID string) (*hyperfleetv1alpha1.ClusterList, error) {
+// ListClusters lists the Clusters in accountID's namespace that match sel
+// (nil matches all).
+func (c *Client) ListClusters(ctx context.Context, accountID string, sel labels.Selector) (*hyperfleetv1alpha1.ClusterList, error) {
 	var list hyperfleetv1alpha1.ClusterList
-	err := c.client.List(ctx, &list, client.InNamespace(hyperfleetv1alpha1.AccountNamespace(accountID)))
+	err := c.client.List(ctx, &list, listOptions(accountID, sel)...)
 	if err != nil {
 		return nil, err
 	}
@@ -117,11 +119,12 @@ func (c *Client) GetNodePool(ctx context.Context, accountID, name string) (*hype
 	return &np, nil
 }
 
-// ListNodePools lists the NodePools in accountID's namespace. When clusterUID
-// is set, only that cluster's NodePools are returned (by the cluster-uid label).
-func (c *Client) ListNodePools(ctx context.Context, accountID, clusterUID string) (*hyperfleetv1alpha1.NodePoolList, error) {
+// ListNodePools lists the NodePools in accountID's namespace that match sel
+// (nil matches all). When clusterUID is set, only that cluster's NodePools are
+// returned (by the cluster-uid label).
+func (c *Client) ListNodePools(ctx context.Context, accountID, clusterUID string, sel labels.Selector) (*hyperfleetv1alpha1.NodePoolList, error) {
 	var list hyperfleetv1alpha1.NodePoolList
-	opts := []client.ListOption{client.InNamespace(hyperfleetv1alpha1.AccountNamespace(accountID))}
+	opts := listOptions(accountID, sel)
 	if clusterUID != "" {
 		opts = append(opts, client.MatchingLabels{hyperfleetv1alpha1.ClusterUIDLabel: clusterUID})
 	}
@@ -229,10 +232,11 @@ func (c *Client) GetOidcConfig(ctx context.Context, accountID, configID string) 
 	return &oc, nil
 }
 
-// ListOidcConfigs lists OidcConfigs for the given account by namespace.
-func (c *Client) ListOidcConfigs(ctx context.Context, accountID string) (*hyperfleetv1alpha1.OidcConfigList, error) {
+// ListOidcConfigs lists the OidcConfigs in accountID's namespace that match sel
+// (nil matches all).
+func (c *Client) ListOidcConfigs(ctx context.Context, accountID string, sel labels.Selector) (*hyperfleetv1alpha1.OidcConfigList, error) {
 	var list hyperfleetv1alpha1.OidcConfigList
-	err := c.client.List(ctx, &list, client.InNamespace(hyperfleetv1alpha1.AccountNamespace(accountID)))
+	err := c.client.List(ctx, &list, listOptions(accountID, sel)...)
 	if err != nil {
 		return nil, err
 	}
@@ -280,6 +284,15 @@ func (c *Client) GetOidcIssuerIndex(ctx context.Context, indexName string) (*hyp
 		return nil, err
 	}
 	return &idx, nil
+}
+
+// listOptions scopes a list to accountID's namespace and, if set, a label selector.
+func listOptions(accountID string, sel labels.Selector) []client.ListOption {
+	opts := []client.ListOption{client.InNamespace(hyperfleetv1alpha1.AccountNamespace(accountID))}
+	if sel != nil && !sel.Empty() {
+		opts = append(opts, client.MatchingLabelsSelector{Selector: sel})
+	}
+	return opts
 }
 
 // --- Error helpers ---

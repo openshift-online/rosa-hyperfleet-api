@@ -43,8 +43,10 @@ type ClusterInterface interface {
 	Get(ctx context.Context, name string, opts GetOptions) (*v1alpha1.Cluster, error)
 	List(ctx context.Context, opts ListOptions) (*v1alpha1.ClusterList, error)
 	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts PatchOptions) (*v1alpha1.Cluster, error)
-	// WaitUntil polls until condition(obj) returns true, the resource is absent
-	// (condition is called with nil), or the timeout elapses.
+	// WaitUntil polls by name until condition(obj) returns true, the resource is
+	// absent (condition is called with nil), or the timeout elapses. A name can
+	// be reused after a delete: once a different uid answers to the name, the
+	// object first seen is gone, and condition is called with nil.
 	WaitUntil(ctx context.Context, name string, condition func(*v1alpha1.Cluster) bool, interval, timeout time.Duration) error
 }
 
@@ -67,7 +69,7 @@ func (c *clusterClient) List(ctx context.Context, opts ListOptions) (*v1alpha1.C
 	if opts.Offset < 0 {
 		return nil, fmt.Errorf("List: Offset must be non-negative, got %d", opts.Offset)
 	}
-	mo := metav1.ListOptions{Limit: opts.Limit}
+	mo := metav1.ListOptions{Limit: opts.Limit, LabelSelector: opts.LabelSelector}
 	if opts.Offset > 0 {
 		mo.Continue = strconv.FormatInt(opts.Offset, 10)
 	}
@@ -91,8 +93,17 @@ func (c *clusterClient) Delete(ctx context.Context, name string, opts DeleteOpti
 func (c *clusterClient) WaitUntil(ctx context.Context, name string, condition func(*v1alpha1.Cluster) bool, interval, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	var firstUID types.UID // the object being waited on, once seen
 	poll := func() (bool, error) {
 		obj, err := c.inner.Get(ctx, name, metav1.GetOptions{})
+		if err == nil {
+			if firstUID == "" {
+				firstUID = obj.UID
+			} else if obj.UID != firstUID {
+				// The name now belongs to a new object; ours is gone.
+				return condition(nil), nil
+			}
+		}
 		if err != nil {
 			if k8serrors.IsNotFound(err) {
 				return condition(nil), nil
@@ -136,8 +147,10 @@ type NodePoolInterface interface {
 	Get(ctx context.Context, name string, opts GetOptions) (*v1alpha1.NodePool, error)
 	List(ctx context.Context, opts ListOptions) (*v1alpha1.NodePoolList, error)
 	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts PatchOptions) (*v1alpha1.NodePool, error)
-	// WaitUntil polls until condition(obj) returns true, the resource is absent
-	// (condition is called with nil), or the timeout elapses.
+	// WaitUntil polls by name until condition(obj) returns true, the resource is
+	// absent (condition is called with nil), or the timeout elapses. A name can
+	// be reused after a delete: once a different uid answers to the name, the
+	// object first seen is gone, and condition is called with nil.
 	WaitUntil(ctx context.Context, name string, condition func(*v1alpha1.NodePool) bool, interval, timeout time.Duration) error
 }
 
@@ -172,7 +185,7 @@ func (c *nodePoolClient) List(ctx context.Context, opts ListOptions) (*v1alpha1.
 	if opts.Offset < 0 {
 		return nil, fmt.Errorf("List: Offset must be non-negative, got %d", opts.Offset)
 	}
-	mo := metav1.ListOptions{Limit: opts.Limit}
+	mo := metav1.ListOptions{Limit: opts.Limit, LabelSelector: opts.LabelSelector}
 	if opts.Offset > 0 {
 		mo.Continue = strconv.FormatInt(opts.Offset, 10)
 	}
@@ -196,8 +209,17 @@ func (c *nodePoolClient) Delete(ctx context.Context, name string, opts DeleteOpt
 func (c *nodePoolClient) WaitUntil(ctx context.Context, name string, condition func(*v1alpha1.NodePool) bool, interval, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	var firstUID types.UID // the object being waited on, once seen
 	poll := func() (bool, error) {
 		obj, err := c.inner.Get(ctx, name, metav1.GetOptions{})
+		if err == nil {
+			if firstUID == "" {
+				firstUID = obj.UID
+			} else if obj.UID != firstUID {
+				// The name now belongs to a new object; ours is gone.
+				return condition(nil), nil
+			}
+		}
 		if err != nil {
 			if k8serrors.IsNotFound(err) {
 				return condition(nil), nil
@@ -241,8 +263,10 @@ type OidcConfigInterface interface {
 	Get(ctx context.Context, name string, opts GetOptions) (*v1alpha1.OidcConfig, error)
 	List(ctx context.Context, opts ListOptions) (*v1alpha1.OidcConfigList, error)
 	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts PatchOptions) (*v1alpha1.OidcConfig, error)
-	// WaitUntil polls until condition(obj) returns true, the resource is absent
-	// (condition is called with nil), or the timeout elapses.
+	// WaitUntil polls by name until condition(obj) returns true, the resource is
+	// absent (condition is called with nil), or the timeout elapses. A name can
+	// be reused after a delete: once a different uid answers to the name, the
+	// object first seen is gone, and condition is called with nil.
 	WaitUntil(ctx context.Context, name string, condition func(*v1alpha1.OidcConfig) bool, interval, timeout time.Duration) error
 }
 
@@ -265,7 +289,7 @@ func (c *oidcConfigClient) List(ctx context.Context, opts ListOptions) (*v1alpha
 	if opts.Offset < 0 {
 		return nil, fmt.Errorf("List: Offset must be non-negative, got %d", opts.Offset)
 	}
-	mo := metav1.ListOptions{Limit: opts.Limit}
+	mo := metav1.ListOptions{Limit: opts.Limit, LabelSelector: opts.LabelSelector}
 	if opts.Offset > 0 {
 		mo.Continue = strconv.FormatInt(opts.Offset, 10)
 	}
@@ -289,8 +313,17 @@ func (c *oidcConfigClient) Delete(ctx context.Context, name string, opts DeleteO
 func (c *oidcConfigClient) WaitUntil(ctx context.Context, name string, condition func(*v1alpha1.OidcConfig) bool, interval, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	var firstUID types.UID // the object being waited on, once seen
 	poll := func() (bool, error) {
 		obj, err := c.inner.Get(ctx, name, metav1.GetOptions{})
+		if err == nil {
+			if firstUID == "" {
+				firstUID = obj.UID
+			} else if obj.UID != firstUID {
+				// The name now belongs to a new object; ours is gone.
+				return condition(nil), nil
+			}
+		}
 		if err != nil {
 			if k8serrors.IsNotFound(err) {
 				return condition(nil), nil

@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"fmt"
+	"net/http"
 
 	apivalidation "k8s.io/apimachinery/pkg/api/validation"
 	metav1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
@@ -29,4 +31,10 @@ func validateClientMetadata(labels, annotations map[string]string) error {
 	errs := metav1validation.ValidateLabels(labels, path.Child("labels"))
 	errs = append(errs, apivalidation.ValidateAnnotations(annotations, path.Child("annotations"))...)
 	return errs.ToAggregate()
+}
+
+// labelSelector parses the optional labelSelector query parameter, in
+// Kubernetes selector syntax. An absent parameter selects everything.
+func labelSelector(r *http.Request) (labels.Selector, error) {
+	return labels.Parse(r.URL.Query().Get("labelSelector"))
 }

@@ -42,4 +42,7 @@ type ListOptions struct {
 	Limit int64
 	// Offset is the number of items to skip before returning results.
 	Offset int64
+	// LabelSelector restricts the list to objects whose labels match, in
+	// Kubernetes selector syntax (e.g. "hyperfleet.io/cluster-uid=<uid>").
+	LabelSelector string
 }

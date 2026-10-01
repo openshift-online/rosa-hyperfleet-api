@@ -1207,3 +1207,40 @@ func TestClusterHandler_Create_SameNameDifferentAccount(t *testing.T) {
 		t.Fatalf("expected 201 (same name in different account is allowed), got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestClusterHandler_List_LabelSelector(t *testing.T) {
+	prod := testClusterCR("uid-prod", "prod", testAccountID)
+	prod.Labels = map[string]string{"env": "prod"}
+	dev := testClusterCR("uid-dev", "dev", testAccountID)
+	dev.Labels = map[string]string{"env": "dev"}
+	fc := fakeDB(newTestScheme()).WithObjects(prod, dev).Build()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "", 0, logger)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v0/clusters?labelSelector=env%3Dprod", nil)
+	req = req.WithContext(testContext(testAccountID))
+	w := httptest.NewRecorder()
+	handler.List(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result struct {
+		Items []struct {
+			Metadata metav1.ObjectMeta `json:"metadata"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(result.Items) != 1 || result.Items[0].Metadata.Name != "prod" || result.Items[0].Metadata.Labels["env"] != "prod" {
+		t.Errorf("expected only prod with its labels, got %+v", result.Items)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v0/clusters?labelSelector=%21%21", nil)
+	req = req.WithContext(testContext(testAccountID))
+	w = httptest.NewRecorder()
+	handler.List(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid selector: expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}

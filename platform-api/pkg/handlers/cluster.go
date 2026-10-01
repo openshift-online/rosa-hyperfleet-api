@@ -71,9 +71,15 @@ func (h *ClusterHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	sel, err := labelSelector(r)
+	if err != nil {
+		writeAPIError(w, ErrClusterListInvalidSelector.WithReason(err.Error()), h.logger)
+		return
+	}
+
 	h.logger.Info("listing clusters", "account_id", accountID, "limit", limit, "offset", offset)
 
-	list, err := h.db.ListClusters(ctx, accountID)
+	list, err := h.db.ListClusters(ctx, accountID, sel)
 	if err != nil {
 		h.logger.Error("failed to list clusters", "error", err, "account_id", accountID)
 		writeAPIError(w, ErrClusterList, h.logger)

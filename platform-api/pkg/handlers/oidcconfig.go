@@ -100,9 +100,15 @@ func (h *OidcConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	sel, err := labelSelector(r)
+	if err != nil {
+		writeAPIError(w, ErrOidcConfigListInvalidSelector.WithReason(err.Error()), h.logger)
+		return
+	}
+
 	h.logger.Info("listing oidc configs", "account_id", accountID, "limit", limit, "offset", offset)
 
-	list, err := h.db.ListOidcConfigs(ctx, accountID)
+	list, err := h.db.ListOidcConfigs(ctx, accountID, sel)
 	if err != nil {
 		h.logger.Error("failed to list oidc configs", "error", err, "account_id", accountID)
 		writeAPIError(w, ErrOidcConfigList, h.logger)

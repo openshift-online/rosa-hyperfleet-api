@@ -377,3 +377,35 @@ func TestNodePoolUpdate_DoesNotMutateCallerObject(t *testing.T) {
 		t.Errorf("Update mutated caller's object: Name = %q", obj.Name)
 	}
 }
+
+// WaitUntil routes by name, so a recreated object under the same name must not
+// be mistaken for the one being waited on.
+func TestClusterWaitUntil_UIDChangeMeansGone(t *testing.T) {
+	calls := 0
+	stub := &stubClusterClient{getFunc: func(_ context.Context, name string, _ metav1.GetOptions) (*v1alpha1.Cluster, error) {
+		calls++
+		c := &v1alpha1.Cluster{}
+		c.Name = name
+		c.UID = "first"
+		if calls > 1 {
+			c.UID = "second" // deleted and recreated under the same name
+		}
+		return c, nil
+	}}
+	c := &clusterClient{inner: stub}
+
+	var sawGone bool
+	err := c.WaitUntil(context.Background(), "prod", func(obj *v1alpha1.Cluster) bool {
+		if obj == nil {
+			sawGone = true
+			return true
+		}
+		return false
+	}, time.Millisecond, time.Second)
+	if err != nil {
+		t.Fatalf("WaitUntil: %v", err)
+	}
+	if !sawGone {
+		t.Error("expected condition(nil) once a different uid answered to the name")
+	}
+}

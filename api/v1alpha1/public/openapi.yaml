@@ -169,6 +169,14 @@ paths:
       tags:
         - Clusters
       parameters:
+        - name: labelSelector
+          in: query
+          schema:
+            type: string
+          description: |
+            Kubernetes label selector (e.g. "env=prod" or
+            "hyperfleet.io/cluster-uid=<uid>"). Responses include each object's
+            labels and ownerReferences.
         - name: limit
           in: query
           schema:
@@ -378,6 +386,14 @@ paths:
       tags:
         - NodePools
       parameters:
+        - name: labelSelector
+          in: query
+          schema:
+            type: string
+          description: |
+            Kubernetes label selector (e.g. "env=prod" or
+            "hyperfleet.io/cluster-uid=<uid>"). Responses include each object's
+            labels and ownerReferences.
         - name: clusterId
           in: query
           schema:
@@ -550,6 +566,14 @@ paths:
       tags:
         - OidcConfigs
       parameters:
+        - name: labelSelector
+          in: query
+          schema:
+            type: string
+          description: |
+            Kubernetes label selector (e.g. "env=prod" or
+            "hyperfleet.io/cluster-uid=<uid>"). Responses include each object's
+            labels and ownerReferences.
         - name: limit
           in: query
           schema:

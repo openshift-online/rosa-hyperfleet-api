@@ -205,7 +205,7 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 
 			if extraNodepoolCreated && extraNodepoolID != "" && clusterID != "" {
 				GinkgoWriter.Printf("DeferCleanup: deleting extra nodepool %s\n", extraNodepoolID)
-				if err := deleteNodepool(cleanupCtx, cs, accountNamespace(customerAccountID), extraNodepoolID); err != nil {
+				if err := deleteNodepool(cleanupCtx, cs, hyperfleet.AccountNamespace(customerAccountID), extraNodepoolID); err != nil {
 					GinkgoWriter.Printf("DeferCleanup WARNING: %v\n", err)
 				} else {
 					extraNodepoolCreated = false
@@ -213,7 +213,7 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 			}
 			if nodepoolCreated && nodepoolID != "" && clusterID != "" {
 				GinkgoWriter.Printf("DeferCleanup: initiating nodepool %s deletion\n", nodepoolID)
-				if err := cs.HyperfleetV1alpha1().NodePools(accountNamespace(customerAccountID)).Delete(cleanupCtx, nodepoolID, platform.DeleteOptions{}); err != nil {
+				if err := cs.HyperfleetV1alpha1().NodePools(hyperfleet.AccountNamespace(customerAccountID)).Delete(cleanupCtx, nodepoolID, platform.DeleteOptions{}); err != nil {
 					GinkgoWriter.Printf("DeferCleanup WARNING: nodepool delete: %v\n", err)
 				} else {
 					nodepoolCreated = false
@@ -371,9 +371,9 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		GinkgoWriter.Printf("Cluster %s is Ready\n", clusterName)
 
 		By("creating nodepools via SDK")
-		nodepools := cs.HyperfleetV1alpha1().NodePools(accountNamespace(customerAccountID))
+		nodepools := cs.HyperfleetV1alpha1().NodePools(hyperfleet.AccountNamespace(customerAccountID))
 
-		npName := clusterName + ".e2e-np"
+		npName := hyperfleet.NodePoolName(clusterName, "e2e-np")
 		initialReplicas := int32(2)
 		npSubnetRef := subnetID
 		np, err := nodepools.Create(ctx, &v1alpha1.NodePool{
@@ -397,11 +397,11 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		Expect(err).ToNot(HaveOccurred(), "SDK nodepool create")
 		nodepoolID = np.Name
 		nodepoolCreated = true
-		Expect(np.Labels).To(HaveKeyWithValue("hyperfleet.io/cluster-uid", clusterID),
+		Expect(np.Labels).To(HaveKeyWithValue(hyperfleet.ClusterUIDLabel, clusterID),
 			"the nodepool should point at its parent cluster's uid")
 		GinkgoWriter.Printf("NodePool %s created (id=%s)\n", npName, nodepoolID)
 
-		extraNpName := clusterName + ".e2e-np-extra"
+		extraNpName := hyperfleet.NodePoolName(clusterName, "e2e-np-extra")
 		extraReplicas := int32(1)
 		extraNpSubnetRef := subnetID
 		extraNp, err := nodepools.Create(ctx, &v1alpha1.NodePool{
@@ -465,11 +465,11 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		GinkgoWriter.Printf("NodePool replicas updated to %d\n", newReplicas)
 
 		By("deleting extra nodepool")
-		Expect(deleteNodepool(ctx, cs, accountNamespace(customerAccountID), extraNodepoolID)).To(Succeed())
+		Expect(deleteNodepool(ctx, cs, hyperfleet.AccountNamespace(customerAccountID), extraNodepoolID)).To(Succeed())
 		extraNodepoolCreated = false
 
 		By("initiating nodepool deletion")
-		Expect(cs.HyperfleetV1alpha1().NodePools(accountNamespace(customerAccountID)).Delete(ctx, nodepoolID, platform.DeleteOptions{})).To(Succeed())
+		Expect(cs.HyperfleetV1alpha1().NodePools(hyperfleet.AccountNamespace(customerAccountID)).Delete(ctx, nodepoolID, platform.DeleteOptions{})).To(Succeed())
 		nodepoolCreated = false
 		GinkgoWriter.Printf("NodePool %s deletion initiated\n", nodepoolID)
 
@@ -648,11 +648,6 @@ func verifyRolesTrustOIDCProvider(roles hypershiftv1beta1.AWSRolesRef, oidcProvi
 		GinkgoWriter.Printf("  role %s: trust policy OK\n", roleName)
 	}
 	return nil
-}
-
-// accountNamespace is the namespace holding an account's clusters and nodepools.
-func accountNamespace(accountID string) string {
-	return "account-" + accountID
 }
 
 func deleteNodepool(ctx context.Context, cs *hyperfleet.Clientset, namespace, nodepoolID string) error {

@@ -233,6 +233,22 @@ func (c *Clientset) HyperfleetV1alpha1() platform.V1alpha1PublicInterface {
 
 ---
 
+### Names and selectors
+
+Resources are addressed by name; the uid is the stable identity. Helpers in the root package build names and selectors:
+
+```go
+np, err := cs.HyperfleetV1alpha1().NodePools(hyperfleet.AccountNamespace(accountID)).Create(ctx, &v1alpha1.NodePool{
+    ObjectMeta: metav1.ObjectMeta{Name: hyperfleet.NodePoolName(cluster.Name, "workers")},
+    // ...
+}, platform.CreateOptions{})
+
+pools, err := cs.HyperfleetV1alpha1().NodePools(hyperfleet.AccountNamespace(accountID)).List(ctx,
+    platform.ListOptions{LabelSelector: hyperfleet.ClusterUIDSelector(cluster.UID)})
+```
+
+Reads return each object's labels and ownerReferences: a node pool carries its cluster's uid in the `hyperfleet.io/cluster-uid` label and a controller ownerReference.
+
 ### `platform/bridge_wrappers_generated.go` — platform interface + WaitUntil
 
 The Hyperfleet platform API does not support the Kubernetes watch stream protocol. The `platform` package provides generated wrapper types that:
@@ -253,7 +269,7 @@ On each CRD type, a marker drives WaitUntil generation:
 ```go
 func (c *clusterClient) WaitUntil(
     ctx context.Context,
-    id string,
+    name string,
     condition func(*v1alpha1.Cluster) bool,
     interval, timeout time.Duration,
 ) error
@@ -261,6 +277,7 @@ func (c *clusterClient) WaitUntil(
 
 - Polls `Get(ctx, name, ...)` every `interval` until `condition` returns true or `timeout` elapses.
 - On 404, `condition` is called with `nil` — the caller decides whether absence is the desired state.
+- Names can be reused after a delete, so the uid of the first object seen is remembered: once a different uid answers to the name, the original is gone and `condition` is called with `nil`.
 - Retries transparently on transient server errors (503, 504, 500).
 - Returns `ctx.Err()` on timeout/cancellation; returns the first non-transient error from `Get` immediately.
 

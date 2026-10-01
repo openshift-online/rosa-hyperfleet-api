@@ -48,7 +48,7 @@ func TestClient_ListClusters_ScopedToAccountNamespace(t *testing.T) {
 		testCluster("acct-2", "other-cluster", "uid-2"),
 	)
 
-	list, err := c.ListClusters(context.Background(), "acct-1")
+	list, err := c.ListClusters(context.Background(), "acct-1", nil)
 	if err != nil {
 		t.Fatalf("ListClusters: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestClient_ListNodePools_FiltersByClusterUID(t *testing.T) {
 	b := testCluster("acct-1", "b", "uid-b")
 	c := newTestClient(a, b, testNodePool(a, "workers"), testNodePool(b, "workers"))
 
-	all, err := c.ListNodePools(context.Background(), "acct-1", "")
+	all, err := c.ListNodePools(context.Background(), "acct-1", "", nil)
 	if err != nil {
 		t.Fatalf("ListNodePools: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestClient_ListNodePools_FiltersByClusterUID(t *testing.T) {
 		t.Errorf("expected 2 nodepools in the account, got %d", len(all.Items))
 	}
 
-	onlyA, err := c.ListNodePools(context.Background(), "acct-1", "uid-a")
+	onlyA, err := c.ListNodePools(context.Background(), "acct-1", "uid-a", nil)
 	if err != nil {
 		t.Fatalf("ListNodePools: %v", err)
 	}

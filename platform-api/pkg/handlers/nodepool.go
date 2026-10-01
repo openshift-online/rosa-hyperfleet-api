@@ -56,9 +56,15 @@ func (h *NodePoolHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	sel, err := labelSelector(r)
+	if err != nil {
+		writeAPIError(w, ErrNodePoolListInvalidSelector.WithReason(err.Error()), h.logger)
+		return
+	}
+
 	h.logger.Info("listing nodepools", "account_id", accountID, "limit", limit, "offset", offset, "cluster_uid", clusterUID)
 
-	list, err := h.db.ListNodePools(ctx, accountID, clusterUID)
+	list, err := h.db.ListNodePools(ctx, accountID, clusterUID, sel)
 	if err != nil {
 		h.logger.Error("failed to list nodepools", "error", err, "account_id", accountID)
 		writeAPIError(w, ErrNodePoolList, h.logger)

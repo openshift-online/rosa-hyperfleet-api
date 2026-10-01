@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -341,4 +342,57 @@ func mustMarshal(t *testing.T, v any) []byte {
 		t.Fatalf("json.Marshal: %v", err)
 	}
 	return b
+}
+
+// TestNodePoolHandler_Get_ReturnsOwnerMetadata verifies that reads return the
+// labels and ownerReferences the service set, so clients can follow the uid.
+func TestNodePoolHandler_Get_ReturnsOwnerMetadata(t *testing.T) {
+	cluster := testClusterCR(uuid.NewString(), "prod", testAccountID)
+	np := testNodePoolCR("workers", cluster)
+	handler, _ := newTestNodePoolHandler(t, cluster, np)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v0/nodepools/prod.workers", nil)
+	req = req.WithContext(testContext(testAccountID))
+	req = mux.SetURLVars(req, map[string]string{"name": "prod.workers"})
+	w := httptest.NewRecorder()
+	handler.Get(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var got struct {
+		Metadata metav1.ObjectMeta `json:"metadata"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Metadata.Labels[hyperfleetv1alpha1.ClusterUIDLabel] != string(cluster.UID) {
+		t.Errorf("expected cluster-uid label %s, got %v", cluster.UID, got.Metadata.Labels)
+	}
+	owner := metav1.GetControllerOf(&got.Metadata)
+	if owner == nil || owner.UID != cluster.UID || owner.Name != "prod" {
+		t.Errorf("expected controller ownerReference to prod/%s, got %+v", cluster.UID, got.Metadata.OwnerReferences)
+	}
+}
+
+func TestNodePoolHandler_List_LabelSelector(t *testing.T) {
+	a := testClusterCR(uuid.NewString(), "cluster-a", testAccountID)
+	b := testClusterCR(uuid.NewString(), "cluster-b", testAccountID)
+	handler, _ := newTestNodePoolHandler(t, a, b, testNodePoolCR("workers", a), testNodePoolCR("workers", b))
+
+	sel := url.QueryEscape(hyperfleetv1alpha1.ClusterUIDLabel + "=" + string(b.UID))
+	if got := listNodePools(t, handler, "?labelSelector="+sel); len(got) != 1 || got[0] != "cluster-b.workers" {
+		t.Errorf("selected pools = %v, want [cluster-b.workers]", got)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v0/nodepools?labelSelector="+url.QueryEscape("a in (b"), nil)
+	req = req.WithContext(testContext(testAccountID))
+	w := httptest.NewRecorder()
+	handler.List(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid selector: expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if msg := decodeErrorMessage(t, w); !containsCode(msg, ErrNodePoolListInvalidSelector.Code) {
+		t.Errorf("message %q does not contain code %s", msg, ErrNodePoolListInvalidSelector.Code)
+	}
 }
