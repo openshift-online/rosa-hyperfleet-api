@@ -7,8 +7,8 @@ import (
 )
 
 // ClusterSpec defines the desired state of a ROSA HCP cluster.
-// metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
-// The owning AWS account is stored as the label hyperfleet.io/account-id.
+// metadata.namespace is the owning account ("account-<id>"); metadata.name is the
+// client-chosen cluster name; metadata.uid, minted by the database, is the cluster ID.
 type ClusterSpec struct {
 	// DisplayName is a human-readable name for the cluster.
 	// +hyperfleet:write-mode=mutable

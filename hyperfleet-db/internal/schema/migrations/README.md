@@ -27,9 +27,10 @@ Creating an Index with a name that already exists in the same namespace returns
 `AlreadyExists` (409), which the controller or API handler uses as the
 collision signal.
 
-Higher-level resources (e.g. `DNSReservation` in `account-<id>`) carry an
-`IndexRef` (namespace + name) pointing to their backing Index. This separates
-account-scoped data from the global uniqueness guard.
+Each Index carries its holder's uid in the `hyperfleet.io/owner-uid` label, so a
+retried claim recognizes its own Index and the holder's finalizer releases exactly
+the Indexes it holds. The claimed data stays on the holder (e.g. a cluster's
+`status.baseDomain`); the Index is only the lock.
 
 ### When to use this pattern
 

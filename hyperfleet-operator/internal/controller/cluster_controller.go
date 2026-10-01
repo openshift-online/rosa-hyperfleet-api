@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,13 +52,6 @@ const (
 	clusterFinalizer   = "hyperfleet.io/cluster"
 	statusRefreshDelay = 5 * time.Minute
 	taskKey            = "hyperfleet-operator"
-
-	// accountIDLabel records the AWS account that owns a resource.
-	accountIDLabel = "hyperfleet.io/account-id"
-	// clusterNamespaceLabel records the namespace of the Cluster that owns a resource.
-	clusterNamespaceLabel = "hyperfleet.io/cluster-namespace"
-	// accountNSPrefix prefixes the per-account namespace name.
-	accountNSPrefix = "account-"
 )
 
 // ClusterReconciler reconciles a Cluster object by creating DynamoDB desires
@@ -78,7 +72,6 @@ type ClusterReconciler struct {
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=nodepools,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=placements,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=oidcconfigs,verbs=get;list;watch;update
-// +kubebuilder:rbac:groups=hyperfleet.io,resources=dnsreservations,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=indices,verbs=get;list;watch;create;delete
 
 // oidcSigningKeyExternal reports whether cluster's referenced OidcConfig is unmanaged
@@ -86,12 +79,8 @@ func (r *ClusterReconciler) oidcSigningKeyExternal(ctx context.Context, cluster 
 	if cluster.Spec.OidcConfigID == "" {
 		return false, nil
 	}
-	accountID := cluster.Labels[accountIDLabel]
-	if accountID == "" {
-		return false, nil
-	}
 	var oc hyperfleetv1alpha1.OidcConfig
-	key := types.NamespacedName{Namespace: accountNamespace(accountID), Name: cluster.Spec.OidcConfigID}
+	key := types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Spec.OidcConfigID}
 	if err := r.Get(ctx, key, &oc); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
@@ -101,23 +90,21 @@ func (r *ClusterReconciler) oidcSigningKeyExternal(ctx context.Context, cluster 
 	return oc.Spec.Type == hyperfleetv1alpha1.OidcConfigTypeUnmanaged, nil
 }
 
-// releaseOidcConfigClaim removes the clusterNamespaceLabel claim cluster set on its referenced OidcConfig at create time, so the config becomes claimable again by a future cluster.
+// releaseOidcConfigClaim removes the claimed-by-cluster-uid claim platform-api set on cluster's referenced
+// OidcConfig at create time, so the config becomes claimable again by a future cluster. A claim held by
+// any other uid is left alone.
 func (r *ClusterReconciler) releaseOidcConfigClaim(ctx context.Context, cluster *hyperfleetv1alpha1.Cluster) error {
-	accountID := cluster.Labels[accountIDLabel]
-	if accountID == "" {
-		return nil
-	}
-	key := types.NamespacedName{Namespace: accountNamespace(accountID), Name: cluster.Spec.OidcConfigID}
+	key := types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Spec.OidcConfigID}
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var oc hyperfleetv1alpha1.OidcConfig
 		if err := r.Get(ctx, key, &oc); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-		if oc.Labels[clusterNamespaceLabel] != cluster.Namespace {
+		if oc.Labels[hyperfleetv1alpha1.ClaimedByClusterUIDLabel] != string(cluster.UID) {
 			return nil
 		}
-		delete(oc.Labels, clusterNamespaceLabel)
+		delete(oc.Labels, hyperfleetv1alpha1.ClaimedByClusterUIDLabel)
 		return r.Update(ctx, &oc)
 	})
 }
@@ -153,9 +140,8 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Look up Placement — if none or not Bound, wait.
-	placementName := fmt.Sprintf("%s-placement", cluster.Name)
-	var placement hyperfleetv1alpha1.Placement
-	if err := r.Get(ctx, types.NamespacedName{Namespace: cluster.Namespace, Name: placementName}, &placement); err != nil {
+	placement, err := getPlacement(ctx, r, &cluster)
+	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Waiting for Placement", "cluster", cluster.Name)
 			r.setPhase(ctx, &cluster, hyperfleetv1alpha1.ClusterPhaseWaitingForPlacement)
@@ -164,7 +150,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, fmt.Errorf("get placement: %w", err)
 	}
 	if placement.Status.Phase != hyperfleetv1alpha1.PlacementPhaseBound {
-		log.Info("Placement not yet Bound", "placement", placementName)
+		log.Info("Placement not yet Bound", "placement", placement.Name)
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
@@ -192,11 +178,9 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, fmt.Errorf("render cluster resources: %w", err)
 	}
 
-	clusterID := render.ClusterIDFromNamespace(cluster.Namespace)
-	clusterName := cluster.Name // human-readable
-
-	hcName := clusterName
-	hcNs := cluster.Namespace
+	clusterID := string(cluster.UID)
+	hcName := cluster.Name
+	hcNs := hyperfleetv1alpha1.ManagementClusterNamespace(cluster.UID)
 	readDocID := dynamo.NewDocumentID(taskKey+"-read", "hypershift.openshift.io", "v1beta1", "hostedclusters", hcNs, hcName)
 
 	// Upsert ApplyDesires in parallel — no-op when content matches.
@@ -313,20 +297,17 @@ func (r *ClusterReconciler) reconcileDelete(ctx context.Context, cluster *hyperf
 	mc := ""
 	if cluster.Status.PlacementRef != nil {
 		mc = cluster.Status.PlacementRef.ManagementCluster
-	} else {
-		placementName := fmt.Sprintf("%s-placement", cluster.Name)
-		var placement hyperfleetv1alpha1.Placement
-		if err := r.Get(ctx, types.NamespacedName{Namespace: cluster.Namespace, Name: placementName}, &placement); err == nil {
-			mc = placement.Spec.ManagementCluster
-		}
+	} else if placement, err := getPlacement(ctx, r, cluster); err == nil {
+		mc = placement.Spec.ManagementCluster
 	}
 	if mc == "" {
 		return r.cleanupAndRemoveFinalizer(ctx, cluster)
 	}
 
-	// Delete NodePool CRs so HyperShift tears down worker nodes.
+	// Delete NodePool CRs so HyperShift tears down worker nodes. A cluster's
+	// objects are selected by its uid label, never by name or namespace.
 	var nodePools hyperfleetv1alpha1.NodePoolList
-	if err := r.List(ctx, &nodePools, client.InNamespace(cluster.Namespace)); err != nil {
+	if err := r.List(ctx, &nodePools, client.MatchingLabels{hyperfleetv1alpha1.ClusterUIDLabel: string(cluster.UID)}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("list nodepools: %w", err)
 	}
 	pendingNodePools := 0
@@ -343,9 +324,9 @@ func (r *ClusterReconciler) reconcileDelete(ctx context.Context, cluster *hyperf
 
 	specsPrefix := dynamo.SpecsPrefix(mc)
 	statusPrefix := dynamo.StatusPrefix(mc)
-	ns := cluster.Namespace
+	ns := hyperfleetv1alpha1.ManagementClusterNamespace(cluster.UID)
 	hcName := cluster.Name
-	clusterID := render.ClusterIDFromNamespace(cluster.Namespace)
+	clusterID := string(cluster.UID)
 
 	baseDomain := cluster.Status.BaseDomain
 
@@ -452,37 +433,15 @@ func (r *ClusterReconciler) cleanupAndRemoveFinalizer(ctx context.Context, clust
 		}
 	}
 
-	// Clean up the cluster's DNS reservation and its backing Index. Both are
-	// labeled with the cluster namespace, so deleting each set by label covers
-	// the fully-reserved case and a half-created one (Index created but the
-	// DNSReservation never was).
-	clusterOwned := client.MatchingLabels{clusterNamespaceLabel: cluster.Namespace}
-
-	var dnsList hyperfleetv1alpha1.DNSReservationList
-	if err := r.List(ctx, &dnsList, clusterOwned); err != nil {
-		return ctrl.Result{}, fmt.Errorf("list dns reservations for cleanup: %w", err)
-	}
-	for i := range dnsList.Items {
-		if err := r.Delete(ctx, &dnsList.Items[i]); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("delete dns reservation: %w", err)
-		}
+	// Release the cluster's Index claims (its DNS prefix). Only Indexes
+	// carrying this cluster's uid are deleted.
+	if err := releaseIndexes(ctx, r.Client, cluster.UID); err != nil {
+		return ctrl.Result{}, fmt.Errorf("release index claims: %w", err)
 	}
 
-	var idxList hyperfleetv1alpha1.IndexList
-	if err := r.List(ctx, &idxList, clusterOwned); err != nil {
-		return ctrl.Result{}, fmt.Errorf("list indexes for cleanup: %w", err)
-	}
-	for i := range idxList.Items {
-		if err := r.Delete(ctx, &idxList.Items[i]); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("delete index: %w", err)
-		}
-	}
-
-	placementName := fmt.Sprintf("%s-placement", cluster.Name)
-	var placement hyperfleetv1alpha1.Placement
-	if err := r.Get(ctx, types.NamespacedName{Namespace: cluster.Namespace, Name: placementName}, &placement); err == nil {
-		log.Info("Deleting Placement", "placement", placementName)
-		if err := r.Delete(ctx, &placement); err != nil && !apierrors.IsNotFound(err) {
+	if placement, err := getPlacement(ctx, r, cluster); err == nil {
+		log.Info("Deleting Placement", "placement", placement.Name)
+		if err := r.Delete(ctx, placement); err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, fmt.Errorf("delete placement: %w", err)
 		}
 	}
@@ -643,30 +602,43 @@ func (r *ClusterReconciler) setPhase(ctx context.Context, cluster *hyperfleetv1a
 // routing is needed, this will be replaced by dynamic shard selection.
 const defaultDNSShard = "0"
 
-func accountNamespace(accountID string) string {
-	return accountNSPrefix + accountID
-}
+const (
+	dnsShardNSPrefix = "dns-shard-"
+	dnsShardNSSuffix = "-reservations"
+)
 
+// dnsShardNamespace is the Index uniqueness scope for DNS prefixes in shard.
 func dnsShardNamespace(shard string) string {
-	return "dns-shard-" + shard + "-reservations"
+	return dnsShardNSPrefix + shard + dnsShardNSSuffix
 }
 
-// reserveDNS creates an Index + DNSReservation pair and returns the assembled base domain.
-func (r *ClusterReconciler) reserveDNS(ctx context.Context, cluster *hyperfleetv1alpha1.Cluster) (string, error) {
-	accountNS := accountNamespace(cluster.Spec.AccountID)
-
-	// Check for an existing reservation from a previous attempt where
-	// the status update may have failed.
-	var existing hyperfleetv1alpha1.DNSReservationList
-	if err := r.List(ctx, &existing,
-		client.InNamespace(accountNS),
-		client.MatchingLabels{clusterNamespaceLabel: cluster.Namespace},
-	); err != nil {
-		return "", fmt.Errorf("list dns reservations: %w", err)
+// dnsShardFromNamespace returns the shard whose uniqueness scope is ns.
+func dnsShardFromNamespace(ns string) (string, bool) {
+	shard, ok := strings.CutPrefix(ns, dnsShardNSPrefix)
+	if !ok {
+		return "", false
 	}
-	if len(existing.Items) > 0 {
-		bd := existing.Items[0].Spec.BaseDomain
-		return bd, r.persistBaseDomain(ctx, cluster, bd)
+	return strings.CutSuffix(shard, dnsShardNSSuffix)
+}
+
+func (r *ClusterReconciler) dnsBaseDomain(prefix, shard string) string {
+	return fmt.Sprintf("%s.%s.%s", prefix, shard, r.RegionalConfig.BaseDomainSuffix)
+}
+
+// reserveDNS claims a DNS prefix for cluster with a single Index in the shard's
+// uniqueness scope, records the assembled base domain in cluster.status.baseDomain,
+// and returns it. The Index is only the lock; the data lives on the cluster.
+func (r *ClusterReconciler) reserveDNS(ctx context.Context, cluster *hyperfleetv1alpha1.Cluster) (string, error) {
+	// A claim from an earlier attempt whose status update failed.
+	held, err := heldIndexes(ctx, r, cluster.UID)
+	if err != nil {
+		return "", err
+	}
+	for i := range held {
+		if shard, ok := dnsShardFromNamespace(held[i].Namespace); ok {
+			baseDomain := r.dnsBaseDomain(held[i].Name, shard)
+			return baseDomain, r.persistBaseDomain(ctx, cluster, baseDomain)
+		}
 	}
 
 	shard := defaultDNSShard
@@ -676,14 +648,15 @@ func (r *ClusterReconciler) reserveDNS(ctx context.Context, cluster *hyperfleetv
 			return "", fmt.Errorf("generate dns prefix: %w", err)
 		}
 
-		baseDomain, reserved, err := r.tryReserveDNS(ctx, cluster, shard, prefix)
+		claimed, err := claimIndex(ctx, r.Client, dnsShardNamespace(shard), prefix, cluster.UID)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("claim dns prefix: %w", err)
 		}
-		if !reserved {
-			continue
+		if !claimed {
+			continue // another cluster holds this prefix
 		}
 
+		baseDomain := r.dnsBaseDomain(prefix, shard)
 		if err := r.persistBaseDomain(ctx, cluster, baseDomain); err != nil {
 			return "", err
 		}
@@ -704,82 +677,6 @@ func (r *ClusterReconciler) persistBaseDomain(ctx context.Context, cluster *hype
 	})
 }
 
-// tryReserveDNS attempts a two-phase creation: first an Index in the shard's
-// uniqueness namespace, then a DNSReservation in the account namespace.
-// Returns:
-//   - baseDomain: fully assembled domain (only meaningful when reserved=true)
-//   - reserved: true if newly created or already owned by this cluster
-//   - err: non-nil on API errors (collision returns reserved=false, nil)
-func (r *ClusterReconciler) tryReserveDNS(ctx context.Context, cluster *hyperfleetv1alpha1.Cluster, shard, prefix string) (string, bool, error) {
-	baseDomain := fmt.Sprintf("%s.%s.%s", prefix, shard, r.RegionalConfig.BaseDomainSuffix)
-	shardNS := dnsShardNamespace(shard)
-	accountNS := accountNamespace(cluster.Spec.AccountID)
-
-	// Phase 1: Create the Index (global uniqueness guard).
-	idx := &hyperfleetv1alpha1.Index{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      prefix,
-			Namespace: shardNS,
-			Labels: map[string]string{
-				accountIDLabel:        cluster.Spec.AccountID,
-				clusterNamespaceLabel: cluster.Namespace,
-			},
-		},
-		Spec: hyperfleetv1alpha1.IndexSpec{},
-	}
-
-	if err := r.Create(ctx, idx); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return "", false, fmt.Errorf("create index: %w", err)
-		}
-		var existingIdx hyperfleetv1alpha1.Index
-		if err := r.Get(ctx, client.ObjectKey{Namespace: shardNS, Name: prefix}, &existingIdx); err != nil {
-			return "", false, err
-		}
-		if existingIdx.Labels[clusterNamespaceLabel] != cluster.Namespace {
-			return "", false, nil // different cluster owns this prefix
-		}
-		// We own it (idempotent re-entry) — fall through to phase 2.
-	}
-
-	// Phase 2: Create the DNSReservation (account-scoped data).
-	res := &hyperfleetv1alpha1.DNSReservation{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s", shard, prefix),
-			Namespace: accountNS,
-			Labels: map[string]string{
-				accountIDLabel:        cluster.Spec.AccountID,
-				clusterNamespaceLabel: cluster.Namespace,
-			},
-		},
-		Spec: hyperfleetv1alpha1.DNSReservationSpec{
-			IndexRef: hyperfleetv1alpha1.IndexRef{
-				Namespace: shardNS,
-				Name:      prefix,
-			},
-			BaseDomain: baseDomain,
-		},
-	}
-
-	if err := r.Create(ctx, res); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			// Clean up the orphaned Index.
-			_ = r.Delete(ctx, idx)
-			return "", false, fmt.Errorf("create dns reservation: %w", err)
-		}
-		var existingRes hyperfleetv1alpha1.DNSReservation
-		if err := r.Get(ctx, client.ObjectKeyFromObject(res), &existingRes); err != nil {
-			return "", false, err
-		}
-		if existingRes.Labels[clusterNamespaceLabel] == cluster.Namespace {
-			return existingRes.Spec.BaseDomain, true, nil
-		}
-		return "", false, nil
-	}
-
-	return baseDomain, true, nil
-}
-
 func randomHex4() (string, error) {
 	b := make([]byte, 2)
 	if _, err := rand.Read(b); err != nil {
@@ -792,23 +689,7 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
 		For(&hyperfleetv1alpha1.Cluster{}).
-		Watches(&hyperfleetv1alpha1.Placement{}, handler.EnqueueRequestsFromMapFunc(
-			func(ctx context.Context, obj client.Object) []reconcile.Request {
-				placement, ok := obj.(*hyperfleetv1alpha1.Placement)
-				if !ok {
-					return nil
-				}
-				if placement.Spec.ClusterName == "" {
-					return nil
-				}
-				return []reconcile.Request{
-					{NamespacedName: types.NamespacedName{
-						Namespace: placement.Namespace,
-						Name:      placement.Spec.ClusterName,
-					}},
-				}
-			},
-		)).
+		Owns(&hyperfleetv1alpha1.Placement{}).
 		Named("cluster")
 
 	if r.StatusEvents != nil {

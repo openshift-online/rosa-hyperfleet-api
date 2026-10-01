@@ -34,10 +34,11 @@ func IntentForCluster(cluster *hyperfleetv1alpha1.Cluster) *Intent {
 	}
 }
 
-// IdentityFromCluster derives alert label matchers for a cluster CR.
+// IdentityFromCluster derives alert label matchers for a cluster CR. Alerts
+// carry the cluster's namespace on its management cluster, "cluster-<uid>".
 func IdentityFromCluster(cluster *hyperfleetv1alpha1.Cluster) ClusterIdentity {
 	return ClusterIdentity{
-		Namespace: cluster.Namespace,
+		Namespace: hyperfleetv1alpha1.ManagementClusterNamespace(cluster.UID),
 		Name:      cluster.Name,
 	}
 }

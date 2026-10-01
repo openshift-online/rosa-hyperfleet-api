@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 
+	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
-	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 )
 
 // APIError is an alias for api.APIError so handler code uses the short form.
@@ -25,10 +25,11 @@ var (
 	ErrClusterCreateInvalidBody            APIError
 	ErrClusterCreateMissingFields          APIError
 	ErrClusterCreateFailed                 APIError
-	ErrClusterCreateNameCheck              APIError
 	ErrClusterCreateOidcConfigLookupFailed APIError
 	ErrClusterCreateNameConflict           APIError
-	ErrClusterCreateNameTooLong            APIError
+	ErrClusterCreateInvalidName            APIError
+	ErrClusterCreateInvalidMetadata        APIError
+	ErrClusterCreateForbiddenNamespace     APIError
 	ErrClusterCreateInvalidSpec            APIError
 
 	ErrClusterCreateOidcConfigRequired APIError
@@ -58,14 +59,17 @@ var (
 var (
 	ErrNodePoolList APIError
 
-	ErrNodePoolCreateInvalidBody      APIError
-	ErrNodePoolCreateMissingFields    APIError
-	ErrNodePoolCreateInvalidNamespace APIError
-	ErrNodePoolCreateNameConflict     APIError
-	ErrNodePoolCreateClusterNotFound  APIError
-	ErrNodePoolCreateClusterCheck     APIError
-	ErrNodePoolCreateInvalidSpec      APIError
-	ErrNodePoolCreateFailed           APIError
+	ErrNodePoolCreateInvalidBody        APIError
+	ErrNodePoolCreateMissingFields      APIError
+	ErrNodePoolCreateForbiddenNamespace APIError
+	ErrNodePoolCreateInvalidName        APIError
+	ErrNodePoolCreateInvalidMetadata    APIError
+	ErrNodePoolCreateClusterDeleting    APIError
+	ErrNodePoolCreateNameConflict       APIError
+	ErrNodePoolCreateClusterNotFound    APIError
+	ErrNodePoolCreateClusterCheck       APIError
+	ErrNodePoolCreateInvalidSpec        APIError
+	ErrNodePoolCreateFailed             APIError
 
 	ErrNodePoolGetNotFound APIError
 	ErrNodePoolGetFailed   APIError
@@ -225,10 +229,11 @@ func init() {
 	ErrClusterCreateInvalidBody = APIError{Code: "CLUSTERS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
 	ErrClusterCreateMissingFields = APIError{Code: "CLUSTERS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "Missing required fields: name and spec"}
 	ErrClusterCreateFailed = APIError{Code: "CLUSTERS-MGMT-CREATE-003", HTTPStatus: http.StatusInternalServerError, Message: "Failed to create cluster"}
-	ErrClusterCreateNameCheck = APIError{Code: "CLUSTERS-MGMT-CREATE-004", HTTPStatus: http.StatusInternalServerError, Message: "Failed to validate cluster name"}
 	ErrClusterCreateOidcConfigLookupFailed = APIError{Code: "CLUSTERS-MGMT-CREATE-013", HTTPStatus: http.StatusInternalServerError, Message: "Failed to look up referenced OIDC config"}
 	ErrClusterCreateNameConflict = APIError{Code: "CLUSTERS-MGMT-CREATE-005", HTTPStatus: http.StatusConflict, Message: "Cluster name already exists in this account", Reason: "a cluster named %q already exists in this account"}
-	ErrClusterCreateNameTooLong = APIError{Code: "CLUSTERS-MGMT-CREATE-006", HTTPStatus: http.StatusBadRequest, Message: fmt.Sprintf("Cluster name must be no more than %d characters", hyperfleetdb.MaxClusterNameLen)}
+	ErrClusterCreateInvalidName = APIError{Code: "CLUSTERS-MGMT-CREATE-006", HTTPStatus: http.StatusBadRequest, Message: fmt.Sprintf("Cluster name must be a DNS label of at most %d characters with no dots", hyperfleetv1alpha1.MaxClusterNameLength), Reason: "%s"}
+	ErrClusterCreateForbiddenNamespace = APIError{Code: "CLUSTERS-MGMT-CREATE-014", HTTPStatus: http.StatusForbidden, Message: "metadata.namespace must be the caller's account namespace", Reason: "%s"}
+	ErrClusterCreateInvalidMetadata = APIError{Code: "CLUSTERS-MGMT-CREATE-015", HTTPStatus: http.StatusBadRequest, Message: "Invalid metadata labels or annotations", Reason: "%s"}
 	ErrClusterCreateInvalidSpec = APIError{Code: "CLUSTERS-MGMT-CREATE-008", HTTPStatus: http.StatusBadRequest, Message: "Invalid cluster spec"}
 	ErrClusterCreateOidcConfigRequired = APIError{Code: "CLUSTERS-MGMT-CREATE-009", HTTPStatus: http.StatusBadRequest, Message: "spec.oidcConfigId is required"}
 	ErrClusterCreateOidcConfigNotFound = APIError{Code: "CLUSTERS-MGMT-CREATE-010", HTTPStatus: http.StatusNotFound, Message: "Referenced OIDC config not found"}
@@ -262,13 +267,16 @@ func init() {
 
 	// NodePool — Create
 	ErrNodePoolCreateInvalidBody = APIError{Code: "NODEPOOLS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrNodePoolCreateMissingFields = APIError{Code: "NODEPOOLS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "Missing required fields: metadata.name and metadata.namespace"}
+	ErrNodePoolCreateMissingFields = APIError{Code: "NODEPOOLS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "Missing required field: metadata.name"}
 	ErrNodePoolCreateNameConflict = APIError{Code: "NODEPOOLS-MGMT-CREATE-003", HTTPStatus: http.StatusConflict, Message: "NodePool already exists"}
 	ErrNodePoolCreateClusterNotFound = APIError{Code: "NODEPOOLS-MGMT-CREATE-004", HTTPStatus: http.StatusNotFound, Message: "Referenced cluster not found"}
 	ErrNodePoolCreateClusterCheck = APIError{Code: "NODEPOOLS-MGMT-CREATE-005", HTTPStatus: http.StatusInternalServerError, Message: "Failed to validate cluster reference"}
 	ErrNodePoolCreateInvalidSpec = APIError{Code: "NODEPOOLS-MGMT-CREATE-006", HTTPStatus: http.StatusBadRequest, Message: "Invalid nodepool spec"}
 	ErrNodePoolCreateFailed = APIError{Code: "NODEPOOLS-MGMT-CREATE-007", HTTPStatus: http.StatusInternalServerError, Message: "Failed to create nodepool"}
-	ErrNodePoolCreateInvalidNamespace = APIError{Code: "NODEPOOLS-MGMT-CREATE-008", HTTPStatus: http.StatusBadRequest, Message: "metadata.namespace must be a valid cluster namespace (cluster-<uuid>)"}
+	ErrNodePoolCreateForbiddenNamespace = APIError{Code: "NODEPOOLS-MGMT-CREATE-008", HTTPStatus: http.StatusForbidden, Message: "metadata.namespace must be the caller's account namespace", Reason: "%s"}
+	ErrNodePoolCreateInvalidName = APIError{Code: "NODEPOOLS-MGMT-CREATE-009", HTTPStatus: http.StatusBadRequest, Message: "NodePool name must be <cluster>.<nodepool>, each part a DNS label with no dots", Reason: "%s"}
+	ErrNodePoolCreateClusterDeleting = APIError{Code: "NODEPOOLS-MGMT-CREATE-010", HTTPStatus: http.StatusConflict, Message: "Referenced cluster is being deleted"}
+	ErrNodePoolCreateInvalidMetadata = APIError{Code: "NODEPOOLS-MGMT-CREATE-011", HTTPStatus: http.StatusBadRequest, Message: "Invalid metadata labels or annotations", Reason: "%s"}
 
 	// NodePool — Get
 	ErrNodePoolGetNotFound = APIError{Code: "NODEPOOLS-MGMT-GET-001", HTTPStatus: http.StatusNotFound, Message: "NodePool not found"}

@@ -8,8 +8,10 @@ import (
 
 // Cluster is the Schema for the clusters API.
 // It represents a ROSA HCP cluster whose lifecycle is managed by the hyperfleet-operator.
-// metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
-// The owning account is the label hyperfleet.io/account-id.
+// metadata.namespace is the owning account ("account-<id>"); metadata.name is the
+// client-chosen cluster name (a DNS label of at most 18 characters, never changed);
+// metadata.uid is the cluster ID. On the management cluster the cluster's objects
+// live in the namespace "cluster-<uid>".
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:subresource:status

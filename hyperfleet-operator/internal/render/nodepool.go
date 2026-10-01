@@ -12,12 +12,17 @@ import (
 
 const defaultRootVolumeSizeGiB int64 = 300
 
-// NodePoolResource generates the HyperShift NodePool resource for the MC.
+// NodePoolResource generates the HyperShift NodePool resource for the MC. It
+// lives in the cluster's MC namespace "cluster-<uid>" under the child part of
+// the NodePool's "<cluster>.<nodepool>" name.
 func NodePoolResource(nodePool *hyperfleetv1alpha1.NodePool, cluster *hyperfleetv1alpha1.Cluster) (Resource, error) {
-	clusterID := ClusterIDFromNamespace(cluster.Namespace)
-	clusterName := cluster.Name // human-readable
-	ns := cluster.Namespace     // already "cluster-<uuid>"
-	npName := fmt.Sprintf("%s-%s", clusterName, nodePool.Name)
+	clusterID := string(cluster.UID)
+	clusterName := cluster.Name
+	ns := hyperfleetv1alpha1.ManagementClusterNamespace(cluster.UID)
+	_, npName, err := hyperfleetv1alpha1.SplitChildName(nodePool.Name)
+	if err != nil {
+		return Resource{}, fmt.Errorf("nodepool %s/%s: %w", nodePool.Namespace, nodePool.Name, err)
+	}
 
 	npSpec, err := toNodePoolSpec(&nodePool.Spec.NodePool)
 	if err != nil {

@@ -105,7 +105,7 @@ The platform API differs from a standard Kubernetes API in three ways that requi
 | Difference                                               | Solution                                                                                                                                  |
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Requests are signed with AWS SigV4                       | `transport/sigv4.go` — custom RoundTripper                                                                                                |
-| The API is account-scoped while generated clients may use namespace paths | SigV4 transport extracts the generated namespace path value, maps it to `X-Amz-Account-Id`, and strips the `/namespaces/{ns}/` segment |
+| The API is account-scoped while generated clients may use namespace paths | SigV4 transport strips the `/namespaces/{ns}/` segment; `X-Amz-Account-Id` is the configured account, never the namespace |
 | Pagination uses `offset` rather than Kubernetes `continue` | `transport/bridge.go` — query adapter                                                                                                      |
 
 ### `rest/config.go` — SDK configuration
@@ -126,7 +126,7 @@ type Config struct {
 
 Every outbound request goes through `SigV4RoundTripper.RoundTrip`:
 
-1. For generated namespaced clients, the request path contains `/namespaces/{value}/`. The transport strips this segment and promotes the value to the `X-Amz-Account-Id` signed header. Non-namespaced resources do not include this segment.
+1. For generated namespaced clients, the request path contains `/namespaces/{value}/`. The transport strips this segment; the namespace (`account-<id>`) travels in the request body, where platform-api checks it against the caller's account. `X-Amz-Account-Id` is always the configured `AccountID`. Non-namespaced resources do not include this segment.
 2. The request body is buffered, hashed (SHA-256), and restored so SigV4 can include the payload hash in the signature.
 3. The request is signed with `aws/signer/v4` against the `execute-api` service.
 
@@ -238,8 +238,7 @@ func (c *Clientset) HyperfleetV1alpha1() platform.V1alpha1PublicInterface {
 The Hyperfleet platform API does not support the Kubernetes watch stream protocol. The `platform` package provides generated wrapper types that:
 
 1. Expose only the operations the platform API supports, using platform-specific option types from `platform/options.go`.
-2. Route `Update` calls by UID — the wrapper deep-copies the object and sets `Name = UID` before calling the inner client, so the generated client builds the PUT URL with the UID regardless of what the caller has in `metadata.name`.
-3. Add `WaitUntil` — a polling-based alternative to Watch that repeatedly calls `Get` and evaluates a caller-supplied condition.
+2. Add `WaitUntil` — a polling-based alternative to Watch that repeatedly calls `Get` and evaluates a caller-supplied condition.
 
 **Markers**
 
@@ -260,7 +259,7 @@ func (c *clusterClient) WaitUntil(
 ) error
 ```
 
-- Polls `Get(ctx, id, ...)` every `interval` until `condition` returns true or `timeout` elapses.
+- Polls `Get(ctx, name, ...)` every `interval` until `condition` returns true or `timeout` elapses.
 - On 404, `condition` is called with `nil` — the caller decides whether absence is the desired state.
 - Retries transparently on transient server errors (503, 504, 500).
 - Returns `ctx.Err()` on timeout/cancellation; returns the first non-transient error from `Get` immediately.
@@ -269,7 +268,7 @@ func (c *clusterClient) WaitUntil(
 
 ```go
 err := cs.HyperfleetV1alpha1().Clusters().WaitUntil(
-    ctx, clusterID,
+    ctx, clusterName,
     func(c *v1alpha1.Cluster) bool { return c == nil },
     10*time.Second, 5*time.Minute,
 )
@@ -279,7 +278,7 @@ err := cs.HyperfleetV1alpha1().Clusters().WaitUntil(
 
 ```go
 err := cs.HyperfleetV1alpha1().Clusters().WaitUntil(
-    ctx, clusterID,
+    ctx, clusterName,
     func(c *v1alpha1.Cluster) bool {
         return c != nil && c.Status.Phase == v1alpha1.ClusterPhaseReady
     },

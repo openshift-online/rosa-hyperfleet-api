@@ -158,8 +158,7 @@ func (a *Authz) deriveAction(r *http.Request) string {
 
 	// Special case: List operations
 	if method == http.MethodGet {
-		vars := mux.Vars(r)
-		if _, hasID := vars["id"]; !hasID {
+		if _, hasID := routeResourceID(r); !hasID {
 			actionPrefix = "List"
 			// Pluralize for list operations
 			resourceType = resourceType + "s"
@@ -171,10 +170,8 @@ func (a *Authz) deriveAction(r *http.Request) string {
 
 // deriveResource derives the ROSA resource ARN from the HTTP request
 func (a *Authz) deriveResource(r *http.Request) string {
-	vars := mux.Vars(r)
-
 	// Check for resource ID in path
-	if id, ok := vars["id"]; ok {
+	if id, ok := routeResourceID(r); ok {
 		accountID := GetAccountID(r.Context())
 		// Build ARN based on resource type
 		path := r.URL.Path
@@ -192,6 +189,17 @@ func (a *Authz) deriveResource(r *http.Request) string {
 
 	// No specific resource - use wildcard
 	return "*"
+}
+
+// routeResourceID returns the resource a route addresses: clusters and node
+// pools are addressed by {name}, other resources by {id}.
+func routeResourceID(r *http.Request) (string, bool) {
+	vars := mux.Vars(r)
+	if name, ok := vars["name"]; ok {
+		return name, true
+	}
+	id, ok := vars["id"]
+	return id, ok
 }
 
 // buildARN creates a ROSA ARN using the configured region

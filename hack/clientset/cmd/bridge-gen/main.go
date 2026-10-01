@@ -122,7 +122,7 @@ type {{.Name}}Interface interface {
 {{- if .Wait}}
 	// WaitUntil polls until condition(obj) returns true, the resource is absent
 	// (condition is called with nil), or the timeout elapses.
-	WaitUntil(ctx context.Context, id string, condition func(*v1alpha1.{{.Name}}) bool, interval, timeout time.Duration) error
+	WaitUntil(ctx context.Context, name string, condition func(*v1alpha1.{{.Name}}) bool, interval, timeout time.Duration) error
 {{- end}}
 }
 
@@ -137,9 +137,10 @@ type {{.LowerName}}Client struct {
 
 func (c *{{.LowerName}}Client) Create(ctx context.Context, obj *v1alpha1.{{.Name}}, opts CreateOptions) (*v1alpha1.{{.Name}}, error) {
 {{- if .NonNamespaced}}{{else}}
-	// Always enforce the client namespace in the body so the handler can derive the
-	// parent resource ID. The SigV4 transport strips /namespaces/{value}/ from the
-	// URL before it reaches the server, making the body the only carrier.
+	// Always enforce the client namespace (the account namespace) in the body so the
+	// handler can check it against the caller's account. The SigV4 transport strips
+	// /namespaces/{value}/ from the URL before it reaches the server, making the
+	// body the only carrier.
 	// A caller-supplied namespace that differs from the client namespace is replaced
 	// rather than silently passed through.
 	if c.namespace != "" && obj.Namespace != c.namespace {
@@ -170,15 +171,9 @@ func (c *{{.LowerName}}Client) List(ctx context.Context, opts ListOptions) (*v1a
 }
 
 func (c *{{.LowerName}}Client) Update(ctx context.Context, obj *v1alpha1.{{.Name}}, opts UpdateOptions) (*v1alpha1.{{.Name}}, error) {
-	// The generated client builds the PUT URL using obj.Name (the human-readable
-	// name), but the platform API routes mutations by UID. Setting Name to the
-	// UID on a deep copy ensures the URL is correct without mutating the caller's
-	// object. The name field sent in the request body is ignored by the server —
-	// the update DTO only binds "spec", so the JSON decoder discards everything
-	// else, including any name/id fields.
-	routed := obj.DeepCopy()
-	routed.Name = string(obj.UID)
-	return c.inner.Update(ctx, routed, metav1.UpdateOptions{})
+	// The platform API routes by name, as the generated client does. The server
+	// binds only "spec" from the body; identity and metadata never change on update.
+	return c.inner.Update(ctx, obj, metav1.UpdateOptions{})
 }
 
 func (c *{{.LowerName}}Client) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts PatchOptions) (*v1alpha1.{{.Name}}, error) {
@@ -189,11 +184,11 @@ func (c *{{.LowerName}}Client) Delete(ctx context.Context, name string, opts Del
 	return c.inner.Delete(ctx, name, metav1.DeleteOptions{})
 }
 {{if .Wait}}
-func (c *{{.LowerName}}Client) WaitUntil(ctx context.Context, id string, condition func(*v1alpha1.{{.Name}}) bool, interval, timeout time.Duration) error {
+func (c *{{.LowerName}}Client) WaitUntil(ctx context.Context, name string, condition func(*v1alpha1.{{.Name}}) bool, interval, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	poll := func() (bool, error) {
-		obj, err := c.inner.Get(ctx, id, metav1.GetOptions{})
+		obj, err := c.inner.Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			if k8serrors.IsNotFound(err) {
 				return condition(nil), nil

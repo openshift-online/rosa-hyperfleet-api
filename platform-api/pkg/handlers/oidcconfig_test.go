@@ -16,7 +16,6 @@ import (
 
 	"github.com/gorilla/mux"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 
@@ -45,8 +44,7 @@ func testIssuerIndex(issuerURL, oidcConfigID, accountID string) *hyperfleetv1alp
 			Name:      hyperfleetv1alpha1.IssuerURLIndexName(issuerURL),
 			Namespace: hyperfleetv1alpha1.OidcIssuerReservationsNamespace,
 			Labels: map[string]string{
-				"hyperfleet.io/account-id":    accountID,
-				"hyperfleet.io/oidcconfig-id": oidcConfigID,
+				hyperfleetv1alpha1.OwnerUIDLabel: oidcConfigID,
 			},
 		},
 	}
@@ -70,7 +68,7 @@ func testUnmanagedOidcConfigSpec(accountID string) hyperfleetv1alpha1.OidcConfig
 
 func TestOidcConfigHandler_List_Success(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := fakeDB(scheme).WithObjects(
 		testOidcConfigCR("oidc-1", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 		testOidcConfigCR("oidc-2", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 	).Build()
@@ -101,7 +99,7 @@ func TestOidcConfigHandler_List_Success(t *testing.T) {
 
 func TestOidcConfigHandler_List_Empty(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := fakeDB(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 
@@ -129,7 +127,7 @@ func TestOidcConfigHandler_List_Empty(t *testing.T) {
 
 func TestOidcConfigHandler_List_Pagination(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := fakeDB(scheme).WithObjects(
 		testOidcConfigCR("oidc-1", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 		testOidcConfigCR("oidc-2", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 		testOidcConfigCR("oidc-3", testAccountID, testManagedOidcConfigSpec(testAccountID)),
@@ -167,7 +165,7 @@ func TestOidcConfigHandler_List_Pagination(t *testing.T) {
 
 func TestOidcConfigHandler_List_OffsetBeyondTotal(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := fakeDB(scheme).WithObjects(
 		testOidcConfigCR("oidc-1", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -197,7 +195,7 @@ func TestOidcConfigHandler_List_OffsetBeyondTotal(t *testing.T) {
 
 func TestOidcConfigHandler_Create_Success(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := fakeDB(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 	handler.generateID = func() string { return "generated-config-id" }
@@ -221,8 +219,11 @@ func TestOidcConfigHandler_Create_Success(t *testing.T) {
 	var result map[string]any
 	_ = json.NewDecoder(w.Body).Decode(&result)
 
-	if uid := metaField(result, "uid"); uid != "generated-config-id" {
-		t.Errorf("expected metadata.uid=generated-config-id, got %v", uid)
+	if name := metaField(result, "name"); name != "generated-config-id" {
+		t.Errorf("expected metadata.name=generated-config-id, got %v", name)
+	}
+	if uid := metaField(result, "uid"); uid == nil || uid == "" || uid == "generated-config-id" {
+		t.Errorf("expected a database-minted metadata.uid, got %v", uid)
 	}
 	spec := result["spec"].(map[string]any)
 	if spec["type"] != "managed" {
@@ -236,7 +237,7 @@ func TestOidcConfigHandler_Create_Success(t *testing.T) {
 
 func TestOidcConfigHandler_Create_ManagedRejectsWhenIssuerBaseURLNotConfigured(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := fakeDB(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	// A blank base URL must never be silently turned into a path-only
 	// issuerUrl (e.g. "/generated-config-id"); the server should refuse to
@@ -273,7 +274,7 @@ func TestOidcConfigHandler_Create_ManagedRejectsWhenIssuerBaseURLNotConfigured(t
 
 func TestOidcConfigHandler_Create_ManagedIgnoresClientIssuerUrl(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := fakeDB(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 	handler.generateID = func() string { return "generated-config-id" }
@@ -315,7 +316,7 @@ func TestOidcConfigHandler_Create_ManagedIgnoresClientIssuerUrl(t *testing.T) {
 
 func TestOidcConfigHandler_Create_InvalidJSON(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := fakeDB(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 
@@ -352,7 +353,7 @@ func TestOidcConfigHandler_Create_MissingFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			scheme := newTestScheme()
-			fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+			fc := fakeDB(scheme).Build()
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 
@@ -377,7 +378,7 @@ func TestOidcConfigHandler_Create_MissingFields(t *testing.T) {
 
 func TestOidcConfigHandler_Create_InvalidType(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := fakeDB(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 
@@ -452,7 +453,7 @@ func TestOidcConfigHandler_Create_InvalidFieldsForType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			scheme := newTestScheme()
-			fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+			fc := fakeDB(scheme).Build()
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 
@@ -478,7 +479,7 @@ func TestOidcConfigHandler_Create_InvalidFieldsForType(t *testing.T) {
 
 func TestOidcConfigHandler_Create_UnmanagedSuccess(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := fakeDB(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 	handler.generateID = func() string { return "generated-config-id" }
@@ -514,7 +515,7 @@ func TestOidcConfigHandler_Create_UnmanagedSuccess(t *testing.T) {
 // before it's stored or used as the Index name.
 func TestOidcConfigHandler_Create_UnmanagedNormalizesIssuerUrl(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := fakeDB(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 	handler.generateID = func() string { return "generated-config-id" }
@@ -573,7 +574,7 @@ func TestOidcConfigHandler_Create_UnmanagedInvalidIssuerUrl(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			scheme := newTestScheme()
-			fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+			fc := fakeDB(scheme).Build()
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 
@@ -615,7 +616,7 @@ func TestOidcConfigHandler_Create_UnmanagedDuplicateIssuerUrlSameAccount(t *test
 		InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
 		AccountID:        testAccountID,
 	}
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := fakeDB(scheme).WithObjects(
 		testOidcConfigCR("oidc-existing", testAccountID, existingSpec),
 		testIssuerIndex("https://example.com/oidc", "oidc-existing", testAccountID),
 	).Build()
@@ -661,7 +662,7 @@ func TestOidcConfigHandler_Create_UnmanagedDuplicateIssuerUrlDifferentAccountRej
 		InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
 		AccountID:        otherAccount,
 	}
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := fakeDB(scheme).WithObjects(
 		testOidcConfigCR("oidc-existing", otherAccount, existingSpec),
 		testIssuerIndex("https://example.com/oidc", "oidc-existing", otherAccount),
 	).Build()
@@ -693,7 +694,7 @@ func TestOidcConfigHandler_Create_UnmanagedDuplicateIssuerUrlDifferentAccountRej
 // accepted trade-off: Create's fast-path check is best-effort, so two never-before-seen duplicates can both return 201.
 func TestOidcConfigHandler_Create_UnmanagedSameIssuerUrlBothSucceedWithoutIndexYet(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := fakeDB(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 
@@ -725,7 +726,7 @@ func TestOidcConfigHandler_Create_UnmanagedSameIssuerUrlBothSucceedWithoutIndexY
 
 func TestOidcConfigHandler_Get_Success(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := fakeDB(scheme).WithObjects(
 		testOidcConfigCR("oidc-123", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -745,14 +746,14 @@ func TestOidcConfigHandler_Get_Success(t *testing.T) {
 	var result map[string]any
 	_ = json.NewDecoder(w.Body).Decode(&result)
 
-	if uid := metaField(result, "uid"); uid != "oidc-123" {
-		t.Errorf("expected metadata.uid=oidc-123, got %v", uid)
+	if name := metaField(result, "name"); name != "oidc-123" {
+		t.Errorf("expected metadata.name=oidc-123, got %v", name)
 	}
 }
 
 func TestOidcConfigHandler_Get_NotFound(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := fakeDB(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 
@@ -777,7 +778,7 @@ func TestOidcConfigHandler_Get_NotFound(t *testing.T) {
 func TestOidcConfigHandler_Get_WrongAccount(t *testing.T) {
 	otherAccount := "999999999999"
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := fakeDB(scheme).WithObjects(
 		testOidcConfigCR("oidc-123", otherAccount, testManagedOidcConfigSpec(otherAccount)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -797,7 +798,7 @@ func TestOidcConfigHandler_Get_WrongAccount(t *testing.T) {
 
 func TestOidcConfigHandler_Delete_Success(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+	fc := fakeDB(scheme).WithObjects(
 		testOidcConfigCR("oidc-123", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -824,11 +825,11 @@ func TestOidcConfigHandler_Delete_Success(t *testing.T) {
 func TestOidcConfigHandler_Delete_InUse(t *testing.T) {
 	scheme := newTestScheme()
 	oidcConfig := testOidcConfigCR("oidc-123", testAccountID, testManagedOidcConfigSpec(testAccountID))
-	// In-use is now signaled by the clusterNamespaceLabel claim on the OidcConfig itself, not by scanning Cluster rows.
-	oidcConfig.Labels = map[string]string{clusterNamespaceLabel: "cluster-cluster-id"}
+	// In-use is signaled by the claimed-by-cluster-uid label on the OidcConfig itself, not by scanning Cluster rows.
+	oidcConfig.Labels = map[string]string{hyperfleetv1alpha1.ClaimedByClusterUIDLabel: "cluster-uid"}
 	referencingCluster := testClusterCR("cluster-id", "referencing-cluster", testAccountID)
 	referencingCluster.Spec.OidcConfigID = "oidc-123"
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(oidcConfig, referencingCluster).Build()
+	fc := fakeDB(scheme).WithObjects(oidcConfig, referencingCluster).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 
@@ -857,10 +858,10 @@ func TestOidcConfigHandler_Delete_InUse(t *testing.T) {
 func TestOidcConfigHandler_Delete_AfterClusterDeletedSucceeds(t *testing.T) {
 	scheme := newTestScheme()
 	oidcConfig := testOidcConfigCR("oidc-123", testAccountID, testManagedOidcConfigSpec(testAccountID))
-	oidcConfig.Labels = map[string]string{clusterNamespaceLabel: "cluster-cluster-id"}
+	oidcConfig.Labels = map[string]string{hyperfleetv1alpha1.ClaimedByClusterUIDLabel: "cluster-uid"}
 	referencingCluster := testClusterCR("cluster-id", "referencing-cluster", testAccountID)
 	referencingCluster.Spec.OidcConfigID = "oidc-123"
-	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(oidcConfig, referencingCluster).Build()
+	fc := fakeDB(scheme).WithObjects(oidcConfig, referencingCluster).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 
@@ -883,7 +884,7 @@ func TestOidcConfigHandler_Delete_AfterClusterDeletedSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to fetch oidc config: %v", err)
 	}
-	delete(latest.Labels, clusterNamespaceLabel)
+	delete(latest.Labels, hyperfleetv1alpha1.ClaimedByClusterUIDLabel)
 	if err := handler.db.UpdateOidcConfigObject(context.Background(), latest); err != nil {
 		t.Fatalf("failed to release claim label: %v", err)
 	}
@@ -898,7 +899,7 @@ func TestOidcConfigHandler_Delete_AfterClusterDeletedSucceeds(t *testing.T) {
 
 func TestOidcConfigHandler_Delete_NotFound(t *testing.T) {
 	scheme := newTestScheme()
-	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fc := fakeDB(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
 

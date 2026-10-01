@@ -203,6 +203,11 @@ paths:
       description: |
         Create a new cluster for the authenticated user.
 
+        metadata.name is chosen by the client and never changes: a DNS label of at
+        most 18 characters with no dots. metadata.namespace, when set, must be the
+        caller's account namespace ("account-<id>"). metadata.uid, the cluster ID,
+        is assigned by the service and returned in the response.
+
         The API automatically enriches the cluster spec with:
         - hostedCluster.issuerURL: Auto-populated from the regional OIDC CloudFront distribution
         - hostedCluster.release.image: Defaulted if not provided
@@ -212,8 +217,10 @@ paths:
         - CLUSTERS-MGMT-CREATE-001: Invalid request body
         - CLUSTERS-MGMT-CREATE-002: Missing required fields (metadata.name and non-empty spec)
         - CLUSTERS-MGMT-CREATE-003: Failed to create cluster
-        - CLUSTERS-MGMT-CREATE-004: Failed to validate cluster name
         - CLUSTERS-MGMT-CREATE-005: Duplicate cluster name
+        - CLUSTERS-MGMT-CREATE-006: Invalid cluster name
+        - CLUSTERS-MGMT-CREATE-014: metadata.namespace is not the caller's account namespace
+        - CLUSTERS-MGMT-CREATE-015: Invalid metadata labels or annotations
       operationId: createUserCluster
       tags:
         - Clusters
@@ -234,19 +241,21 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /clusters/{id}:
+  /clusters/{name}:
     parameters:
-      - name: id
+      - name: name
         in: path
         required: true
         schema:
           type: string
-        description: Cluster ID
+        description: Cluster name (metadata.name)
 
     get:
       summary: Get cluster details
@@ -373,7 +382,7 @@ paths:
           in: query
           schema:
             type: string
-          description: Filter by cluster ID (optional)
+          description: Filter by the owning cluster's ID, its metadata.uid (optional)
         - name: limit
           in: query
           schema:
@@ -405,7 +414,12 @@ paths:
 
     post:
       summary: Create nodepool
-      description: Create a new nodepool for the authenticated user. AWS root volume size defaults to 300 GiB when omitted.
+      description: |
+        Create a new nodepool for the authenticated user. metadata.name is
+        "<cluster>.<nodepool>", where <cluster> names an existing cluster in the
+        caller's account; each part is a DNS label with no dots. metadata.namespace,
+        when set, must be the caller's account namespace. AWS root volume size
+        defaults to 300 GiB when omitted.
       operationId: createUserNodePool
       tags:
         - NodePools
@@ -426,6 +440,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -433,19 +449,14 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /nodepools/{id}:
+  /nodepools/{name}:
     parameters:
-      - name: id
+      - name: name
         in: path
         required: true
         schema:
           type: string
-        description: NodePool ID
-      - name: clusterId
-        in: query
-        schema:
-          type: string
-        description: Parent cluster ID used to scope duplicate NodePool names
+        description: NodePool name (metadata.name), "<cluster>.<nodepool>"
 
     get:
       summary: Get nodepool details
@@ -2071,8 +2082,8 @@ components:
     ClusterSpec:
       description: |-
           ClusterSpec defines the desired state of a ROSA HCP cluster.
-          metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
-          The owning AWS account is stored as the label hyperfleet.io/account-id.
+          metadata.namespace is the owning account ("account-<id>"); metadata.name is the
+          client-chosen cluster name; metadata.uid, minted by the database, is the cluster ID.
       properties:
           controlPlaneUpgradePolicy:
               description: ControlPlaneUpgradePolicy is the control plane upgrade policy defined by the user.
@@ -2176,7 +2187,8 @@ components:
     NodePoolSpec:
       description: |-
           NodePoolSpec defines the desired state of a NodePool.
-          The parent Cluster is identified by the shared metadata.Namespace (cluster UUID).
+          metadata.name is "<cluster>.<nodepool>". The parent Cluster is identified by the
+          controller ownerReference and the hyperfleet.io/cluster-uid label, both set at create.
       properties:
           autoRepair:
               description: AutoRepair controls whether unhealthy nodes are automatically replaced.
@@ -2200,8 +2212,10 @@ components:
       description: |-
           Cluster is the Schema for the clusters API.
           It represents a ROSA HCP cluster whose lifecycle is managed by the hyperfleet-operator.
-          metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
-          The owning account is the label hyperfleet.io/account-id.
+          metadata.namespace is the owning account ("account-<id>"); metadata.name is the
+          client-chosen cluster name (a DNS label of at most 18 characters, never changed);
+          metadata.uid is the cluster ID. On the management cluster the cluster's objects
+          live in the namespace "cluster-<uid>".
       properties:
           apiVersion:
               description: |-
@@ -2223,8 +2237,8 @@ components:
           spec:
               description: |-
                   ClusterSpec defines the desired state of a ROSA HCP cluster.
-                  metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
-                  The owning AWS account is stored as the label hyperfleet.io/account-id.
+                  metadata.namespace is the owning account ("account-<id>"); metadata.name is the
+                  client-chosen cluster name; metadata.uid, minted by the database, is the cluster ID.
               properties:
                   controlPlaneUpgradePolicy:
                       description: ControlPlaneUpgradePolicy is the control plane upgrade policy defined by the user.
@@ -4440,10 +4454,11 @@ components:
               properties:
                   baseDomain:
                       description: |-
-                          BaseDomain is the DNS base domain assigned to this cluster via a DNSReservation
+                          BaseDomain is the DNS base domain assigned to this cluster
                           (e.g. "f7a3.0.openshiftapps.com", assembled as {prefix}.{shard}.{baseDomain},
-                          where baseDomain is the operator's configured --base-domain).
-                          Empty when not yet reserved. Set by the operator when the DNSReservation is created or claimed.
+                          where baseDomain is the operator's configured --base-domain). The prefix is
+                          claimed by an Index in the shard's uniqueness namespace.
+                          Empty until the operator has claimed a prefix.
                       type: string
                   conditions:
                       description: |-
@@ -4593,8 +4608,10 @@ components:
                   description: |-
                       Cluster is the Schema for the clusters API.
                       It represents a ROSA HCP cluster whose lifecycle is managed by the hyperfleet-operator.
-                      metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
-                      The owning account is the label hyperfleet.io/account-id.
+                      metadata.namespace is the owning account ("account-<id>"); metadata.name is the
+                      client-chosen cluster name (a DNS label of at most 18 characters, never changed);
+                      metadata.uid is the cluster ID. On the management cluster the cluster's objects
+                      live in the namespace "cluster-<uid>".
                   properties:
                       apiVersion:
                           description: |-
@@ -4616,8 +4633,8 @@ components:
                       spec:
                           description: |-
                               ClusterSpec defines the desired state of a ROSA HCP cluster.
-                              metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
-                              The owning AWS account is stored as the label hyperfleet.io/account-id.
+                              metadata.namespace is the owning account ("account-<id>"); metadata.name is the
+                              client-chosen cluster name; metadata.uid, minted by the database, is the cluster ID.
                           properties:
                               controlPlaneUpgradePolicy:
                                   description: ControlPlaneUpgradePolicy is the control plane upgrade policy defined by the user.
@@ -6833,10 +6850,11 @@ components:
                           properties:
                               baseDomain:
                                   description: |-
-                                      BaseDomain is the DNS base domain assigned to this cluster via a DNSReservation
+                                      BaseDomain is the DNS base domain assigned to this cluster
                                       (e.g. "f7a3.0.openshiftapps.com", assembled as {prefix}.{shard}.{baseDomain},
-                                      where baseDomain is the operator's configured --base-domain).
-                                      Empty when not yet reserved. Set by the operator when the DNSReservation is created or claimed.
+                                      where baseDomain is the operator's configured --base-domain). The prefix is
+                                      claimed by an Index in the shard's uniqueness namespace.
+                                      Empty until the operator has claimed a prefix.
                                   type: string
                               conditions:
                                   description: |-
@@ -7033,7 +7051,9 @@ components:
       description: |-
           NodePool is the Schema for the nodepools API.
           It represents a set of worker nodes for a Cluster.
-          The parent Cluster shares the same metadata.Namespace (cluster UUID).
+          It lives in its cluster's account namespace, is named "<cluster>.<nodepool>",
+          and points at the cluster through a controller ownerReference and the
+          hyperfleet.io/cluster-uid label.
       properties:
           apiVersion:
               description: |-
@@ -7055,7 +7075,8 @@ components:
           spec:
               description: |-
                   NodePoolSpec defines the desired state of a NodePool.
-                  The parent Cluster is identified by the shared metadata.Namespace (cluster UUID).
+                  metadata.name is "<cluster>.<nodepool>". The parent Cluster is identified by the
+                  controller ownerReference and the hyperfleet.io/cluster-uid label, both set at create.
               properties:
                   autoRepair:
                       description: AutoRepair controls whether unhealthy nodes are automatically replaced.
@@ -7740,7 +7761,9 @@ components:
                   description: |-
                       NodePool is the Schema for the nodepools API.
                       It represents a set of worker nodes for a Cluster.
-                      The parent Cluster shares the same metadata.Namespace (cluster UUID).
+                      It lives in its cluster's account namespace, is named "<cluster>.<nodepool>",
+                      and points at the cluster through a controller ownerReference and the
+                      hyperfleet.io/cluster-uid label.
                   properties:
                       apiVersion:
                           description: |-
@@ -7762,7 +7785,8 @@ components:
                       spec:
                           description: |-
                               NodePoolSpec defines the desired state of a NodePool.
-                              The parent Cluster is identified by the shared metadata.Namespace (cluster UUID).
+                              metadata.name is "<cluster>.<nodepool>". The parent Cluster is identified by the
+                              controller ownerReference and the hyperfleet.io/cluster-uid label, both set at create.
                           properties:
                               autoRepair:
                                   description: AutoRepair controls whether unhealthy nodes are automatically replaced.
@@ -8848,10 +8872,11 @@ components:
       properties:
           baseDomain:
               description: |-
-                  BaseDomain is the DNS base domain assigned to this cluster via a DNSReservation
+                  BaseDomain is the DNS base domain assigned to this cluster
                   (e.g. "f7a3.0.openshiftapps.com", assembled as {prefix}.{shard}.{baseDomain},
-                  where baseDomain is the operator's configured --base-domain).
-                  Empty when not yet reserved. Set by the operator when the DNSReservation is created or claimed.
+                  where baseDomain is the operator's configured --base-domain). The prefix is
+                  claimed by an Index in the shard's uniqueness namespace.
+                  Empty until the operator has claimed a prefix.
               type: string
           conditions:
               description: |-

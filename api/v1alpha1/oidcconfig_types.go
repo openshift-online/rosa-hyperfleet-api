@@ -41,7 +41,8 @@ const (
 )
 
 // OidcIssuerReservationsNamespace is the single Index uniqueness domain shared by every account,
-// guaranteeing issuer-URL uniqueness within this region's deployment.
+// guaranteeing issuer-URL uniqueness within this region's deployment. Each Index in it carries
+// the owning OidcConfig's uid in the hyperfleet.io/owner-uid label.
 const OidcIssuerReservationsNamespace = "oidc-issuer-reservations"
 
 // IssuerURLIndexName derives the Index name for normalizedIssuerURL. K8s names must be DNS-1123

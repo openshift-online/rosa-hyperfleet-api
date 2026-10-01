@@ -61,6 +61,7 @@ func clusterWithPhase(name, namespace string, phase hyperfleetv1alpha1.ClusterPh
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			UID:       types.UID(name + "-uid"),
 		},
 		Spec:   hyperfleetv1alpha1.ClusterSpec{DisplayName: name},
 		Status: hyperfleetv1alpha1.ClusterStatus{Phase: phase},
@@ -72,7 +73,7 @@ func TestSilenceReconcilerProvisioning(t *testing.T) {
 
 	const (
 		clusterName = "silence-test-cluster"
-		testNS      = "cluster-silence-test-id"
+		testNS      = "account-123456789012"
 	)
 
 	cluster := clusterWithPhase(clusterName, testNS, hyperfleetv1alpha1.ClusterPhaseProvisioning)
@@ -82,7 +83,7 @@ func TestSilenceReconcilerProvisioning(t *testing.T) {
 	ctx := context.Background()
 	reconcileCluster(t, reconciler, testNS, clusterName)
 
-	identity := silence.ClusterIdentity{Namespace: testNS, Name: clusterName}
+	identity := silence.IdentityFromCluster(cluster)
 	silences, err := fakeSilence.List(ctx, identity)
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -103,7 +104,7 @@ func TestSilenceReconcilerWaitingForPlacement(t *testing.T) {
 
 	const (
 		clusterName = "silence-wfp-cluster"
-		testNS      = "cluster-silence-wfp-id"
+		testNS      = "account-123456789012"
 	)
 
 	cluster := clusterWithPhase(clusterName, testNS, hyperfleetv1alpha1.ClusterPhaseWaitingForPlacement)
@@ -113,7 +114,7 @@ func TestSilenceReconcilerWaitingForPlacement(t *testing.T) {
 	ctx := context.Background()
 	reconcileCluster(t, reconciler, testNS, clusterName)
 
-	identity := silence.ClusterIdentity{Namespace: testNS, Name: clusterName}
+	identity := silence.IdentityFromCluster(cluster)
 	silences, err := fakeSilence.List(ctx, identity)
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -128,7 +129,7 @@ func TestSilenceReconcilerReadyExpiresSilence(t *testing.T) {
 
 	const (
 		clusterName = "silence-ready-cluster"
-		testNS      = "cluster-silence-ready-id"
+		testNS      = "account-123456789012"
 	)
 
 	cluster := clusterWithPhase(clusterName, testNS, hyperfleetv1alpha1.ClusterPhaseReady)
@@ -136,7 +137,7 @@ func TestSilenceReconcilerReadyExpiresSilence(t *testing.T) {
 	reconciler := newSilenceReconciler(t, cluster, fakeSilence, time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC))
 
 	ctx := context.Background()
-	identity := silence.ClusterIdentity{Namespace: testNS, Name: clusterName}
+	identity := silence.IdentityFromCluster(cluster)
 	if _, err := fakeSilence.Create(ctx, silence.BuildPostableSilence(identity, silence.ReasonInstalling, time.Now().UTC(), silence.DefaultTTL)); err != nil {
 		t.Fatalf("seed silence: %v", err)
 	}
@@ -157,7 +158,7 @@ func TestSilenceReconcilerDeleting(t *testing.T) {
 
 	const (
 		clusterName = "silence-delete-cluster"
-		testNS      = "cluster-silence-delete-id"
+		testNS      = "account-123456789012"
 	)
 
 	now := metav1.Now()
@@ -165,6 +166,7 @@ func TestSilenceReconcilerDeleting(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              clusterName,
 			Namespace:         testNS,
+			UID:               "silence-delete-uid",
 			DeletionTimestamp: &now,
 			Finalizers:        []string{clusterFinalizer},
 		},
@@ -178,7 +180,7 @@ func TestSilenceReconcilerDeleting(t *testing.T) {
 	ctx := context.Background()
 	reconcileCluster(t, reconciler, testNS, clusterName)
 
-	identity := silence.ClusterIdentity{Namespace: testNS, Name: clusterName}
+	identity := silence.IdentityFromCluster(cluster)
 	silences, err := fakeSilence.List(ctx, identity)
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -199,7 +201,7 @@ func TestSilenceReconcilerRenewal(t *testing.T) {
 
 	const (
 		clusterName = "silence-renew-cluster"
-		testNS      = "cluster-silence-renew-id"
+		testNS      = "account-123456789012"
 	)
 
 	now := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
@@ -208,7 +210,7 @@ func TestSilenceReconcilerRenewal(t *testing.T) {
 	reconciler := newSilenceReconciler(t, cluster, fakeSilence, now)
 
 	ctx := context.Background()
-	identity := silence.ClusterIdentity{Namespace: testNS, Name: clusterName}
+	identity := silence.IdentityFromCluster(cluster)
 	oldID, err := fakeSilence.Create(ctx, silence.BuildPostableSilence(identity, silence.ReasonInstalling, now.Add(-5*time.Hour-time.Minute), silence.DefaultTTL))
 	if err != nil {
 		t.Fatalf("seed silence: %v", err)
@@ -233,7 +235,7 @@ func TestSilenceReconcilerDuplicateCleanup(t *testing.T) {
 
 	const (
 		clusterName = "silence-dup-cluster"
-		testNS      = "cluster-silence-dup-id"
+		testNS      = "account-123456789012"
 	)
 
 	now := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
@@ -242,7 +244,7 @@ func TestSilenceReconcilerDuplicateCleanup(t *testing.T) {
 	reconciler := newSilenceReconciler(t, cluster, fakeSilence, now)
 
 	ctx := context.Background()
-	identity := silence.ClusterIdentity{Namespace: testNS, Name: clusterName}
+	identity := silence.IdentityFromCluster(cluster)
 	if _, err := fakeSilence.Create(ctx, silence.BuildPostableSilence(identity, silence.ReasonInstalling, now, silence.DefaultTTL)); err != nil {
 		t.Fatalf("seed silence 1: %v", err)
 	}
@@ -266,14 +268,14 @@ func TestSilenceReconcilerRenewalExpireFailureRequeues(t *testing.T) {
 
 	const (
 		clusterName = "silence-renew-expire-cluster"
-		testNS      = "cluster-silence-renew-expire-id"
+		testNS      = "account-123456789012"
 	)
 
 	now := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
 	cluster := clusterWithPhase(clusterName, testNS, hyperfleetv1alpha1.ClusterPhaseProvisioning)
 	fakeSilence := silence.NewFakeClient()
 	oldID, err := fakeSilence.Create(context.Background(), silence.BuildPostableSilence(
-		silence.ClusterIdentity{Namespace: testNS, Name: clusterName},
+		silence.IdentityFromCluster(cluster),
 		silence.ReasonInstalling,
 		now.Add(-5*time.Hour-time.Minute),
 		silence.DefaultTTL,
@@ -299,7 +301,7 @@ func TestSilenceReconcilerRenewalExpireFailureRequeues(t *testing.T) {
 		t.Fatalf("expected 1m requeue after expire failure, got %s", result.RequeueAfter)
 	}
 
-	silences, err := fakeSilence.List(context.Background(), silence.ClusterIdentity{Namespace: testNS, Name: clusterName})
+	silences, err := fakeSilence.List(context.Background(), silence.IdentityFromCluster(cluster))
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

@@ -210,21 +210,3 @@ func TestAdaptListQuery_NonGETNotRewritten(t *testing.T) {
 		t.Errorf("continue should be preserved on non-GET: got %q", q.Get("continue"))
 	}
 }
-
-func TestAdaptNodePoolScope(t *testing.T) {
-	clusterID := "550e8400-e29b-41d4-a716-446655440000"
-	for _, namespace := range []string{clusterID, "cluster-" + clusterID} {
-		t.Run(namespace, func(t *testing.T) {
-			a := newAdapter()
-			req := getRequest("https://example.com/api/v0/namespaces/" + namespace + "/nodepools/workers")
-
-			out := a.adaptNodePoolScope(req)
-			if out.URL.Path != "/api/v0/nodepools/workers" {
-				t.Errorf("path = %q, want /api/v0/nodepools/workers", out.URL.Path)
-			}
-			if got := out.URL.Query().Get("clusterId"); got != clusterID {
-				t.Errorf("clusterId = %q, want %s", got, clusterID)
-			}
-		})
-	}
-}

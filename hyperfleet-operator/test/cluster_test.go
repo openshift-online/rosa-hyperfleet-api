@@ -9,7 +9,9 @@ import (
 	dynamodbtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	dynamo "github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/dynamo"
@@ -18,8 +20,9 @@ import (
 
 var _ = Describe("Cluster lifecycle", func() {
 	const (
-		clusterName = "e2e-test-01"
-		testNS      = "cluster-e2e-cluster-id"
+		clusterName  = "e2e-test-01"
+		testNS       = "account-111222333444"
+		nodePoolName = clusterName + ".workers"
 	)
 
 	AfterEach(func() {
@@ -38,7 +41,7 @@ var _ = Describe("Cluster lifecycle", func() {
 			var p hyperfleetv1alpha1.Placement
 			nn := types.NamespacedName{
 				Namespace: testNS,
-				Name:      clusterName + "-placement",
+				Name:      clusterName + ".placement",
 			}
 			g.Expect(k8sClient.Get(ctx, nn, &p)).To(Succeed())
 			g.Expect(p.Status.Phase).To(Equal(hyperfleetv1alpha1.PlacementPhaseBound))
@@ -61,8 +64,10 @@ var _ = Describe("Cluster lifecycle", func() {
 			resourceNames[resource+"/"+name] = true
 		}
 
+		// On the MC every cluster object lives in "cluster-<uid>".
+		mcNS := hyperfleetv1alpha1.ManagementClusterNamespace(cluster.UID)
 		expectedResources := []string{
-			"namespaces/" + testNS,
+			"namespaces/" + mcNS,
 			"configmaps/cluster-config",
 			"externalsecrets/pull-secret",
 			"certificates/api-serving-cert",
@@ -88,7 +93,7 @@ var _ = Describe("Cluster lifecycle", func() {
 
 		spec := hcContent["spec"].(map[string]any)
 		Expect(spec["issuerURL"]).To(Equal("https://oidc.e2e.example.com/e2e-test-01"))
-		Expect(spec["infraID"]).To(Equal("e2e-cluster-id"))
+		Expect(spec["infraID"]).To(Equal(string(cluster.UID)))
 
 		dns := spec["dns"].(map[string]any)
 		Expect(dns["baseDomain"]).To(MatchRegexp(`^[0-9a-f]{4}\.0\.e2e\.example\.com$`))
@@ -103,7 +108,7 @@ var _ = Describe("Cluster lifecycle", func() {
 		}).Should(Succeed())
 
 		By("verifying document IDs are deterministic")
-		nsDocID := dynamo.NewDocumentID("hyperfleet-operator", "", "v1", "namespaces", "", testNS)
+		nsDocID := dynamo.NewDocumentID("hyperfleet-operator", "", "v1", "namespaces", "", mcNS)
 		found := false
 		for _, item := range items {
 			if docID, ok := item["documentID"]; ok {
@@ -129,7 +134,7 @@ var _ = Describe("Cluster lifecycle", func() {
 			var p hyperfleetv1alpha1.Placement
 			nn := types.NamespacedName{
 				Namespace: testNS,
-				Name:      clusterName + "-placement",
+				Name:      clusterName + ".placement",
 			}
 			g.Expect(k8sClient.Get(ctx, nn, &p)).To(Succeed())
 			g.Expect(p.Status.Phase).To(Equal(hyperfleetv1alpha1.PlacementPhaseBound))
@@ -248,7 +253,7 @@ var _ = Describe("Cluster lifecycle", func() {
 		}).Should(Succeed())
 
 		By("creating a NodePool CR")
-		np := newTestNodePool()
+		np := newTestNodePool(cluster)
 		Expect(k8sClient.Create(ctx, np)).To(Succeed())
 
 		By("waiting for NodePool ApplyDesire to confirm both CRs are reconciled")
@@ -270,7 +275,7 @@ var _ = Describe("Cluster lifecycle", func() {
 
 		By("verifying NodePool CR is deleted")
 		Eventually(func() error {
-			nn := types.NamespacedName{Namespace: testNS, Name: "e2e-nodepool"}
+			nn := types.NamespacedName{Namespace: testNS, Name: nodePoolName}
 			return k8sClient.Get(ctx, nn, &hyperfleetv1alpha1.NodePool{})
 		}).ShouldNot(Succeed())
 
@@ -292,7 +297,7 @@ var _ = Describe("Cluster lifecycle", func() {
 		Eventually(func() error {
 			nn := types.NamespacedName{
 				Namespace: testNS,
-				Name:      clusterName + "-placement",
+				Name:      clusterName + ".placement",
 			}
 			return k8sClient.Get(ctx, nn, &hyperfleetv1alpha1.Placement{})
 		}).ShouldNot(Succeed())
@@ -318,7 +323,7 @@ var _ = Describe("Cluster lifecycle", func() {
 		Eventually(func() error {
 			return k8sClient.Get(ctx, types.NamespacedName{
 				Namespace: testNS,
-				Name:      clusterName + "-placement",
+				Name:      clusterName + ".placement",
 			}, &hyperfleetv1alpha1.Placement{})
 		}).ShouldNot(Succeed())
 
@@ -342,7 +347,7 @@ var _ = Describe("Cluster lifecycle", func() {
 		}).Should(Succeed())
 
 		By("creating a NodePool CR")
-		np := newTestNodePool()
+		np := newTestNodePool(cluster)
 		Expect(k8sClient.Create(ctx, np)).To(Succeed())
 
 		By("waiting for NodePool ApplyDesire in DynamoDB")
@@ -352,8 +357,9 @@ var _ = Describe("Cluster lifecycle", func() {
 			for _, item := range items {
 				resource := attrString(item, "spec", "targetItem", "resource")
 				if resource == "nodepools" {
-					name := attrString(item, "spec", "targetItem", "name")
-					g.Expect(name).To(Equal(clusterName + "-e2e-nodepool"))
+					// On the MC only the child part of "<cluster>.workers" is used.
+					g.Expect(attrString(item, "spec", "targetItem", "name")).To(Equal("workers"))
+					g.Expect(attrString(item, "spec", "targetItem", "namespace")).To(Equal(hyperfleetv1alpha1.ManagementClusterNamespace(cluster.UID)))
 					return
 				}
 			}
@@ -374,7 +380,7 @@ var _ = Describe("Cluster lifecycle", func() {
 		}).Should(Succeed())
 
 		By("creating a NodePool CR")
-		np := newTestNodePool()
+		np := newTestNodePool(cluster)
 		Expect(k8sClient.Create(ctx, np)).To(Succeed())
 
 		By("waiting for NodePool ApplyDesire in DynamoDB")
@@ -392,7 +398,7 @@ var _ = Describe("Cluster lifecycle", func() {
 		By("deleting only the NodePool CR")
 		Eventually(func() error {
 			var npToDelete hyperfleetv1alpha1.NodePool
-			nn := types.NamespacedName{Namespace: testNS, Name: "e2e-nodepool"}
+			nn := types.NamespacedName{Namespace: testNS, Name: nodePoolName}
 			if err := k8sClient.Get(ctx, nn, &npToDelete); err != nil {
 				return err
 			}
@@ -427,7 +433,7 @@ var _ = Describe("Cluster lifecycle", func() {
 
 		By("verifying NodePool CR is fully gone")
 		Eventually(func() error {
-			nn := types.NamespacedName{Namespace: testNS, Name: "e2e-nodepool"}
+			nn := types.NamespacedName{Namespace: testNS, Name: nodePoolName}
 			return k8sClient.Get(ctx, nn, &hyperfleetv1alpha1.NodePool{})
 		}).ShouldNot(Succeed())
 
@@ -437,8 +443,70 @@ var _ = Describe("Cluster lifecycle", func() {
 		var p hyperfleetv1alpha1.Placement
 		nn := types.NamespacedName{
 			Namespace: testNS,
-			Name:      clusterName + "-placement",
+			Name:      clusterName + ".placement",
 		}
 		Expect(k8sClient.Get(ctx, nn, &p)).To(Succeed())
+	})
+
+	It("should keep two clusters' same-named pools apart, and give a recreated cluster nothing of the old one", func() {
+		By("creating two clusters in one account, each with a workers pool")
+		a := newTestCluster("e2e-a")
+		b := newTestCluster("e2e-b")
+		Expect(k8sClient.Create(ctx, a)).To(Succeed())
+		Expect(k8sClient.Create(ctx, b)).To(Succeed())
+		for _, c := range []*hyperfleetv1alpha1.Cluster{a, b} {
+			Eventually(func(g Gomega) {
+				var latest hyperfleetv1alpha1.Cluster
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: c.Name}, &latest)).To(Succeed())
+				g.Expect(latest.Status.PlacementRef).NotTo(BeNil())
+			}).Should(Succeed())
+			Expect(k8sClient.Create(ctx, newTestNodePool(c))).To(Succeed())
+		}
+
+		poolDesires := func() []string {
+			var out []string
+			for _, item := range scanTable(mc + "-specs-applydesires") {
+				if attrString(item, "spec", "targetItem", "resource") == "nodepools" {
+					out = append(out, attrString(item, "spec", "targetItem", "namespace")+"/"+attrString(item, "spec", "targetItem", "name"))
+				}
+			}
+			return out
+		}
+		nsA := hyperfleetv1alpha1.ManagementClusterNamespace(a.UID)
+		nsB := hyperfleetv1alpha1.ManagementClusterNamespace(b.UID)
+		Eventually(poolDesires).Should(ConsistOf(nsA+"/workers", nsB+"/workers"))
+
+		By("deleting cluster a")
+		// By key: the operator has since updated it, and deletes are CAS-checked.
+		Expect(k8sClient.Delete(ctx, &hyperfleetv1alpha1.Cluster{ObjectMeta: metav1.ObjectMeta{Namespace: testNS, Name: "e2e-a"}})).To(Succeed())
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "e2e-a"}, &hyperfleetv1alpha1.Cluster{})
+		}).ShouldNot(Succeed())
+
+		By("verifying b and its pool are untouched")
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "e2e-b"}, &hyperfleetv1alpha1.Cluster{})).To(Succeed())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "e2e-b.workers"}, &hyperfleetv1alpha1.NodePool{})).To(Succeed())
+		Eventually(poolDesires).Should(ConsistOf(nsB + "/workers"))
+
+		By("recreating cluster a under the same name")
+		again := newTestCluster("e2e-a")
+		Expect(k8sClient.Create(ctx, again)).To(Succeed())
+		Expect(again.UID).NotTo(Equal(a.UID), "a recreated cluster gets a new uid")
+
+		By("verifying it inherits nothing: no pools, a fresh placement, its own DNS claim")
+		Eventually(func(g Gomega) {
+			var p hyperfleetv1alpha1.Placement
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "e2e-a.placement"}, &p)).To(Succeed())
+			g.Expect(p.Labels[hyperfleetv1alpha1.ClusterUIDLabel]).To(Equal(string(again.UID)))
+			var latest hyperfleetv1alpha1.Cluster
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "e2e-a"}, &latest)).To(Succeed())
+			g.Expect(latest.Status.BaseDomain).NotTo(BeEmpty())
+		}).Should(Succeed())
+		var pools hyperfleetv1alpha1.NodePoolList
+		Expect(k8sClient.List(ctx, &pools, client.MatchingLabels{hyperfleetv1alpha1.ClusterUIDLabel: string(again.UID)})).To(Succeed())
+		Expect(pools.Items).To(BeEmpty())
+		var oldClaims hyperfleetv1alpha1.IndexList
+		Expect(k8sClient.List(ctx, &oldClaims, client.MatchingLabels{hyperfleetv1alpha1.OwnerUIDLabel: string(a.UID)})).To(Succeed())
+		Expect(oldClaims.Items).To(BeEmpty(), "the deleted cluster's DNS claim should be released")
 	})
 })

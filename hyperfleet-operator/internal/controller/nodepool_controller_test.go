@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -38,8 +39,8 @@ var _ = Describe("NodePool Controller", func() {
 	Context("When reconciling a NodePool", func() {
 		const (
 			clusterName  = "test-np-cluster"
-			nodePoolName = "test-nodepool"
-			testNS       = "cluster-test-cluster-id"
+			nodePoolName = "test-np-cluster.workers"
+			testNS       = "account-123456789012"
 		)
 
 		ctx := context.Background()
@@ -62,7 +63,7 @@ var _ = Describe("NodePool Controller", func() {
 				_ = k8sClient.Delete(ctx, cluster)
 			}
 			placement := &hyperfleetv1alpha1.Placement{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + "-placement"}, placement); err == nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, placement); err == nil {
 				_ = k8sClient.Delete(ctx, placement)
 			}
 		})
@@ -71,7 +72,7 @@ var _ = Describe("NodePool Controller", func() {
 			cluster := newTestCluster(clusterName)
 			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
-			np := newTestNodePool()
+			np := newTestNodePool(cluster)
 			Expect(k8sClient.Create(ctx, np)).To(Succeed())
 
 			reconciler := &NodePoolReconciler{
@@ -96,7 +97,7 @@ var _ = Describe("NodePool Controller", func() {
 			cluster := newTestCluster(clusterName)
 			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
-			np := newTestNodePool()
+			np := newTestNodePool(cluster)
 			Expect(k8sClient.Create(ctx, np)).To(Succeed())
 
 			fd := &fakeDynamo{}
@@ -125,12 +126,12 @@ var _ = Describe("NodePool Controller", func() {
 
 			// Set placementRef on the cluster status.
 			cluster.Status.PlacementRef = &hyperfleetv1alpha1.PlacementReference{
-				Name:              clusterName + "-placement",
+				Name:              clusterName + ".placement",
 				ManagementCluster: "mc01",
 			}
 			Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
 
-			np := newTestNodePool()
+			np := newTestNodePool(cluster)
 			Expect(k8sClient.Create(ctx, np)).To(Succeed())
 
 			fd := &fakeDynamo{}
@@ -157,12 +158,12 @@ var _ = Describe("NodePool Controller", func() {
 			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 			cluster.Status.PlacementRef = &hyperfleetv1alpha1.PlacementReference{
-				Name:              clusterName + "-placement",
+				Name:              clusterName + ".placement",
 				ManagementCluster: "mc01",
 			}
 			Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
 
-			np := newTestNodePool()
+			np := newTestNodePool(cluster)
 			Expect(k8sClient.Create(ctx, np)).To(Succeed())
 
 			fd := &fakeDynamo{}
@@ -226,12 +227,12 @@ var _ = Describe("NodePool Controller", func() {
 			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 			cluster.Status.PlacementRef = &hyperfleetv1alpha1.PlacementReference{
-				Name:              clusterName + "-placement",
+				Name:              clusterName + ".placement",
 				ManagementCluster: "mc01",
 			}
 			Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
 
-			np := newTestNodePool()
+			np := newTestNodePool(cluster)
 			Expect(k8sClient.Create(ctx, np)).To(Succeed())
 
 			fd := &fakeDynamo{}
@@ -260,12 +261,12 @@ var _ = Describe("NodePool Controller", func() {
 			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 			cluster.Status.PlacementRef = &hyperfleetv1alpha1.PlacementReference{
-				Name:              clusterName + "-placement",
+				Name:              clusterName + ".placement",
 				ManagementCluster: "mc01",
 			}
 			Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
 
-			np := newTestNodePool()
+			np := newTestNodePool(cluster)
 			Expect(k8sClient.Create(ctx, np)).To(Succeed())
 
 			fd := &fakeDynamo{
@@ -303,7 +304,10 @@ var _ = Describe("NodePool Controller", func() {
 		})
 
 		It("should persist observed replicas from ReadDesire, preserving absent versus zero", func() {
-			np := newTestNodePool()
+			// Status handling doesn't read the parent; it only needs a well-formed owner.
+			owner := newTestCluster(clusterName)
+			owner.UID = "00000000-0000-0000-0000-00000000beef"
+			np := newTestNodePool(owner)
 			staleReplicas := int32(9)
 			np.Status.Replicas = &staleReplicas
 			Expect(k8sClient.Create(ctx, np)).To(Succeed())
@@ -340,12 +344,12 @@ var _ = Describe("NodePool Controller", func() {
 			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 			cluster.Status.PlacementRef = &hyperfleetv1alpha1.PlacementReference{
-				Name:              clusterName + "-placement",
+				Name:              clusterName + ".placement",
 				ManagementCluster: "mc01",
 			}
 			Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
 
-			np := newTestNodePool()
+			np := newTestNodePool(cluster)
 			Expect(k8sClient.Create(ctx, np)).To(Succeed())
 
 			fd := &fakeDynamo{
@@ -385,14 +389,120 @@ var _ = Describe("NodePool Controller", func() {
 			Expect(applyCleanups).To(Equal(1), "should clean up ApplyDesire spec")
 			Expect(readCleanups).To(Equal(1), "should clean up ReadDesire spec")
 		})
+
+		It("should wait for the parent when the owner's name now belongs to a different cluster", func() {
+			cluster := newTestCluster(clusterName)
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			cluster.Status.PlacementRef = &hyperfleetv1alpha1.PlacementReference{
+				Name: clusterName + ".placement", ManagementCluster: "mc01",
+			}
+			Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
+
+			// The pool points at an earlier cluster that had the same name.
+			stale := cluster.DeepCopy()
+			stale.UID = "00000000-0000-0000-0000-000000000001"
+			np := newTestNodePool(stale)
+			Expect(k8sClient.Create(ctx, np)).To(Succeed())
+
+			fd := &fakeDynamo{}
+			reconciler := &NodePoolReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Dynamo: fd}
+			req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testNS, Name: nodePoolName}}
+
+			_, _ = reconciler.Reconcile(ctx, req) // finalizer
+			result, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).NotTo(BeZero())
+			Expect(fd.applyCount).To(Equal(0), "must not render against a cluster it doesn't belong to")
+
+			var updated hyperfleetv1alpha1.NodePool
+			Expect(k8sClient.Get(ctx, req.NamespacedName, &updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.NodePoolPhaseWaitingForCluster))
+		})
+
+		It("should let go of an orphan whose owner is gone", func() {
+			gone := newTestCluster(clusterName)
+			gone.UID = "00000000-0000-0000-0000-000000000002"
+			np := newTestNodePool(gone)
+			np.Finalizers = []string{nodePoolFinalizer}
+			Expect(k8sClient.Create(ctx, np)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, np)).To(Succeed())
+
+			fd := &fakeDynamo{}
+			reconciler := &NodePoolReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Dynamo: fd}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: nodePoolName},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: nodePoolName}, &hyperfleetv1alpha1.NodePool{})
+			Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the orphan's finalizer should be removed")
+			Expect(fd.applyCount).To(Equal(0))
+		})
+	})
+
+	Context("When two clusters in one account both have a workers pool", func() {
+		const testNS = "account-123456789012"
+		ctx := context.Background()
+
+		AfterEach(func() {
+			for _, name := range []string{"np-a.workers", "np-b.workers"} {
+				np := &hyperfleetv1alpha1.NodePool{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: name}, np); err == nil {
+					controllerutil.RemoveFinalizer(np, nodePoolFinalizer)
+					_ = k8sClient.Update(ctx, np)
+					_ = k8sClient.Delete(ctx, np)
+				}
+			}
+			for _, name := range []string{"np-a", "np-b"} {
+				_ = k8sClient.Delete(ctx, &hyperfleetv1alpha1.Cluster{ObjectMeta: metav1.ObjectMeta{Namespace: testNS, Name: name}})
+			}
+		})
+
+		It("should render each into its own cluster's MC namespace", func() {
+			ensureNamespace(ctx, testNS)
+			fd := &fakeDynamo{}
+			reconciler := &NodePoolReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Dynamo: fd}
+
+			wantNS := map[string]string{}
+			for _, name := range []string{"np-a", "np-b"} {
+				cluster := newTestCluster(name)
+				Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+				cluster.Status.PlacementRef = &hyperfleetv1alpha1.PlacementReference{Name: name + ".placement", ManagementCluster: "mc01"}
+				Expect(k8sClient.Status().Update(ctx, cluster)).To(Succeed())
+				Expect(k8sClient.Create(ctx, newTestNodePool(cluster))).To(Succeed())
+				wantNS[name] = "cluster-" + string(cluster.UID)
+
+				req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testNS, Name: name + ".workers"}}
+				_, _ = reconciler.Reconcile(ctx, req) // finalizer
+				_, err := reconciler.Reconcile(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			var targets []string
+			for _, a := range fd.applies {
+				Expect(a.Spec.TargetItem.Name).To(Equal("workers"))
+				targets = append(targets, a.Spec.TargetItem.Namespace)
+			}
+			Expect(targets).To(ConsistOf(wantNS["np-a"], wantNS["np-b"]))
+		})
 	})
 })
 
-func newTestNodePool() *hyperfleetv1alpha1.NodePool {
+// newTestNodePool returns a "<cluster>.workers" pool owned by cluster, as
+// platform-api stores it.
+func newTestNodePool(cluster *hyperfleetv1alpha1.Cluster) *hyperfleetv1alpha1.NodePool {
 	return &hyperfleetv1alpha1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-nodepool",
-			Namespace: "cluster-test-cluster-id",
+			Name:      hyperfleetv1alpha1.ChildName(cluster.Name, "workers"),
+			Namespace: cluster.Namespace,
+			Labels:    map[string]string{hyperfleetv1alpha1.ClusterUIDLabel: string(cluster.UID)},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: hyperfleetv1alpha1.GroupVersion.String(),
+				Kind:       "Cluster",
+				Name:       cluster.Name,
+				UID:        cluster.UID,
+				Controller: ptr.To(true),
+			}},
 		},
 		Spec: hyperfleetv1alpha1.NodePoolSpec{
 			NodePool: hyperfleetv1alpha1.NodePoolSpecPassthrough{

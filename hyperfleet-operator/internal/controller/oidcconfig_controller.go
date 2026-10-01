@@ -43,9 +43,6 @@ const (
 	// managedPendingRequeueInterval controls how often a Pending managed OidcConfig re-checks its issuer.
 	managedPendingRequeueInterval = 30 * time.Second
 
-	// oidcconfigIDLabel records which OidcConfig owns an issuer-URL Index reservation.
-	oidcconfigIDLabel = "hyperfleet.io/oidcconfig-id"
-
 	// issuerURLConflictRequeueInterval is the recheck interval for a config parked on IssuerURLConflict.
 	issuerURLConflictRequeueInterval = 5 * time.Minute
 )
@@ -125,11 +122,11 @@ func (r *OidcConfigReconciler) reconcileManaged(ctx context.Context, oc *hyperfl
 	})
 }
 
-// isReferencedByCluster reports whether any live (non-terminating) Cluster owned by oc's account
+// isReferencedByCluster reports whether any live (non-terminating) Cluster in oc's account
 // currently sets this oidcConfigId
 func (r *OidcConfigReconciler) isReferencedByCluster(ctx context.Context, oc *hyperfleetv1alpha1.OidcConfig) (bool, error) {
 	var clusters hyperfleetv1alpha1.ClusterList
-	if err := r.List(ctx, &clusters, client.MatchingLabels{accountIDLabel: oc.Spec.AccountID}); err != nil {
+	if err := r.List(ctx, &clusters, client.InNamespace(oc.Namespace)); err != nil {
 		return false, fmt.Errorf("list clusters: %w", err)
 	}
 	for i := range clusters.Items {
@@ -141,7 +138,7 @@ func (r *OidcConfigReconciler) isReferencedByCluster(ctx context.Context, oc *hy
 	return false, nil
 }
 
-// reserveIssuerURLIndex creates/adopts oc's issuer-URL Index, mirroring ClusterReconciler.tryReserveDNS.
+// reserveIssuerURLIndex claims oc's issuer URL with an Index carrying oc's uid.
 // reserved=false means another OidcConfig holds it; the caller should return the given result/err as-is.
 func (r *OidcConfigReconciler) reserveIssuerURLIndex(ctx context.Context, oc *hyperfleetv1alpha1.OidcConfig) (bool, ctrl.Result, error) {
 	indexNS := oc.Spec.IndexRef.Namespace
@@ -153,67 +150,17 @@ func (r *OidcConfigReconciler) reserveIssuerURLIndex(ctx context.Context, oc *hy
 		indexName = hyperfleetv1alpha1.IssuerURLIndexName(oc.Spec.IssuerUrl)
 	}
 
-	idx := &hyperfleetv1alpha1.Index{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      indexName,
-			Namespace: indexNS,
-			Labels: map[string]string{
-				accountIDLabel:    oc.Spec.AccountID,
-				oidcconfigIDLabel: oc.Name,
-			},
-		},
-		Spec: hyperfleetv1alpha1.IndexSpec{},
+	claimed, err := claimIndex(ctx, r.Client, indexNS, indexName, oc.UID)
+	if err != nil {
+		return false, ctrl.Result{}, fmt.Errorf("claim issuer url index: %w", err)
 	}
-
-	if err := r.Create(ctx, idx); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			return false, ctrl.Result{}, fmt.Errorf("create issuer url index: %w", err)
-		}
-		var existing hyperfleetv1alpha1.Index
-		if err := r.Get(ctx, client.ObjectKeyFromObject(idx), &existing); err != nil {
-			return false, ctrl.Result{}, fmt.Errorf("get issuer url index: %w", err)
-		}
-		if existing.Labels[oidcconfigIDLabel] != oc.Name {
-			r.setReadyConditionAndPhase(ctx, oc, "IssuerURLConflict",
-				fmt.Sprintf("issuerUrl %q is already reserved by another OIDC config", oc.Spec.IssuerUrl),
-				hyperfleetv1alpha1.OidcConfigPhaseError)
-			return false, ctrl.Result{RequeueAfter: issuerURLConflictRequeueInterval}, nil
-		}
-		// We own it already (idempotent re-entry) — fall through to readiness logic.
+	if !claimed {
+		r.setReadyConditionAndPhase(ctx, oc, "IssuerURLConflict",
+			fmt.Sprintf("issuerUrl %q is already reserved by another OIDC config", oc.Spec.IssuerUrl),
+			hyperfleetv1alpha1.OidcConfigPhaseError)
+		return false, ctrl.Result{RequeueAfter: issuerURLConflictRequeueInterval}, nil
 	}
-
 	return true, ctrl.Result{}, nil
-}
-
-// deleteIssuerURLIndex frees oc's issuer-URL Index (via spec.indexRef, or a label-based List fallback
-// for pre-indexRef configs). Always verifies ownership first so a losing config can't delete the winner's Index.
-func (r *OidcConfigReconciler) deleteIssuerURLIndex(ctx context.Context, oc *hyperfleetv1alpha1.OidcConfig) error {
-	deleteIfOwned := func(idx *hyperfleetv1alpha1.Index) error {
-		if idx.Labels[oidcconfigIDLabel] != oc.Name {
-			return nil
-		}
-		return client.IgnoreNotFound(r.Delete(ctx, idx))
-	}
-
-	if oc.Spec.IndexRef.Namespace != "" && oc.Spec.IndexRef.Name != "" {
-		var existing hyperfleetv1alpha1.Index
-		key := client.ObjectKey{Namespace: oc.Spec.IndexRef.Namespace, Name: oc.Spec.IndexRef.Name}
-		if err := r.Get(ctx, key, &existing); err != nil {
-			return client.IgnoreNotFound(err)
-		}
-		return deleteIfOwned(&existing)
-	}
-
-	var idxList hyperfleetv1alpha1.IndexList
-	if err := r.List(ctx, &idxList, client.MatchingLabels{oidcconfigIDLabel: oc.Name}); err != nil {
-		return fmt.Errorf("list issuer url indexes for cleanup: %w", err)
-	}
-	for i := range idxList.Items {
-		if err := deleteIfOwned(&idxList.Items[i]); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (r *OidcConfigReconciler) reconcileUnmanaged(ctx context.Context, oc *hyperfleetv1alpha1.OidcConfig) (ctrl.Result, error) {
@@ -310,7 +257,8 @@ func (r *OidcConfigReconciler) reconcileDelete(ctx context.Context, oc *hyperfle
 		}
 	}
 
-	if err := r.deleteIssuerURLIndex(ctx, oc); err != nil {
+	// Release oc's issuer-URL Index; a losing config never deletes the winner's.
+	if err := releaseIndexes(ctx, r.Client, oc.UID); err != nil {
 		return ctrl.Result{}, fmt.Errorf("delete issuer url index: %w", err)
 	}
 

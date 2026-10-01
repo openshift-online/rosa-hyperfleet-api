@@ -12,8 +12,8 @@ import (
 func testNodePool() *hyperfleetv1alpha1.NodePool {
 	return &hyperfleetv1alpha1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "workers",
-			Namespace: "cluster-abc12345",
+			Name:      "my-cluster.workers",
+			Namespace: "account-123456789012",
 		},
 		Spec: hyperfleetv1alpha1.NodePoolSpec{
 			NodePool: hyperfleetv1alpha1.NodePoolSpecPassthrough{
@@ -66,13 +66,23 @@ func TestNodePoolResourceNaming(t *testing.T) {
 		t.Fatalf("NodePoolResource: %v", err)
 	}
 
-	wantName := "my-cluster-workers"
+	// On the MC the pool lives in the cluster's own namespace, so only the
+	// child part of "<cluster>.<nodepool>" is rendered.
+	wantName := "workers"
 	if r.Name != wantName {
 		t.Errorf("Name = %q, want %q", r.Name, wantName)
 	}
 	wantNS := "cluster-abc12345"
 	if r.Namespace != wantNS {
 		t.Errorf("Namespace = %q, want %q", r.Namespace, wantNS)
+	}
+}
+
+func TestNodePoolResourceRejectsUnqualifiedName(t *testing.T) {
+	np := testNodePool()
+	np.Name = "workers"
+	if _, err := NodePoolResource(np, testCluster()); err == nil {
+		t.Error("expected an error for a NodePool name without a <cluster>. prefix")
 	}
 }
 
@@ -109,8 +119,8 @@ func TestNodePoolResourceObject(t *testing.T) {
 func TestNodePoolResourceDefaults(t *testing.T) {
 	minimalNP := &hyperfleetv1alpha1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "workers",
-			Namespace: "cluster-abc12345",
+			Name:      "my-cluster.workers",
+			Namespace: "account-123456789012",
 		},
 		Spec: hyperfleetv1alpha1.NodePoolSpec{
 			NodePool: hyperfleetv1alpha1.NodePoolSpecPassthrough{

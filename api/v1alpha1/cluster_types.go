@@ -34,8 +34,8 @@ const (
 )
 
 // ClusterSpec defines the desired state of a ROSA HCP cluster.
-// metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
-// The owning AWS account is stored as the label hyperfleet.io/account-id.
+// metadata.namespace is the owning account ("account-<id>"); metadata.name is the
+// client-chosen cluster name; metadata.uid, minted by the database, is the cluster ID.
 type ClusterSpec struct {
 	// DisplayName is a human-readable name for the cluster.
 	// +hyperfleet:write-mode=mutable
@@ -78,12 +78,6 @@ type ClusterSpec struct {
 	// +optional
 	// +kubebuilder:validation:Pattern=`^arn:aws:`
 	CreatorARN string `json:"creatorARN,omitempty"`
-
-	// InternalID is a platform-assigned unique identifier.
-	// +k8s:openapi-gen=false
-	// +hyperfleet:write-mode=service-set
-	// +optional
-	InternalID string `json:"internalId,omitempty"`
 
 	// OidcConfigID selects the OidcConfig-backed issuer flow when set, or the
 	// legacy auto-generated issuer flow when empty. Immutable after creation.
@@ -134,10 +128,11 @@ type ClusterStatus struct {
 	// +optional
 	ControlPlaneUpgradePolicy *ControlPlaneUpgradePolicyStatus `json:"controlPlaneUpgradePolicy,omitempty"`
 
-	// BaseDomain is the DNS base domain assigned to this cluster via a DNSReservation
+	// BaseDomain is the DNS base domain assigned to this cluster
 	// (e.g. "f7a3.0.openshiftapps.com", assembled as {prefix}.{shard}.{baseDomain},
-	// where baseDomain is the operator's configured --base-domain).
-	// Empty when not yet reserved. Set by the operator when the DNSReservation is created or claimed.
+	// where baseDomain is the operator's configured --base-domain). The prefix is
+	// claimed by an Index in the shard's uniqueness namespace.
+	// Empty until the operator has claimed a prefix.
 	// +optional
 	BaseDomain string `json:"baseDomain,omitempty"`
 }
@@ -158,6 +153,7 @@ type PlacementReference struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=hfc
+// +kubebuilder:validation:XValidation:rule="self.metadata.name.matches('^[a-z0-9]([-a-z0-9]{0,16}[a-z0-9])?$')",message="metadata.name must be a DNS label of at most 18 characters with no dots"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="MC",type=string,JSONPath=".status.placementRef.managementCluster"
 // +kubebuilder:printcolumn:name="Endpoint",type=string,JSONPath=".status.controlPlaneEndpoint.host",priority=1
@@ -166,8 +162,10 @@ type PlacementReference struct {
 
 // Cluster is the Schema for the clusters API.
 // It represents a ROSA HCP cluster whose lifecycle is managed by the hyperfleet-operator.
-// metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
-// The owning account is the label hyperfleet.io/account-id.
+// metadata.namespace is the owning account ("account-<id>"); metadata.name is the
+// client-chosen cluster name (a DNS label of at most 18 characters, never changed);
+// metadata.uid is the cluster ID. On the management cluster the cluster's objects
+// live in the namespace "cluster-<uid>".
 type Cluster struct {
 	metav1.TypeMeta `json:",inline"`
 

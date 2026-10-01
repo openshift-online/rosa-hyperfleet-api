@@ -14,7 +14,8 @@ func testCluster() *hyperfleetv1alpha1.Cluster {
 	return &hyperfleetv1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-cluster",
-			Namespace: "cluster-abc12345",
+			Namespace: "account-123456789012",
+			UID:       "abc12345",
 		},
 		Spec: hyperfleetv1alpha1.ClusterSpec{
 			CreatorARN: "arn:aws:iam::123456789012:user/admin",

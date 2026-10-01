@@ -17,13 +17,14 @@ import (
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-operator/internal/oidc"
 )
 
-// ClusterResources generates the Kubernetes resources for a cluster on the MC.
-// baseDomain is the fully assembled DNS base domain from the DNSReservation
+// ClusterResources generates the Kubernetes resources for a cluster on the MC,
+// all in the cluster's MC namespace "cluster-<uid>".
+// baseDomain is the cluster's fully assembled DNS base domain
 // (e.g. "f7a3.0.openshiftapps.com").
 func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal bool, baseDomain string) ([]Resource, error) {
-	clusterID := ClusterIDFromNamespace(cluster.Namespace)
-	clusterName := cluster.Name // human-readable
-	ns := cluster.Namespace     // already "cluster-<uuid>"
+	clusterID := string(cluster.UID)
+	clusterName := cluster.Name
+	ns := hyperfleetv1alpha1.ManagementClusterNamespace(cluster.UID)
 
 	hc, err := hostedCluster(cluster, oidcSigningKeyExternal, baseDomain)
 	if err != nil {
@@ -217,9 +218,9 @@ func extractUUIDFromIssuerURL(issuerURL string) string {
 }
 
 func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal bool, baseDomain string) (Resource, error) {
-	clusterID := ClusterIDFromNamespace(cluster.Namespace)
-	clusterName := cluster.Name // human-readable
-	ns := cluster.Namespace     // already "cluster-<uuid>"
+	clusterID := string(cluster.UID)
+	clusterName := cluster.Name
+	ns := hyperfleetv1alpha1.ManagementClusterNamespace(cluster.UID)
 	apiHost := fmt.Sprintf("api.%s.%s", clusterName, baseDomain)
 
 	hcSpec, err := toHostedClusterSpec(&cluster.Spec.HostedCluster)

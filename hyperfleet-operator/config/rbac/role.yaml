@@ -43,7 +43,6 @@ rules:
 - apiGroups:
   - hyperfleet.io
   resources:
-  - dnsreservations
   - indices
   verbs:
   - create

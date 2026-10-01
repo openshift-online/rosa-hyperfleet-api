@@ -21,6 +21,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// IndexRef is a reference to an Index resource by namespace and name.
+type IndexRef struct {
+	// Namespace of the Index (the uniqueness domain, e.g. "dns-shard-0-reservations").
+	// +kubebuilder:validation:MinLength=1
+	Namespace string `json:"namespace"`
+
+	// Name of the Index (the unique value, e.g. "f7a3").
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
 // IndexSpec is intentionally empty. All uniqueness semantics are encoded in
 // the resource's namespace (the uniqueness domain) and name (the unique value).
 type IndexSpec struct{}
@@ -43,14 +54,12 @@ type IndexSpec struct{}
 //	dns-shard-<id>-reservations   — one domain per DNS shard, keyed by prefix
 //	oidc-issuer-reservations      — a single domain keyed by issuer URL
 //
-// A higher-level resource points at its Index by (namespace, name) — e.g.
-// DNSReservation records the pair in spec.indexRef so it can find and delete
-// the backing Index without recomputing it.
-//
-// Callers commonly label entries with hyperfleet.io/account-id (owning AWS
-// account) for filtering and cleanup; other labels are caller-specific (the
-// DNS flow, for instance, also stamps hyperfleet.io/cluster-namespace so a
-// cluster's entries can be swept on deletion).
+// Creating the Index is the claim. Every Index carries its holder's uid in the
+// hyperfleet.io/owner-uid label: on AlreadyExists, a caller whose uid matches
+// already holds the value (so retries are safe); otherwise the value is taken.
+// The holder's finalizer deletes the Indexes carrying its uid, and never ones
+// carrying someone else's. Data belongs on the holder (e.g. a cluster's
+// status.baseDomain), not on the Index.
 type Index struct {
 	metav1.TypeMeta `json:",inline"`
 

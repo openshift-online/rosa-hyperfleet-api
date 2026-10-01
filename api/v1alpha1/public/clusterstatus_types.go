@@ -33,10 +33,11 @@ type ClusterStatus struct {
 	// ControlPlaneUpgradePolicy summarizes the control plane upgrade policy status.
 	// +optional
 	ControlPlaneUpgradePolicy *ControlPlaneUpgradePolicyStatus `json:"controlPlaneUpgradePolicy,omitempty"`
-	// BaseDomain is the DNS base domain assigned to this cluster via a DNSReservation
+	// BaseDomain is the DNS base domain assigned to this cluster
 	// (e.g. "f7a3.0.openshiftapps.com", assembled as {prefix}.{shard}.{baseDomain},
-	// where baseDomain is the operator's configured --base-domain).
-	// Empty when not yet reserved. Set by the operator when the DNSReservation is created or claimed.
+	// where baseDomain is the operator's configured --base-domain). The prefix is
+	// claimed by an Index in the shard's uniqueness namespace.
+	// Empty until the operator has claimed a prefix.
 	// +optional
 	BaseDomain string `json:"baseDomain,omitempty"`
 }

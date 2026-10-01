@@ -234,9 +234,6 @@ func (h *OidcConfigHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	cr := hyperfleetdb.PublicToInternalOidcConfig(&req, accountID, configID)
 
-	// Anti-spoofing: strip any client-supplied clusterNamespaceLabel before persisting.
-	delete(cr.Labels, clusterNamespaceLabel)
-
 	// indexRef is service-set: platform-api computes it, but OidcConfigReconciler creates the Index.
 	cr.Spec.IndexRef = hyperfleetv1alpha1.IndexRef{
 		Namespace: hyperfleetv1alpha1.OidcIssuerReservationsNamespace,
@@ -298,7 +295,7 @@ func (h *OidcConfigHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if oc.Labels[clusterNamespaceLabel] != "" {
+	if oc.Labels[hyperfleetv1alpha1.ClaimedByClusterUIDLabel] != "" {
 		writeAPIError(w, ErrOidcConfigDeleteInUse, h.logger)
 		return
 	}

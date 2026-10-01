@@ -12,7 +12,7 @@ sequenceDiagram
     participant KA as kube-applier-aws
     participant MC as Management Cluster
 
-    API->>PG: Create NodePool CR (clusterRef=clusterID)
+    API->>PG: Create NodePool CR "<cluster>.<pool>" (ownerReference + cluster-uid label)
     NPC->>PG: Watch detects new NodePool
     NPC->>PG: Add finalizer (hyperfleet.io/nodepool), requeue
     NPC->>PG: Get parent Cluster → get PlacementRef
@@ -20,7 +20,7 @@ sequenceDiagram
         NPC->>PG: Set phase=WaitingForCluster, requeue
     else Cluster has Bound Placement
         NPC->>NPC: Generate NodePool manifest
-        NPC->>DDB: Write ApplyDesire (nodepools/{clusterName}-{nodePoolName})
+        NPC->>DDB: Write ApplyDesire (cluster-{uid}/nodepools/{pool})
         NPC->>DDB: Write ReadDesire for NodePool status
         NPC->>PG: Set phase=Provisioning
         KA->>DDB: Read ApplyDesires
@@ -35,7 +35,7 @@ sequenceDiagram
 ### Reconcile Steps
 
 1. **Finalizer**: Adds `hyperfleet.io/nodepool` finalizer on first reconcile, requeues
-2. **Parent Cluster lookup**: Gets Cluster CR by `spec.clusterRef` in the same namespace (account ID), waits if not found or no `PlacementRef`
+2. **Parent Cluster lookup**: Gets the Cluster named in the controller ownerReference (same account namespace) and checks its uid; waits if it is missing, its name now belongs to a different cluster, or it has no `PlacementRef`. On deletion, a missing owner means the pool is an orphan: it cleans up what it can and removes its finalizer
 3. **Manifest generation**: Generates a HyperShift NodePool manifest
 4. **ApplyDesire**: Writes one ApplyDesire to `{mc}-specs-applydesires`
 5. **ReadDesire**: Creates a ReadDesire for the NodePool to get status feedback (extracts "Ready" condition from the remote NodePool)
@@ -44,7 +44,8 @@ sequenceDiagram
 
 ### Generated Resource
 
-The NodePool manifest name on the MC is `{clusterName}-{nodePoolName}` and lives in namespace `clusters-{clusterID}`.
+The NodePool CR is named `{clusterName}.{pool}`; on the MC only the child part is
+used: the manifest is named `{pool}` and lives in the cluster's namespace `cluster-{uid}`.
 
 | Resource              | Name                           | Purpose                                   |
 | --------------------- | ------------------------------ | ----------------------------------------- |

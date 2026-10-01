@@ -87,17 +87,16 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	// Look up parent Cluster by shared namespace (cluster UUID).
-	var clusters hyperfleetv1alpha1.ClusterList
-	if err := r.List(ctx, &clusters, client.InNamespace(nodePool.Namespace)); err != nil {
-		return ctrl.Result{}, fmt.Errorf("list clusters in namespace: %w", err)
-	}
-	if len(clusters.Items) == 0 {
-		log.Info("Waiting for parent Cluster", "namespace", nodePool.Namespace)
+	// Look up the parent Cluster through the controller ownerReference, checked by uid.
+	cluster, err := getOwnerCluster(ctx, r, &nodePool)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("get parent cluster: %w", err)
+		}
+		log.Info("Waiting for parent Cluster", "owner", metav1.GetControllerOf(&nodePool))
 		r.setPhase(ctx, &nodePool, hyperfleetv1alpha1.NodePoolPhaseWaitingForCluster)
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
-	cluster := clusters.Items[0]
 
 	// Cluster must have a Placement before we can target an MC.
 	if cluster.Status.PlacementRef == nil {
@@ -110,7 +109,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	statusPrefix := dynamo.StatusPrefix(mc)
 
 	// Generate NodePool resource and create ApplyDesire.
-	m, err := render.NodePoolResource(&nodePool, &cluster)
+	m, err := render.NodePoolResource(&nodePool, cluster)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("render nodepool resource: %w", err)
 	}
@@ -130,7 +129,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		Spec: dynamo.ApplyDesireSpec{
 			Type:              dynamo.ApplyDesireTypeServerSideApply,
 			ManagementCluster: mc,
-			ClusterID:         render.ClusterIDFromNamespace(cluster.Namespace),
+			ClusterID:         string(cluster.UID),
 			TargetItem: dynamo.ResourceReference{
 				Group:     m.Group,
 				Version:   m.Version,
@@ -147,7 +146,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		DynamoDBMetadata: dynamo.DynamoDBMetadata{DocumentID: readDocID},
 		Spec: dynamo.ReadDesireSpec{
 			ManagementCluster: mc,
-			ClusterID:         render.ClusterIDFromNamespace(cluster.Namespace),
+			ClusterID:         string(cluster.UID),
 			TargetItem: dynamo.ResourceReference{
 				Group:     m.Group,
 				Version:   m.Version,
@@ -208,11 +207,14 @@ func (r *NodePoolReconciler) reconcileDelete(ctx context.Context, nodePool *hype
 	log.Info("NodePool deleting", "nodePool", nodePool.Name)
 	r.setPhase(ctx, nodePool, hyperfleetv1alpha1.NodePoolPhaseDeleting)
 
-	// Look up parent Cluster by shared namespace for MC target.
-	var clusters hyperfleetv1alpha1.ClusterList
-	_ = r.List(ctx, &clusters, client.InNamespace(nodePool.Namespace))
-	if len(clusters.Items) > 0 && clusters.Items[0].Status.PlacementRef != nil {
-		cluster := &clusters.Items[0]
+	// Look up the parent Cluster for the MC target. Its owner can already be
+	// gone (an orphan): then nothing was placed that we can address, so clean up
+	// what we can and let go instead of waiting for a parent that won't come back.
+	cluster, err := getOwnerCluster(ctx, r, nodePool)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return ctrl.Result{}, fmt.Errorf("get parent cluster: %w", err)
+	}
+	if cluster != nil && cluster.Status.PlacementRef != nil {
 		mc := cluster.Status.PlacementRef.ManagementCluster
 		specsPrefix := dynamo.SpecsPrefix(mc)
 		statusPrefix := dynamo.StatusPrefix(mc)
@@ -233,7 +235,7 @@ func (r *NodePoolReconciler) reconcileDelete(ctx context.Context, nodePool *hype
 			Spec: dynamo.ApplyDesireSpec{
 				Type:              dynamo.ApplyDesireTypeDelete,
 				ManagementCluster: mc,
-				ClusterID:         render.ClusterIDFromNamespace(cluster.Namespace),
+				ClusterID:         string(cluster.UID),
 				TargetItem: dynamo.ResourceReference{
 					Group:     m.Group,
 					Version:   m.Version,

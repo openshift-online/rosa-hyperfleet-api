@@ -69,7 +69,9 @@ type PlacementStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // Placement is the Schema for the placements API.
-// It assigns a Cluster to a management cluster.
+// It assigns a Cluster to a management cluster. It is named "<cluster>.placement",
+// lives in the cluster's namespace, and is owned by the cluster through a
+// controller ownerReference and the hyperfleet.io/cluster-uid label.
 type Placement struct {
 	metav1.TypeMeta `json:",inline"`
 

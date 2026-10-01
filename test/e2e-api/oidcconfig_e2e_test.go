@@ -82,9 +82,10 @@ var _ = Describe("OIDC Config", Ordered, Label("oidcconfig"), func() {
 		Expect(spec["issuerUrl"]).NotTo(BeEmpty(), "managed config should have a computed issuerUrl")
 
 		metadata := oidcConfigMetadata(created)
-		uid, _ := metadata["uid"].(string)
-		Expect(uid).NotTo(BeEmpty(), "response should include metadata.uid as the config ID")
-		createdConfigID = uid
+		name, _ := metadata["name"].(string)
+		Expect(name).NotTo(BeEmpty(), "response should include metadata.name as the config ID")
+		Expect(metadata["uid"]).NotTo(BeEmpty(), "response should include the database-minted metadata.uid")
+		createdConfigID = name
 
 		GinkgoWriter.Printf("Created OIDC config id=%s issuerUrl=%v\n", createdConfigID, spec["issuerUrl"])
 	})
@@ -99,7 +100,7 @@ var _ = Describe("OIDC Config", Ordered, Label("oidcconfig"), func() {
 		var fetched map[string]interface{}
 		Expect(json.Unmarshal(response.Body, &fetched)).To(Succeed())
 
-		Expect(oidcConfigMetadata(fetched)["uid"]).To(Equal(createdConfigID))
+		Expect(oidcConfigMetadata(fetched)["name"]).To(Equal(createdConfigID))
 		Expect(oidcConfigSpec(fetched)["type"]).To(Equal("managed"))
 	})
 
@@ -118,7 +119,7 @@ var _ = Describe("OIDC Config", Ordered, Label("oidcconfig"), func() {
 
 		found := false
 		for _, item := range list.Items {
-			if uid, _ := oidcConfigMetadata(item)["uid"].(string); uid == createdConfigID {
+			if name, _ := oidcConfigMetadata(item)["name"].(string); name == createdConfigID {
 				found = true
 				break
 			}
@@ -187,7 +188,7 @@ var _ = Describe("OIDC Config", Ordered, Label("oidcconfig"), func() {
 			g.Expect(json.Unmarshal(resp.Body, &list)).To(Succeed())
 
 			for _, item := range list.Items {
-				g.Expect(oidcConfigMetadata(item)["uid"]).NotTo(Equal(createdConfigID),
+				g.Expect(oidcConfigMetadata(item)["name"]).NotTo(Equal(createdConfigID),
 					"deleted config %s should no longer appear in list", createdConfigID)
 			}
 		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())

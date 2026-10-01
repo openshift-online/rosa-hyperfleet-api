@@ -33,13 +33,13 @@ spec:
           attaches whatever labels it needs for\nownership and cleanup; none of that
           is intrinsic to Index. For example:\n\n\tdns-shard-<id>-reservations   —
           one domain per DNS shard, keyed by prefix\n\toidc-issuer-reservations      —
-          a single domain keyed by issuer URL\n\nA higher-level resource points at
-          its Index by (namespace, name) — e.g.\nDNSReservation records the pair in
-          spec.indexRef so it can find and delete\nthe backing Index without recomputing
-          it.\n\nCallers commonly label entries with hyperfleet.io/account-id (owning
-          AWS\naccount) for filtering and cleanup; other labels are caller-specific
-          (the\nDNS flow, for instance, also stamps hyperfleet.io/cluster-namespace
-          so a\ncluster's entries can be swept on deletion)."
+          a single domain keyed by issuer URL\n\nCreating the Index is the claim.
+          Every Index carries its holder's uid in the\nhyperfleet.io/owner-uid label:
+          on AlreadyExists, a caller whose uid matches\nalready holds the value (so
+          retries are safe); otherwise the value is taken.\nThe holder's finalizer
+          deletes the Indexes carrying its uid, and never ones\ncarrying someone else's.
+          Data belongs on the holder (e.g. a cluster's\nstatus.baseDomain), not on
+          the Index."
         properties:
           apiVersion:
             description: |-

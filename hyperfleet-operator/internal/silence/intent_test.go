@@ -127,3 +127,16 @@ func TestFakeClientCreateAndExpire(t *testing.T) {
 		t.Fatalf("expected no active silences, got %+v", silences)
 	}
 }
+
+func TestIdentityFromClusterUsesManagementClusterNamespace(t *testing.T) {
+	t.Parallel()
+
+	c := &hyperfleetv1alpha1.Cluster{ObjectMeta: metav1.ObjectMeta{
+		Name: "my-cluster", Namespace: "account-123456789012", UID: "4610b27e-8f77-4f4c-9661-c11b42e04dec",
+	}}
+	got := IdentityFromCluster(c)
+	want := ClusterIdentity{Namespace: "cluster-4610b27e-8f77-4f4c-9661-c11b42e04dec", Name: "my-cluster"}
+	if got != want {
+		t.Errorf("IdentityFromCluster = %+v, want %+v", got, want)
+	}
+}

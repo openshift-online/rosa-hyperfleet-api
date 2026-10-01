@@ -16,31 +16,46 @@ import (
 )
 
 const (
-	testClusterID    = "550e8400-e29b-41d4-a716-446655440000"
-	testAccountID    = "account-123"
+	testClusterUID   = "550e8400-e29b-41d4-a716-446655440000"
+	testAccountID    = "123456789012"
 	testClusterName  = "test-cluster"
-	testNodePoolName = "test-nodepool"
+	testNodePoolName = "test-cluster.workers"
 )
+
+func testParentCluster() *hyperfleetv1alpha1.Cluster {
+	return &hyperfleetv1alpha1.Cluster{ObjectMeta: metav1.ObjectMeta{
+		Name:      testClusterName,
+		Namespace: hyperfleetv1alpha1.AccountNamespace(testAccountID),
+		UID:       types.UID(testClusterUID),
+	}}
+}
 
 // --- Cluster conversion tests ---
 
-func TestPublicToInternalCluster_SetsMetadata(t *testing.T) {
+func TestPublicToInternalCluster_KeepsOnlyClientMetadata(t *testing.T) {
 	pub := &public.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: testClusterName,
+			Name:            testClusterName,
+			Namespace:       "account-" + testAccountID,
+			UID:             "client-uid",
+			Finalizers:      []string{"x"},
+			OwnerReferences: []metav1.OwnerReference{{Name: "other"}},
+			Labels:          map[string]string{"team": "a", hyperfleetv1alpha1.ClusterUIDLabel: "spoofed"},
+			Annotations:     map[string]string{"note": "hi"},
 		},
 		Spec: public.ClusterSpec{
 			DisplayName: "Test Cluster",
 		},
 	}
-
-	result := PublicToInternalCluster(pub, testAccountID, testClusterID)
-
+	result := PublicToInternalCluster(pub, testAccountID)
 	require.NotNil(t, result)
 	assert.Equal(t, testClusterName, result.Name)
-	assert.Equal(t, clusterNamespace(testClusterID), result.Namespace)
-	assert.Equal(t, types.UID(testClusterID), result.UID)
-	assert.Equal(t, testAccountID, result.Labels["hyperfleet.io/account-id"])
+	assert.Equal(t, "account-"+testAccountID, result.Namespace)
+	assert.Empty(t, result.UID, "uid is minted by the database")
+	assert.Empty(t, result.Finalizers)
+	assert.Empty(t, result.OwnerReferences)
+	assert.Equal(t, map[string]string{"team": "a"}, result.Labels)
+	assert.Equal(t, map[string]string{"note": "hi"}, result.Annotations)
 }
 
 func TestPublicToInternalCluster_InjectsServiceSetFields(t *testing.T) {
@@ -48,12 +63,9 @@ func TestPublicToInternalCluster_InjectsServiceSetFields(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: testClusterName},
 		Spec:       public.ClusterSpec{DisplayName: "Test Cluster"},
 	}
-
-	result := PublicToInternalCluster(pub, testAccountID, testClusterID)
-
+	result := PublicToInternalCluster(pub, testAccountID)
 	require.NotNil(t, result)
 	assert.Equal(t, testAccountID, result.Spec.AccountID)
-	assert.Equal(t, testClusterID, result.Spec.InternalID)
 }
 
 func TestUnprojectCluster_DNSFieldsNestedCorrectly(t *testing.T) {
@@ -65,8 +77,7 @@ func TestUnprojectCluster_DNSFieldsNestedCorrectly(t *testing.T) {
 
 	// Import conversion package for direct UnprojectCluster call
 	enrichment := &conversion.ServiceSetFields{
-		AccountID:  testAccountID,
-		InternalID: testClusterID,
+		AccountID: testAccountID,
 		HostedCluster: &conversion.ServiceSetFieldsHostedCluster{
 			DNS: &conversion.ServiceSetFieldsDNS{
 				BaseDomain:       "example.com",
@@ -90,11 +101,10 @@ func TestUnprojectCluster_DNSFieldsNestedCorrectly(t *testing.T) {
 	assert.Equal(t, "api.my-cluster.example.com", result.HostedCluster.KubeAPIServerDNSName)
 	// Verify other service-set fields still work
 	assert.Equal(t, testAccountID, result.AccountID)
-	assert.Equal(t, testClusterID, result.InternalID)
 }
 
 func TestPublicToInternalCluster_NilInput(t *testing.T) {
-	result := PublicToInternalCluster(nil, testAccountID, testClusterID)
+	result := PublicToInternalCluster(nil, testAccountID)
 	assert.Nil(t, result)
 }
 
@@ -102,13 +112,11 @@ func TestInternalToPublicCluster_FiltersServiceSetFields(t *testing.T) {
 	cr := &hyperfleetv1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      testClusterName,
-			Namespace: clusterNamespace(testClusterID),
-			UID:       types.UID(testClusterID),
-			Labels:    map[string]string{"hyperfleet.io/account-id": testAccountID},
+			Namespace: hyperfleetv1alpha1.AccountNamespace(testAccountID),
+			UID:       types.UID(testClusterUID),
 		},
 		Spec: hyperfleetv1alpha1.ClusterSpec{
 			AccountID:   testAccountID,
-			InternalID:  testClusterID,
 			DisplayName: "Test Cluster",
 		},
 	}
@@ -117,6 +125,7 @@ func TestInternalToPublicCluster_FiltersServiceSetFields(t *testing.T) {
 
 	require.NotNil(t, result)
 	assert.Equal(t, testClusterName, result.Name)
+	assert.Equal(t, types.UID(testClusterUID), result.UID, "the public uid is the stored uid")
 	assert.Equal(t, "Test Cluster", result.Spec.DisplayName)
 	// Service-set fields absent from public type (filtered by JSON roundtrip)
 }
@@ -132,7 +141,7 @@ func TestClusterRoundTrip(t *testing.T) {
 		Spec:       public.ClusterSpec{DisplayName: "Test Cluster"},
 	}
 
-	internal := PublicToInternalCluster(original, testAccountID, testClusterID)
+	internal := PublicToInternalCluster(original, testAccountID)
 	require.NotNil(t, internal)
 
 	result := InternalToPublicCluster(internal)
@@ -144,19 +153,26 @@ func TestClusterRoundTrip(t *testing.T) {
 
 // --- NodePool conversion tests ---
 
-func TestPublicToInternalNodePool_SetsMetadata(t *testing.T) {
+func TestPublicToInternalNodePool_SetsOwner(t *testing.T) {
 	pub := &public.NodePool{
-		ObjectMeta: metav1.ObjectMeta{Name: testNodePoolName},
-		Spec:       public.NodePoolSpec{DisplayName: "Test NodePool"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            testNodePoolName,
+			Labels:          map[string]string{hyperfleetv1alpha1.ClusterUIDLabel: "spoofed"},
+			OwnerReferences: []metav1.OwnerReference{{Name: "other", UID: "spoofed"}},
+		},
+		Spec: public.NodePoolSpec{DisplayName: "Test NodePool"},
 	}
-
-	// NodePool internalPoolID is tied to its name (cr.Name used as both ID and Name)
-	result := PublicToInternalNodePool(pub, testAccountID, testClusterID, testNodePoolName)
-
+	result := PublicToInternalNodePool(pub, testAccountID, testParentCluster())
 	require.NotNil(t, result)
 	assert.Equal(t, testNodePoolName, result.Name)
-	assert.Equal(t, clusterNamespace(testClusterID), result.Namespace)
-	assert.Equal(t, testAccountID, result.Labels["hyperfleet.io/account-id"])
+	assert.Equal(t, testClusterUID, result.Labels[hyperfleetv1alpha1.ClusterUIDLabel])
+	owner := metav1.GetControllerOf(result)
+	require.NotNil(t, owner)
+	assert.Len(t, result.OwnerReferences, 1)
+	assert.Equal(t, types.UID(testClusterUID), owner.UID)
+	assert.Equal(t, testClusterName, owner.Name)
+	assert.Equal(t, "Cluster", owner.Kind)
+	assert.Equal(t, hyperfleetv1alpha1.GroupVersion.String(), owner.APIVersion)
 }
 
 func TestPublicToInternalNodePool_InjectsServiceSetFields(t *testing.T) {
@@ -164,12 +180,9 @@ func TestPublicToInternalNodePool_InjectsServiceSetFields(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: testNodePoolName},
 		Spec:       public.NodePoolSpec{DisplayName: "Test NodePool"},
 	}
-
-	result := PublicToInternalNodePool(pub, testAccountID, testClusterID, testNodePoolName)
-
+	result := PublicToInternalNodePool(pub, testAccountID, testParentCluster())
 	require.NotNil(t, result)
 	assert.Equal(t, testAccountID, result.Spec.AccountID)
-	assert.Equal(t, testNodePoolName, result.Spec.InternalPoolID)
 }
 
 func TestPublicToInternalNodePool_SyncsAutoRepairToPassthrough(t *testing.T) {
@@ -182,7 +195,7 @@ func TestPublicToInternalNodePool_SyncsAutoRepairToPassthrough(t *testing.T) {
 		},
 	}
 
-	result := PublicToInternalNodePool(pub, testAccountID, testClusterID, testNodePoolName)
+	result := PublicToInternalNodePool(pub, testAccountID, testParentCluster())
 
 	require.NotNil(t, result)
 	assert.Equal(t, true, result.Spec.NodePool.Management.AutoRepair)
@@ -195,7 +208,7 @@ func TestPublicToInternalNodePool_DefaultsAutoRepairToTrue(t *testing.T) {
 		Spec:       public.NodePoolSpec{DisplayName: "Test NodePool"},
 	}
 
-	result := PublicToInternalNodePool(pub, testAccountID, testClusterID, testNodePoolName)
+	result := PublicToInternalNodePool(pub, testAccountID, testParentCluster())
 
 	require.NotNil(t, result)
 	// Matches operator default behavior
@@ -203,7 +216,7 @@ func TestPublicToInternalNodePool_DefaultsAutoRepairToTrue(t *testing.T) {
 }
 
 func TestPublicToInternalNodePool_NilInput(t *testing.T) {
-	result := PublicToInternalNodePool(nil, testAccountID, testClusterID, testNodePoolName)
+	result := PublicToInternalNodePool(nil, testAccountID, testParentCluster())
 	assert.Nil(t, result)
 }
 
@@ -211,15 +224,13 @@ func TestInternalToPublicNodePool_FiltersServiceSetFields(t *testing.T) {
 	cr := &hyperfleetv1alpha1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      testNodePoolName,
-			Namespace: clusterNamespace(testClusterID),
-			Labels:    map[string]string{"hyperfleet.io/account-id": testAccountID},
+			Namespace: hyperfleetv1alpha1.AccountNamespace(testAccountID),
 		},
 		Spec: hyperfleetv1alpha1.NodePoolSpec{
-			AccountID:      testAccountID,
-			InternalPoolID: testNodePoolName,
-			DisplayName:    "Test NodePool",
-			AutoRepair:     ptrBool(true),
-			Labels:         map[string]string{"env": "test"},
+			AccountID:   testAccountID,
+			DisplayName: "Test NodePool",
+			AutoRepair:  ptrBool(true),
+			Labels:      map[string]string{"env": "test"},
 			NodePool: hyperfleetv1alpha1.NodePoolSpecPassthrough{
 				Management: hypershiftv1beta1.NodePoolManagement{AutoRepair: true},
 				NodeLabels: map[string]string{"env": "test"},
@@ -253,7 +264,7 @@ func TestNodePoolRoundTrip(t *testing.T) {
 		},
 	}
 
-	internal := PublicToInternalNodePool(original, testAccountID, testClusterID, testNodePoolName)
+	internal := PublicToInternalNodePool(original, testAccountID, testParentCluster())
 	require.NotNil(t, internal)
 
 	// Passthrough synced correctly
@@ -268,82 +279,41 @@ func TestNodePoolRoundTrip(t *testing.T) {
 	assert.Equal(t, original.Spec.Labels, result.Spec.Labels)
 }
 
-// --- enrichMetadata tests ---
-
-func TestEnrichMetadata_SetsFields(t *testing.T) {
-	meta := &metav1.ObjectMeta{Name: "res"}
-
-	enrichMetadata(meta, testClusterID, testClusterID, testAccountID)
-
-	assert.Equal(t, clusterNamespace(testClusterID), meta.Namespace)
-	assert.Equal(t, types.UID(testClusterID), meta.UID)
-	assert.Equal(t, testAccountID, meta.Labels["hyperfleet.io/account-id"])
-}
-
-func TestEnrichMetadata_PreservesExistingLabels(t *testing.T) {
-	meta := &metav1.ObjectMeta{
-		Name:   "res",
-		Labels: map[string]string{"app": "test"},
-	}
-
-	enrichMetadata(meta, testClusterID, testClusterID, testAccountID)
-
-	assert.Equal(t, "test", meta.Labels["app"])
-	assert.Equal(t, testAccountID, meta.Labels["hyperfleet.io/account-id"])
-}
-
 // --- Input mutation regression tests ---
 
 // TestPublicToInternalCluster_DoesNotMutateInput verifies that conversion leaves
-// pub.ObjectMeta and its labels unchanged. The test catches mutation because
-// enrichMetadata injects "hyperfleet.io/account-id" — if pub.Labels were modified
-// in-place that key would appear in pub.Labels after the call.
+// pub.ObjectMeta and its labels unchanged: dropping a reserved label must not
+// delete it from the caller's map, and the result must not share it.
 func TestPublicToInternalCluster_DoesNotMutateInput(t *testing.T) {
 	pub := &public.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      testClusterName,
-			Namespace: "",
-			Labels:    map[string]string{"user-key": "user-val"},
+			Name:   testClusterName,
+			Labels: map[string]string{"user-key": "user-val", hyperfleetv1alpha1.ClusterUIDLabel: "x"},
 		},
 	}
 
-	cr := PublicToInternalCluster(pub, testAccountID, testClusterID)
+	cr := PublicToInternalCluster(pub, testAccountID)
+	cr.Labels["added"] = "y"
 
-	// CRD must carry the enriched metadata
-	assert.Equal(t, clusterNamespace(testClusterID), cr.Namespace)
-	assert.Equal(t, testAccountID, cr.Labels["hyperfleet.io/account-id"])
-
-	// pub.ObjectMeta must be unchanged
-	assert.Equal(t, "", pub.Namespace)
-	assert.Equal(t, types.UID(""), pub.UID)
-	_, hasAccountLabel := pub.Labels["hyperfleet.io/account-id"]
-	assert.False(t, hasAccountLabel, "pub.Labels must not be mutated by conversion")
-	assert.Equal(t, "user-val", pub.Labels["user-key"])
+	assert.Equal(t, map[string]string{"user-key": "user-val", hyperfleetv1alpha1.ClusterUIDLabel: "x"}, pub.Labels,
+		"pub.Labels must not be mutated by conversion")
 }
 
-// TestPublicToInternalNodePool_DoesNotMutateInput verifies that conversion leaves
-// pub.ObjectMeta and its labels unchanged.
+// TestPublicToInternalNodePool_DoesNotMutateInput verifies that setting the owner
+// on the result leaves pub.ObjectMeta unchanged.
 func TestPublicToInternalNodePool_DoesNotMutateInput(t *testing.T) {
 	pub := &public.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      testNodePoolName,
-			Namespace: "",
-			Labels:    map[string]string{"user-key": "user-val"},
+			Name:   testNodePoolName,
+			Labels: map[string]string{"user-key": "user-val"},
 		},
 	}
 
-	np := PublicToInternalNodePool(pub, testAccountID, testClusterID, testNodePoolName)
+	np := PublicToInternalNodePool(pub, testAccountID, testParentCluster())
+	assert.Equal(t, testClusterUID, np.Labels[hyperfleetv1alpha1.ClusterUIDLabel])
 
-	// CRD must carry the enriched metadata
-	assert.Equal(t, clusterNamespace(testClusterID), np.Namespace)
-	assert.Equal(t, testAccountID, np.Labels["hyperfleet.io/account-id"])
-
-	// pub.ObjectMeta must be unchanged
-	assert.Equal(t, "", pub.Namespace)
-	assert.Equal(t, types.UID(""), pub.UID)
-	_, hasAccountLabel := pub.Labels["hyperfleet.io/account-id"]
-	assert.False(t, hasAccountLabel, "pub.Labels must not be mutated by conversion")
-	assert.Equal(t, "user-val", pub.Labels["user-key"])
+	assert.Equal(t, map[string]string{"user-key": "user-val"}, pub.Labels, "pub.Labels must not be mutated by conversion")
+	assert.Empty(t, pub.OwnerReferences)
 }
 
 // --- syncNodePoolPassthrough tests ---
@@ -372,20 +342,6 @@ func TestSyncNodePoolPassthrough_DefaultsAutoRepairWhenNil(t *testing.T) {
 func TestSyncNodePoolPassthrough_NilSpec(t *testing.T) {
 	// Must not panic
 	syncNodePoolPassthrough(nil, nil, nil)
-}
-
-// --- namespace helpers ---
-
-func TestNamespaceRoundTrip(t *testing.T) {
-	for _, id := range []string{testClusterID, "00000000-0000-0000-0000-000000000000"} {
-		ns := clusterNamespace(id)
-		assert.Equal(t, id, clusterIDFromNamespace(ns), "clusterID not preserved through namespace roundtrip")
-	}
-}
-
-func TestNamespaceLength(t *testing.T) {
-	ns := clusterNamespace(testClusterID)
-	assert.LessOrEqual(t, len(ns), 63, "namespace exceeds K8s 63-char limit")
 }
 
 func ptrBool(b bool) *bool { return &b }

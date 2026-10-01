@@ -80,10 +80,10 @@ func clearFinalizersAndDelete() {
 			_ = c.Delete(ctx, &oidcConfigs.Items[i])
 		}
 	}
-	var dnsReservations hyperfleetv1alpha1.DNSReservationList
-	if err := c.List(ctx, &dnsReservations); err == nil {
-		for i := range dnsReservations.Items {
-			_ = c.Delete(ctx, &dnsReservations.Items[i])
+	var placements hyperfleetv1alpha1.PlacementList
+	if err := c.List(ctx, &placements); err == nil {
+		for i := range placements.Items {
+			_ = c.Delete(ctx, &placements.Items[i])
 		}
 	}
 	var indexes hyperfleetv1alpha1.IndexList
@@ -223,7 +223,7 @@ func mustParseCIDR(s string) ipnet.IPNet {
 
 func newTestCluster(name string) *hyperfleetv1alpha1.Cluster {
 	return &hyperfleetv1alpha1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "cluster-e2e-cluster-id"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "account-111222333444"},
 		Spec: hyperfleetv1alpha1.ClusterSpec{
 			AccountID:  "111222333444",
 			CreatorARN: "arn:aws:iam::111222333444:user/e2etester",
@@ -294,30 +294,41 @@ func newTestCluster(name string) *hyperfleetv1alpha1.Cluster {
 func newTestClusterWithOidcConfig(name string) *hyperfleetv1alpha1.Cluster {
 	cluster := newTestCluster(name)
 	cluster.Spec.OidcConfigID = "e2e-oidc-config"
-	cluster.Spec.AccountID = "e2e-account"
-	cluster.Labels = map[string]string{"hyperfleet.io/account-id": "e2e-account"}
 	return cluster
 }
 
-// newTestOidcConfig returns an unmanaged OidcConfig fixture matching the
-// OidcConfigID/account label set by newTestClusterWithOidcConfig, so the
-// operator's ClusterReconciler resolves oidcSigningKeyExternal=true for it.
+// newTestOidcConfig returns an unmanaged OidcConfig fixture in the account
+// namespace of newTestClusterWithOidcConfig, so the operator's ClusterReconciler
+// resolves oidcSigningKeyExternal=true for it.
 func newTestOidcConfig() *hyperfleetv1alpha1.OidcConfig {
 	return &hyperfleetv1alpha1.OidcConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "e2e-oidc-config", Namespace: "account-e2e-account"},
+		ObjectMeta: metav1.ObjectMeta{Name: "e2e-oidc-config", Namespace: "account-111222333444"},
 		Spec: hyperfleetv1alpha1.OidcConfigSpec{
 			Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
 			IssuerUrl:        "https://oidc.e2e.example.com/e2e-oidc-config",
 			SecretArn:        "arn:aws:secretsmanager:us-east-1:111222333444:secret:e2e-test",
 			InstallerRoleArn: "arn:aws:iam::111222333444:role/installer",
-			AccountID:        "e2e-account",
+			AccountID:        "111222333444",
 		},
 	}
 }
 
-func newTestNodePool() *hyperfleetv1alpha1.NodePool {
+// newTestNodePool returns a "<cluster>.workers" pool owned by cluster, as
+// platform-api stores it. cluster must have been created (it needs its uid).
+func newTestNodePool(cluster *hyperfleetv1alpha1.Cluster) *hyperfleetv1alpha1.NodePool {
 	return &hyperfleetv1alpha1.NodePool{
-		ObjectMeta: metav1.ObjectMeta{Name: "e2e-nodepool", Namespace: "cluster-e2e-cluster-id"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hyperfleetv1alpha1.ChildName(cluster.Name, "workers"),
+			Namespace: cluster.Namespace,
+			Labels:    map[string]string{hyperfleetv1alpha1.ClusterUIDLabel: string(cluster.UID)},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: hyperfleetv1alpha1.GroupVersion.String(),
+				Kind:       "Cluster",
+				Name:       cluster.Name,
+				UID:        cluster.UID,
+				Controller: ptr.To(true),
+			}},
+		},
 		Spec: hyperfleetv1alpha1.NodePoolSpec{
 			NodePool: hyperfleetv1alpha1.NodePoolSpecPassthrough{
 				ClusterName: "e2e-test-01",

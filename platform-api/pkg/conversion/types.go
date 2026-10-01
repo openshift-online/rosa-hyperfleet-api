@@ -170,10 +170,6 @@ type ServiceSetFields struct {
 	IndexRef v1alpha1.IndexRef `json:"indexRef,omitempty"`
 	// Ingress is service-set (platform-managed, hidden from API)
 	Ingress *v1alpha1.IngressConfiguration `json:"ingress,omitempty"`
-	// InternalID is service-set (platform-managed, hidden from API)
-	InternalID string `json:"internalId,omitempty"`
-	// InternalPoolID is service-set (platform-managed, hidden from API)
-	InternalPoolID string `json:"internalPoolId,omitempty"`
 	// KernelArguments is service-set (platform-managed, hidden from API)
 	KernelArguments []string `json:"kernelArguments,omitempty"`
 	// KernelType is service-set (platform-managed, hidden from API)

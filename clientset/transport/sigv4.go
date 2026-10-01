@@ -38,21 +38,19 @@ const (
 )
 
 // namespaceRE matches the /namespaces/{ns} segment injected by client-gen for
-// namespaced resources and captures the namespace value.
-// The Hyperfleet platform API is account-scoped; the namespace is rewritten to
-// the X-Amz-Account-Id signed header and removed from the URL path.
+// namespaced resources. The platform API has no namespace segment in its paths:
+// the namespace is the caller's account, which API Gateway derives from the
+// SigV4-verified identity, so the segment is removed from the URL path.
 var namespaceRE = regexp.MustCompile(`/namespaces/([^/]+)`)
 
 // SigV4RoundTripper signs each request with AWS SigV4 before forwarding it.
-// When the URL contains a /namespaces/{ns} segment (added by the generated
-// client for namespaced CRD types), it extracts {ns} as the per-request
-// account ID, rewrites the URL to remove the segment, and sets
-// X-Amz-Account-Id accordingly.
+// It removes the /namespaces/{ns} segment the generated client adds for
+// namespaced CRD types and sets X-Amz-Account-Id to the configured account.
 type SigV4RoundTripper struct {
 	inner     http.RoundTripper
 	awsCfg    aws.Config
 	region    string
-	accountID string // default account ID used when no namespace is present
+	accountID string
 	callerARN string
 }
 
@@ -71,31 +69,26 @@ func New(inner http.RoundTripper, awsCfg aws.Config, region, accountID, callerAR
 	}
 }
 
-// RoundTrip implements http.RoundTripper. It rewrites the URL to remove the
-// /namespaces/{ns} segment injected by client-gen, sets the X-Amz-Account-Id
+// RoundTrip implements http.RoundTripper. It removes the /namespaces/{ns}
+// segment injected by client-gen, sets the X-Amz-Account-Id
 // and X-Amz-Caller-Arn signed headers, hashes the body, signs the request with
 // AWS SigV4, and forwards it via the inner transport.
 func (t *SigV4RoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Clone to avoid mutating the caller's request.
 	req = req.Clone(req.Context())
 
-	// Extract namespace from URL (if present) and rewrite path.
-	// The generated client encodes the Go namespace as /namespaces/{ns}/,
-	// but platform-api uses /api/v0/clusters without any namespace segment.
-	accountID := t.accountID
-	if m := namespaceRE.FindStringSubmatchIndex(req.URL.Path); m != nil {
-		ns := req.URL.Path[m[2]:m[3]]
-		if ns != "" {
-			accountID = ns
-		}
+	// The generated client encodes the namespace as /namespaces/{ns}/, but
+	// platform-api uses /api/v0/clusters without any namespace segment. The
+	// namespace is never the account ID: that comes from the signed identity.
+	if m := namespaceRE.FindStringIndex(req.URL.Path); m != nil {
 		req.URL.Path = req.URL.Path[:m[0]] + req.URL.Path[m[1]:]
 		req.URL.RawPath = ""
 	}
 
 	// Set signed headers before calling SignHTTP so they appear in the
 	// Authorization header's SignedHeaders list.
-	if accountID != "" {
-		req.Header.Set(headerAccountID, accountID)
+	if t.accountID != "" {
+		req.Header.Set(headerAccountID, t.accountID)
 	}
 	if t.callerARN != "" {
 		req.Header.Set(headerCallerARN, t.callerARN)

@@ -24,7 +24,7 @@ The operator uses [fleetdb](../../../hyperfleet-db/) to implement the controller
 
 ### CRDs
 
-CRDs are under API group `hyperfleet.io/v1alpha1`. Most are **namespace-scoped** — the namespace is the cluster ID, with the account ID stored as a label. **ManagementCluster** is the exception: it is **cluster-scoped** and declared as an `UnshardedGVK` so every operator pod sees all ManagementClusters regardless of its shard assignment.
+CRDs are under API group `hyperfleet.io/v1alpha1`. Most are **namespace-scoped** — the namespace is the account (`account-<id>`), the name is client-chosen (`<cluster>` or `<cluster>.<child>`), and the database-minted uid identifies the object. See [hyperfleet-db-guidelines.md](hyperfleet-db-guidelines.md). **ManagementCluster** is the exception: it is **cluster-scoped** and declared as an `UnshardedGVK` so every operator pod sees all ManagementClusters regardless of its shard assignment.
 
 - **Cluster** — represents a ROSA HCP cluster. Spec contains all the configuration needed to create a HostedCluster on a management cluster (networking, IAM roles, OIDC issuer, etc.).
 - **NodePool** — represents a set of worker nodes for a Cluster. References a parent Cluster via `spec.clusterRef`. Must be in the same namespace as its parent Cluster.

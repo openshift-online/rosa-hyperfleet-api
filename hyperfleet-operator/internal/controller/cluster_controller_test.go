@@ -22,7 +22,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -45,19 +44,17 @@ var _ = Describe("Cluster Controller", func() {
 	Context("When reconciling a new Cluster", func() {
 		const (
 			clusterName = "test-cluster-01"
-			testNS      = "cluster-test-cluster-id"
+			testNS      = "account-123456789012"
 		)
 
 		ctx := context.Background()
 
 		BeforeEach(func() {
 			ensureNamespace(ctx, testNS)
-			// Full reconciles run reserveDNS, which creates the Index in the
-			// shard namespace and the DNSReservation in the account namespace.
-			// Unlike hyperfleet-db/Postgres, envtest is a real apiserver and
-			// requires these namespaces to exist first.
+			// Full reconciles run reserveDNS, which claims an Index in the shard
+			// namespace. Unlike hyperfleet-db/Postgres, envtest is a real
+			// apiserver and requires the namespace to exist first.
 			ensureNamespace(ctx, "dns-shard-0-reservations")
-			ensureNamespace(ctx, "account-123456789012")
 		})
 
 		AfterEach(func() {
@@ -69,11 +66,11 @@ var _ = Describe("Cluster Controller", func() {
 				_ = k8sClient.Delete(ctx, resource)
 			}
 			placement := &hyperfleetv1alpha1.Placement{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + "-placement"}, placement); err == nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, placement); err == nil {
 				_ = k8sClient.Delete(ctx, placement)
 			}
 			oc := &hyperfleetv1alpha1.OidcConfig{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: "account-test-account", Name: "test-oidc-config"}, oc); err == nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "test-oidc-config"}, oc); err == nil {
 				_ = k8sClient.Delete(ctx, oc)
 			}
 		})
@@ -133,20 +130,8 @@ var _ = Describe("Cluster Controller", func() {
 			resource := newTestCluster(clusterName)
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
-			// Create a Bound Placement.
-			placement := &hyperfleetv1alpha1.Placement{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterName + "-placement",
-					Namespace: testNS,
-				},
-				Spec: hyperfleetv1alpha1.PlacementSpec{
-					ClusterName:       clusterName,
-					ManagementCluster: "mc01",
-				},
-			}
-			Expect(k8sClient.Create(ctx, placement)).To(Succeed())
-			placement.Status.Phase = hyperfleetv1alpha1.PlacementPhaseBound
-			Expect(k8sClient.Status().Update(ctx, placement)).To(Succeed())
+			// Create a Bound Placement owned by the cluster.
+			createPlacement(ctx, resource, "mc01", true)
 
 			fd := &fakeDynamo{}
 			reconciler := &ClusterReconciler{
@@ -173,9 +158,8 @@ var _ = Describe("Cluster Controller", func() {
 		})
 
 		It("should create DynamoDB desires including the OIDC signing key ExternalSecret when OidcConfigID is set", func() {
-			ensureNamespace(ctx, "account-test-account")
 			oc := &hyperfleetv1alpha1.OidcConfig{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-oidc-config", Namespace: "account-test-account"},
+				ObjectMeta: metav1.ObjectMeta{Name: "test-oidc-config", Namespace: testNS},
 				Spec: hyperfleetv1alpha1.OidcConfigSpec{
 					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
 					IssuerUrl:        "https://oidc.example.com/test-oidc-config",
@@ -188,20 +172,8 @@ var _ = Describe("Cluster Controller", func() {
 			resource := newTestClusterWithOidcConfig(clusterName)
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
-			// Create a Bound Placement.
-			placement := &hyperfleetv1alpha1.Placement{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterName + "-placement",
-					Namespace: testNS,
-				},
-				Spec: hyperfleetv1alpha1.PlacementSpec{
-					ClusterName:       clusterName,
-					ManagementCluster: "mc01",
-				},
-			}
-			Expect(k8sClient.Create(ctx, placement)).To(Succeed())
-			placement.Status.Phase = hyperfleetv1alpha1.PlacementPhaseBound
-			Expect(k8sClient.Status().Update(ctx, placement)).To(Succeed())
+			// Create a Bound Placement owned by the cluster.
+			createPlacement(ctx, resource, "mc01", true)
 
 			fd := &fakeDynamo{}
 			reconciler := &ClusterReconciler{
@@ -233,17 +205,7 @@ var _ = Describe("Cluster Controller", func() {
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
 			// Create a Placement so the deletion path has something to clean up.
-			placement := &hyperfleetv1alpha1.Placement{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterName + "-placement",
-					Namespace: testNS,
-				},
-				Spec: hyperfleetv1alpha1.PlacementSpec{
-					ClusterName:       clusterName,
-					ManagementCluster: "mc01",
-				},
-			}
-			Expect(k8sClient.Create(ctx, placement)).To(Succeed())
+			createPlacement(ctx, resource, "mc01", false)
 
 			fd := &fakeDynamo{}
 			reconciler := &ClusterReconciler{
@@ -263,7 +225,7 @@ var _ = Describe("Cluster Controller", func() {
 			var updated hyperfleetv1alpha1.Cluster
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName}, &updated)).To(Succeed())
 			updated.Status.PlacementRef = &hyperfleetv1alpha1.PlacementReference{
-				Name:              clusterName + "-placement",
+				Name:              clusterName + ".placement",
 				ManagementCluster: "mc01",
 			}
 			Expect(k8sClient.Status().Update(ctx, &updated)).To(Succeed())
@@ -283,7 +245,7 @@ var _ = Describe("Cluster Controller", func() {
 
 			// Placement should still exist (finalizer not removed yet).
 			var p hyperfleetv1alpha1.Placement
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + "-placement"}, &p)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, &p)).To(Succeed())
 
 			// Simulate kube-applier acknowledging the deletes but resources
 			// still terminating (Successful=False, WaitingForDeletion).
@@ -323,7 +285,7 @@ var _ = Describe("Cluster Controller", func() {
 			Expect(deleteApplies).To(HaveLen(18), "6 desires re-upserted on third pass")
 
 			// Verify the Placement was deleted.
-			err = k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + "-placement"}, &p)
+			err = k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, &p)
 			Expect(err).To(HaveOccurred())
 
 			// Verify desire specs were cleaned up once at the end (not on every pass).
@@ -337,19 +299,7 @@ var _ = Describe("Cluster Controller", func() {
 			resource := newTestCluster(clusterName)
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
-			placement := &hyperfleetv1alpha1.Placement{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterName + "-placement",
-					Namespace: testNS,
-				},
-				Spec: hyperfleetv1alpha1.PlacementSpec{
-					ClusterName:       clusterName,
-					ManagementCluster: "mc01",
-				},
-			}
-			Expect(k8sClient.Create(ctx, placement)).To(Succeed())
-			placement.Status.Phase = hyperfleetv1alpha1.PlacementPhaseBound
-			Expect(k8sClient.Status().Update(ctx, placement)).To(Succeed())
+			createPlacement(ctx, resource, "mc01", true)
 
 			fd := &fakeDynamo{
 				applyStatus: &dynamo.ApplyDesireStatus{
@@ -420,19 +370,7 @@ var _ = Describe("Cluster Controller", func() {
 			resource := newTestCluster(clusterName)
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
-			placement := &hyperfleetv1alpha1.Placement{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterName + "-placement",
-					Namespace: testNS,
-				},
-				Spec: hyperfleetv1alpha1.PlacementSpec{
-					ClusterName:       clusterName,
-					ManagementCluster: "mc01",
-				},
-			}
-			Expect(k8sClient.Create(ctx, placement)).To(Succeed())
-			placement.Status.Phase = hyperfleetv1alpha1.PlacementPhaseBound
-			Expect(k8sClient.Status().Update(ctx, placement)).To(Succeed())
+			createPlacement(ctx, resource, "mc01", true)
 
 			fd := &fakeDynamo{
 				applyStatus: &dynamo.ApplyDesireStatus{
@@ -513,19 +451,7 @@ var _ = Describe("Cluster Controller", func() {
 			resource.Spec.ExpirationTimestamp = &expiry
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
-			placement := &hyperfleetv1alpha1.Placement{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterName + "-placement",
-					Namespace: testNS,
-				},
-				Spec: hyperfleetv1alpha1.PlacementSpec{
-					ClusterName:       clusterName,
-					ManagementCluster: "mc01",
-				},
-			}
-			Expect(k8sClient.Create(ctx, placement)).To(Succeed())
-			placement.Status.Phase = hyperfleetv1alpha1.PlacementPhaseBound
-			Expect(k8sClient.Status().Update(ctx, placement)).To(Succeed())
+			createPlacement(ctx, resource, "mc01", true)
 
 			reconciler := &ClusterReconciler{
 				Client:         k8sClient,
@@ -567,9 +493,7 @@ var _ = Describe("Cluster Controller", func() {
 var _ = Describe("DNS Reservation", func() {
 	const (
 		dnsClusterName = "dns-test-cluster"
-		dnsTestNS      = "cluster-dns-test-id"
-		dnsAccountID   = "123456789012"
-		dnsAccountNS   = "account-" + dnsAccountID
+		dnsTestNS      = "account-123456789012"
 		dnsShardNS     = "dns-shard-0-reservations"
 	)
 
@@ -584,25 +508,28 @@ var _ = Describe("DNS Reservation", func() {
 		}
 	}
 
+	// heldBy lists the Indexes in ns carrying owner's uid.
+	heldBy := func(ns string, owner types.UID) []hyperfleetv1alpha1.Index {
+		var idxList hyperfleetv1alpha1.IndexList
+		Expect(k8sClient.List(ctx, &idxList,
+			client.InNamespace(ns),
+			client.MatchingLabels{hyperfleetv1alpha1.OwnerUIDLabel: string(owner)},
+		)).To(Succeed())
+		return idxList.Items
+	}
+
 	BeforeEach(func() {
 		ensureNamespace(ctx, dnsTestNS)
-		ensureNamespace(ctx, dnsAccountNS)
 		ensureNamespace(ctx, dnsShardNS)
 	})
 
 	AfterEach(func() {
-		cluster := &hyperfleetv1alpha1.Cluster{}
-		if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: dnsTestNS, Name: dnsClusterName}, cluster); err == nil {
-			controllerutil.RemoveFinalizer(cluster, clusterFinalizer)
-			_ = k8sClient.Update(ctx, cluster)
-			_ = k8sClient.Delete(ctx, cluster)
-		}
-
-		// Clean up any DNSReservation resources created during the test.
-		var dnsList hyperfleetv1alpha1.DNSReservationList
-		if err := k8sClient.List(ctx, &dnsList); err == nil {
-			for i := range dnsList.Items {
-				_ = k8sClient.Delete(ctx, &dnsList.Items[i])
+		for _, name := range []string{dnsClusterName, "other-dns-cluster"} {
+			cluster := &hyperfleetv1alpha1.Cluster{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: dnsTestNS, Name: name}, cluster); err == nil {
+				controllerutil.RemoveFinalizer(cluster, clusterFinalizer)
+				_ = k8sClient.Update(ctx, cluster)
+				_ = k8sClient.Delete(ctx, cluster)
 			}
 		}
 
@@ -613,14 +540,9 @@ var _ = Describe("DNS Reservation", func() {
 				_ = k8sClient.Delete(ctx, &idxList.Items[i])
 			}
 		}
-
-		placement := &hyperfleetv1alpha1.Placement{}
-		if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: dnsTestNS, Name: dnsClusterName + "-placement"}, placement); err == nil {
-			_ = k8sClient.Delete(ctx, placement)
-		}
 	})
 
-	It("should reserve a DNS base domain and persist it in cluster status", func() {
+	It("should claim a DNS prefix with one Index and persist the base domain in cluster status", func() {
 		cluster := newTestClusterInNS(dnsClusterName, dnsTestNS)
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
@@ -630,36 +552,20 @@ var _ = Describe("DNS Reservation", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(baseDomain).To(MatchRegexp(`^[0-9a-f]{4}\.0\.example\.com$`))
 
-		// Verify DNSReservation was created in account namespace.
-		var dnsList hyperfleetv1alpha1.DNSReservationList
-		Expect(k8sClient.List(ctx, &dnsList,
-			client.InNamespace(dnsAccountNS),
-			client.MatchingLabels{"hyperfleet.io/cluster-namespace": dnsTestNS},
-		)).To(Succeed())
-		Expect(dnsList.Items).To(HaveLen(1))
-		dnsRes := dnsList.Items[0]
-		Expect(dnsRes.Spec.IndexRef.Namespace).To(Equal(dnsShardNS))
-		Expect(dnsRes.Spec.IndexRef.Name).To(MatchRegexp(`^[0-9a-f]{4}$`))
-		Expect(dnsRes.Spec.BaseDomain).To(Equal(baseDomain))
-		Expect(dnsRes.Labels["hyperfleet.io/cluster-namespace"]).To(Equal(dnsTestNS))
-		Expect(dnsRes.Labels["hyperfleet.io/account-id"]).To(Equal(dnsAccountID))
+		// The Index in the shard namespace is the claim: its name is the
+		// prefix and it carries the cluster's uid.
+		held := heldBy(dnsShardNS, cluster.UID)
+		Expect(held).To(HaveLen(1))
+		Expect(held[0].Name).To(MatchRegexp(`^[0-9a-f]{4}$`))
+		Expect(baseDomain).To(Equal(held[0].Name + ".0.example.com"))
 
-		// Verify Index was created in the shard namespace.
-		var idx hyperfleetv1alpha1.Index
-		Expect(k8sClient.Get(ctx, client.ObjectKey{
-			Namespace: dnsShardNS,
-			Name:      dnsRes.Spec.IndexRef.Name,
-		}, &idx)).To(Succeed())
-		Expect(idx.Labels["hyperfleet.io/account-id"]).To(Equal(dnsAccountID))
-		Expect(idx.Labels["hyperfleet.io/cluster-namespace"]).To(Equal(dnsTestNS))
-
-		// Verify cluster status was updated.
+		// The data lives on the cluster.
 		var updated hyperfleetv1alpha1.Cluster
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: dnsTestNS, Name: dnsClusterName}, &updated)).To(Succeed())
 		Expect(updated.Status.BaseDomain).To(Equal(baseDomain))
 	})
 
-	It("should return the existing base domain when the reservation already belongs to this cluster", func() {
+	It("should return the held prefix when the status update was lost", func() {
 		cluster := newTestClusterInNS(dnsClusterName, dnsTestNS)
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
@@ -669,7 +575,7 @@ var _ = Describe("DNS Reservation", func() {
 		bd1, err := reconciler.reserveDNS(ctx, cluster)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Calling again should find the existing reservation via the recovery path.
+		// Simulate a lost status write: the claim must be found again, not duplicated.
 		var fresh hyperfleetv1alpha1.Cluster
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: dnsTestNS, Name: dnsClusterName}, &fresh)).To(Succeed())
 		fresh.Status.BaseDomain = ""
@@ -679,43 +585,18 @@ var _ = Describe("DNS Reservation", func() {
 		bd2, err := reconciler.reserveDNS(ctx, &fresh)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(bd2).To(Equal(bd1))
-
-		// Verify only one DNSReservation exists for this cluster.
-		var dnsList hyperfleetv1alpha1.DNSReservationList
-		Expect(k8sClient.List(ctx, &dnsList, client.InNamespace(dnsAccountNS))).To(Succeed())
-		ownedCount := 0
-		for _, d := range dnsList.Items {
-			if d.Labels["hyperfleet.io/cluster-namespace"] == dnsTestNS {
-				ownedCount++
-			}
-		}
-		Expect(ownedCount).To(Equal(1))
+		Expect(heldBy(dnsShardNS, cluster.UID)).To(HaveLen(1))
 	})
 
-	It("should delete the DNS reservation and Index during cluster cleanup", func() {
+	It("should release the Index during cluster cleanup", func() {
 		cluster := newTestClusterInNS(dnsClusterName, dnsTestNS)
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 		reconciler := newReconciler()
 
-		// Reserve DNS.
 		baseDomain, err := reconciler.reserveDNS(ctx, cluster)
 		Expect(err).NotTo(HaveOccurred())
-
-		// Verify the reservation and index exist.
-		var dnsList hyperfleetv1alpha1.DNSReservationList
-		Expect(k8sClient.List(ctx, &dnsList,
-			client.InNamespace(dnsAccountNS),
-			client.MatchingLabels{"hyperfleet.io/cluster-namespace": dnsTestNS},
-		)).To(Succeed())
-		Expect(dnsList.Items).To(HaveLen(1))
-
-		var idxList hyperfleetv1alpha1.IndexList
-		Expect(k8sClient.List(ctx, &idxList,
-			client.InNamespace(dnsShardNS),
-			client.MatchingLabels{"hyperfleet.io/cluster-namespace": dnsTestNS},
-		)).To(Succeed())
-		Expect(idxList.Items).To(HaveLen(1))
+		Expect(heldBy(dnsShardNS, cluster.UID)).To(HaveLen(1))
 
 		// Re-fetch the cluster (status was updated).
 		var updated hyperfleetv1alpha1.Cluster
@@ -725,108 +606,82 @@ var _ = Describe("DNS Reservation", func() {
 		// Add finalizer so cleanupAndRemoveFinalizer has something to remove.
 		controllerutil.AddFinalizer(&updated, clusterFinalizer)
 		Expect(k8sClient.Update(ctx, &updated)).To(Succeed())
-
-		// Re-fetch after finalizer update.
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: dnsTestNS, Name: dnsClusterName}, &updated)).To(Succeed())
 
-		// Run cleanup.
 		_, err = reconciler.cleanupAndRemoveFinalizer(ctx, &updated)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Verify the DNS reservation was deleted.
-		Expect(k8sClient.List(ctx, &dnsList,
-			client.InNamespace(dnsAccountNS),
-			client.MatchingLabels{"hyperfleet.io/cluster-namespace": dnsTestNS},
-		)).To(Succeed())
-		Expect(dnsList.Items).To(BeEmpty(), "DNS reservation should be deleted")
+		Expect(heldBy(dnsShardNS, cluster.UID)).To(BeEmpty(), "Index should be released")
 
-		// Verify the Index was deleted.
-		Expect(k8sClient.List(ctx, &idxList,
-			client.InNamespace(dnsShardNS),
-			client.MatchingLabels{"hyperfleet.io/cluster-namespace": dnsTestNS},
-		)).To(Succeed())
-		Expect(idxList.Items).To(BeEmpty(), "Index should be deleted")
-
-		// Verify finalizer was removed.
 		var final hyperfleetv1alpha1.Cluster
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: dnsTestNS, Name: dnsClusterName}, &final)).To(Succeed())
 		Expect(controllerutil.ContainsFinalizer(&final, clusterFinalizer)).To(BeFalse())
 	})
 
-	It("should retry and succeed when a prefix collides with another cluster's reservation", func() {
+	It("should give a second cluster its own prefix", func() {
 		cluster := newTestClusterInNS(dnsClusterName, dnsTestNS)
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		other := newTestClusterInNS("other-dns-cluster", dnsTestNS)
+		Expect(k8sClient.Create(ctx, other)).To(Succeed())
 
 		reconciler := newReconciler()
 
-		// Reserve DNS for our cluster first.
-		baseDomain, err := reconciler.reserveDNS(ctx, cluster)
+		bd, err := reconciler.reserveDNS(ctx, cluster)
 		Expect(err).NotTo(HaveOccurred())
-
-		// Extract the reservation.
-		var dnsList hyperfleetv1alpha1.DNSReservationList
-		Expect(k8sClient.List(ctx, &dnsList,
-			client.InNamespace(dnsAccountNS),
-			client.MatchingLabels{"hyperfleet.io/cluster-namespace": dnsTestNS},
-		)).To(Succeed())
-		Expect(dnsList.Items).To(HaveLen(1))
-		Expect(dnsList.Items[0].Spec.BaseDomain).To(Equal(baseDomain))
-
-		// Create a second cluster in a different namespace.
-		const otherNS = "cluster-other-dns-test"
-		ensureNamespace(ctx, otherNS)
-		otherCluster := newTestClusterInNS("other-dns-cluster", otherNS)
-		Expect(k8sClient.Create(ctx, otherCluster)).To(Succeed())
-
-		// Reserve DNS for the second cluster — it must succeed with a different reservation.
-		otherBaseDomain, err := reconciler.reserveDNS(ctx, otherCluster)
+		otherBD, err := reconciler.reserveDNS(ctx, other)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(otherBaseDomain).To(MatchRegexp(`^[0-9a-f]{4}\.0\.example\.com$`))
+		Expect(otherBD).To(MatchRegexp(`^[0-9a-f]{4}\.0\.example\.com$`))
+		Expect(otherBD).NotTo(Equal(bd))
 
-		// Verify the second cluster got its own reservation.
-		var otherDNS hyperfleetv1alpha1.DNSReservationList
-		Expect(k8sClient.List(ctx, &otherDNS,
-			client.InNamespace(dnsAccountNS),
-			client.MatchingLabels{"hyperfleet.io/cluster-namespace": otherNS},
-		)).To(Succeed())
-		Expect(otherDNS.Items).To(HaveLen(1))
-		Expect(otherDNS.Items[0].Spec.BaseDomain).To(Equal(otherBaseDomain))
-
-		// Clean up the second cluster's resources.
-		_ = k8sClient.Delete(ctx, otherCluster)
-		for i := range otherDNS.Items {
-			_ = k8sClient.Delete(ctx, &otherDNS.Items[i])
-		}
+		Expect(heldBy(dnsShardNS, cluster.UID)).To(HaveLen(1))
+		Expect(heldBy(dnsShardNS, other.UID)).To(HaveLen(1))
 	})
 
-	It("should clean up orphaned Indexes across shard namespaces during cluster cleanup", func() {
+	It("should treat a prefix held by another uid as taken", func() {
+		cluster := newTestClusterInNS(dnsClusterName, dnsTestNS)
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+
+		taken := &hyperfleetv1alpha1.Index{ObjectMeta: metav1.ObjectMeta{
+			Name: "f7a3", Namespace: dnsShardNS,
+			Labels: map[string]string{hyperfleetv1alpha1.OwnerUIDLabel: "someone-else"},
+		}}
+		Expect(k8sClient.Create(ctx, taken)).To(Succeed())
+
+		claimed, err := claimIndex(ctx, k8sClient, dnsShardNS, "f7a3", cluster.UID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(claimed).To(BeFalse())
+
+		// Claiming again a value we hold is safe.
+		mine, err := claimIndex(ctx, k8sClient, dnsShardNS, "beef", cluster.UID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(mine).To(BeTrue())
+		again, err := claimIndex(ctx, k8sClient, dnsShardNS, "beef", cluster.UID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(again).To(BeTrue())
+	})
+
+	It("should release its Indexes in every shard and never another owner's", func() {
 		cluster := newTestClusterInNS(dnsClusterName, dnsTestNS)
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 
 		reconciler := newReconciler()
 
-		// Simulate an orphaned Index in a different shard namespace (as if a
-		// crash happened after creating the Index but before the DNSReservation).
+		// A claim in another shard (as if left by an earlier attempt), plus
+		// an Index held by someone else.
 		const otherShardNS = "dns-shard-1-reservations"
 		ensureNamespace(ctx, otherShardNS)
-		orphanIdx := &hyperfleetv1alpha1.Index{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dead",
-				Namespace: otherShardNS,
-				Labels: map[string]string{
-					"hyperfleet.io/account-id":        dnsAccountID,
-					"hyperfleet.io/cluster-namespace": dnsTestNS,
-				},
-			},
-			Spec: hyperfleetv1alpha1.IndexSpec{},
-		}
-		Expect(k8sClient.Create(ctx, orphanIdx)).To(Succeed())
+		Expect(k8sClient.Create(ctx, &hyperfleetv1alpha1.Index{ObjectMeta: metav1.ObjectMeta{
+			Name: "dead", Namespace: otherShardNS,
+			Labels: map[string]string{hyperfleetv1alpha1.OwnerUIDLabel: string(cluster.UID)},
+		}})).To(Succeed())
+		Expect(k8sClient.Create(ctx, &hyperfleetv1alpha1.Index{ObjectMeta: metav1.ObjectMeta{
+			Name: "keep", Namespace: dnsShardNS,
+			Labels: map[string]string{hyperfleetv1alpha1.OwnerUIDLabel: "someone-else"},
+		}})).To(Succeed())
 
-		// Also do a real reservation in shard 0.
 		_, err := reconciler.reserveDNS(ctx, cluster)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Add finalizer and run cleanup.
 		var updated hyperfleetv1alpha1.Cluster
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: dnsTestNS, Name: dnsClusterName}, &updated)).To(Succeed())
 		controllerutil.AddFinalizer(&updated, clusterFinalizer)
@@ -836,18 +691,11 @@ var _ = Describe("DNS Reservation", func() {
 		_, err = reconciler.cleanupAndRemoveFinalizer(ctx, &updated)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Verify the orphaned Index in the other shard was cleaned up.
-		var idx hyperfleetv1alpha1.Index
-		err = k8sClient.Get(ctx, client.ObjectKey{Namespace: otherShardNS, Name: "dead"}, &idx)
-		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "orphaned Index should be deleted")
-
-		// Verify the real Index in shard 0 was also cleaned up.
-		var idxList hyperfleetv1alpha1.IndexList
-		Expect(k8sClient.List(ctx, &idxList,
-			client.InNamespace(dnsShardNS),
-			client.MatchingLabels{"hyperfleet.io/cluster-namespace": dnsTestNS},
-		)).To(Succeed())
-		Expect(idxList.Items).To(BeEmpty(), "shard-0 Index should be deleted")
+		Expect(heldBy(otherShardNS, cluster.UID)).To(BeEmpty(), "claim in the other shard should be released")
+		Expect(heldBy(dnsShardNS, cluster.UID)).To(BeEmpty(), "shard-0 claim should be released")
+		var kept hyperfleetv1alpha1.Index
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: dnsShardNS, Name: "keep"}, &kept)).To(Succeed(),
+			"another owner's Index must not be deleted")
 	})
 
 	It("should skip DNS cleanup when no reservation exists", func() {
@@ -873,6 +721,29 @@ var _ = Describe("DNS Reservation", func() {
 	})
 })
 
+// createPlacement creates cluster's Placement, owned by it as the
+// PlacementReconciler would, optionally marking it Bound.
+func createPlacement(ctx context.Context, cluster *hyperfleetv1alpha1.Cluster, mc string, bound bool) *hyperfleetv1alpha1.Placement {
+	placement := &hyperfleetv1alpha1.Placement{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      placementName(cluster),
+			Namespace: cluster.Namespace,
+			Labels:    map[string]string{hyperfleetv1alpha1.ClusterUIDLabel: string(cluster.UID)},
+		},
+		Spec: hyperfleetv1alpha1.PlacementSpec{
+			ClusterName:       cluster.Name,
+			ManagementCluster: mc,
+		},
+	}
+	Expect(controllerutil.SetControllerReference(cluster, placement, k8sClient.Scheme())).To(Succeed())
+	Expect(k8sClient.Create(ctx, placement)).To(Succeed())
+	if bound {
+		placement.Status.Phase = hyperfleetv1alpha1.PlacementPhaseBound
+		Expect(k8sClient.Status().Update(ctx, placement)).To(Succeed())
+	}
+	return placement
+}
+
 func newTestClusterInNS(name, ns string) *hyperfleetv1alpha1.Cluster {
 	c := newTestCluster(name)
 	c.Namespace = ns
@@ -891,7 +762,7 @@ func newTestCluster(name string) *hyperfleetv1alpha1.Cluster {
 	return &hyperfleetv1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: "cluster-test-cluster-id",
+			Namespace: "account-123456789012",
 		},
 		Spec: hyperfleetv1alpha1.ClusterSpec{
 			AccountID:  "123456789012",
@@ -951,8 +822,6 @@ func newTestCluster(name string) *hyperfleetv1alpha1.Cluster {
 func newTestClusterWithOidcConfig(name string) *hyperfleetv1alpha1.Cluster {
 	cluster := newTestCluster(name)
 	cluster.Spec.OidcConfigID = "test-oidc-config"
-	cluster.Spec.AccountID = "test-account"
-	cluster.Labels = map[string]string{accountIDLabel: "test-account"}
 	return cluster
 }
 

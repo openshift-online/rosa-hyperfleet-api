@@ -285,12 +285,10 @@ func TestNodePoolWaitUntil_TimeoutWhenConditionNeverTrue(t *testing.T) {
 	}
 }
 
-// clusterClient.Update routes by UID
+// clusterClient.Update routes by name
 
-func TestClusterUpdate_RoutesByUID(t *testing.T) {
+func TestClusterUpdate_RoutesByName(t *testing.T) {
 	var gotName string
-	stub := &stubClusterClient{}
-	stub.getFunc = nil // not used by Update
 	innerStub := &updateCaptureClusterClient{nameChan: make(chan string, 1)}
 	c := &clusterClient{inner: innerStub}
 
@@ -301,8 +299,8 @@ func TestClusterUpdate_RoutesByUID(t *testing.T) {
 	_, _ = c.Update(context.Background(), obj, UpdateOptions{})
 	gotName = <-innerStub.nameChan
 
-	if gotName != "uid-abc" {
-		t.Errorf("Update routed to name %q, want uid-abc", gotName)
+	if gotName != "human-name" {
+		t.Errorf("Update routed to name %q, want human-name", gotName)
 	}
 }
 
@@ -317,21 +315,21 @@ func (u *updateCaptureClusterClient) Update(_ context.Context, obj *v1alpha1.Clu
 	return obj, nil
 }
 
-// nodePoolClient.Update routes by UID
+// nodePoolClient.Update routes by name
 
-func TestNodePoolUpdate_RoutesByUID(t *testing.T) {
+func TestNodePoolUpdate_RoutesByName(t *testing.T) {
 	innerStub := &updateCaptureNodePoolClient{nameChan: make(chan string, 1)}
 	c := &nodePoolClient{inner: innerStub}
 
 	obj := &v1alpha1.NodePool{}
-	obj.Name = "human-name"
+	obj.Name = "cluster.workers"
 	obj.UID = "uid-xyz"
 
 	_, _ = c.Update(context.Background(), obj, UpdateOptions{})
 	gotName := <-innerStub.nameChan
 
-	if gotName != "uid-xyz" {
-		t.Errorf("Update routed to name %q, want uid-xyz", gotName)
+	if gotName != "cluster.workers" {
+		t.Errorf("Update routed to name %q, want cluster.workers", gotName)
 	}
 }
 

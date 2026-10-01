@@ -49,11 +49,12 @@ sequenceDiagram
 
 ### Generated Resources
 
-The controller generates 7 Kubernetes manifests, all scoped to namespace `clusters-{clusterID}`:
+The controller generates 7 Kubernetes manifests, all scoped to the cluster's MC
+namespace `cluster-{uid}` (the Cluster's database-minted `metadata.uid`):
 
 | #   | Resource       | Name                   | Purpose                                                                |
 | --- | -------------- | ---------------------- | ---------------------------------------------------------------------- |
-| 1   | Namespace      | `clusters-{clusterID}` | Isolation boundary for all cluster resources                           |
+| 1   | Namespace      | `cluster-{uid}`        | Isolation boundary for all cluster resources                           |
 | 2   | ConfigMap      | `cluster-config`       | Cluster ID and display name                                            |
 | 3   | ConfigMap      | `aws-iam-auth-config`  | AWS IAM authenticator mapping (creator ARN → system:masters)           |
 | 4   | ExternalSecret | `pull-secret`          | Pulls container registry credentials from AWS Parameter Store          |
@@ -71,14 +72,17 @@ is the DNS zone shard (default `0`), and `baseDomain` is the operator's
 `api.{clusterName}.{prefix}.{shard}.{baseDomain}`.
 
 Uniqueness is per shard, not per cluster name: only the `prefix` must be unique
-within its shard, so two clusters can share a name. It is still DB-enforced —
-`reserveDNS` creates an `Index` CR named `{prefix}` in the shard namespace, and
-hyperfleet-db's `(gvk, namespace, name)` unique constraint rejects a duplicate
-as an `AlreadyExists` conflict (replacing the old `idx_cluster_name_hash4`). On
-conflict the controller retries with a fresh prefix; adding shards scales out
-capacity. A `DNSReservation` records the owning cluster, and both objects are
-cleaned up on cluster deletion. See `reserveDNS`/`tryReserveDNS` for the
-create-or-adopt details.
+within its shard. It is DB-enforced with a single `Index` claim — `reserveDNS`
+creates an `Index` named `{prefix}` in the shard namespace
+`dns-shard-{shard}-reservations`, labeled `hyperfleet.io/owner-uid={cluster uid}`.
+hyperfleet-db's `(gvk, namespace, name)` primary key rejects a duplicate as
+`AlreadyExists`; an existing Index carrying this cluster's uid means the claim is
+already held (retries are safe), any other uid means the prefix is taken and the
+controller retries with a fresh one. The Index is only the lock: the base domain
+lives on the cluster. If the status write is lost, the next reconcile finds the
+held Index by its owner-uid label. The cluster's finalizer releases every Index
+carrying its uid, and never one carrying someone else's. See the
+[hyperfleet-db guidelines](hyperfleet-db-guidelines.md#7-uniqueness).
 
 ## Deletion Flow
 
@@ -96,7 +100,7 @@ sequenceDiagram
     CC->>PG: Detect DeletionTimestamp, set phase=Deleting
 
     Note over CC: Step 1 — Delete associated NodePools
-    CC->>PG: List NodePools in same namespace where clusterRef=clusterID
+    CC->>PG: List NodePools labeled hyperfleet.io/cluster-uid={uid}
     CC->>PG: Delete each NodePool CR
     NPC->>DDB: NodePool finalizer cleans up ApplyDesire, writes DeleteDesire
     NPC->>PG: Remove NodePool finalizer → CR deleted
@@ -111,7 +115,7 @@ sequenceDiagram
     CC->>CC: Requeue until confirmed
 
     Note over CC: Step 4 — Delete namespace on MC
-    CC->>DDB: Write DeleteDesire for namespace clusters-{clusterID}
+    CC->>DDB: Write DeleteDesire for namespace cluster-{uid}
     CC->>DDB: Poll status table for confirmation
     CC->>CC: Requeue until confirmed
     CC->>DDB: Delete ReadDesire spec for HostedCluster
@@ -125,9 +129,9 @@ sequenceDiagram
 
 ### Deletion Steps
 
-1. **NodePool cascade**: Lists all NodePools in the same namespace with matching `clusterRef`, deletes each one. Each NodePool has its own finalizer that cleans up its ApplyDesire and writes a DeleteDesire before clearing. Requeues until all NodePools are fully gone.
+1. **NodePool cascade**: Lists the cluster's NodePools by the `hyperfleet.io/cluster-uid` label (never by name or namespace), deletes each one. Each NodePool has its own finalizer that cleans up its ApplyDesire and writes a DeleteDesire before clearing. Requeues until all NodePools are fully gone.
 2. **ApplyDesire cleanup**: Deletes all 7 ApplyDesire specs from DynamoDB. This must happen before writing DeleteDesires to prevent kube-applier from racing and re-applying resources that are being deleted.
 3. **HostedCluster DeleteDesire**: Writes a DeleteDesire for the HostedCluster resource and waits for confirmation. Deleting the HostedCluster first allows HyperShift to clean up worker nodes and load balancers before the namespace is removed.
-4. **Namespace DeleteDesire**: Writes a DeleteDesire for `clusters-{clusterID}`, cascading all remaining MC resources. After confirmation, deletes the HostedCluster ReadDesire spec from DynamoDB.
+4. **Namespace DeleteDesire**: Writes a DeleteDesire for `cluster-{uid}`, cascading all remaining MC resources. After confirmation, deletes the HostedCluster ReadDesire spec from DynamoDB.
 5. **Placement cleanup**: Deletes the Placement CR (last, after MC resources are confirmed gone).
 6. **Finalizer removal**: Removes the `hyperfleet.io/cluster` finalizer, allowing Kubernetes to complete the CR deletion.

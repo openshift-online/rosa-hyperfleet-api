@@ -23,16 +23,6 @@ type Resource struct {
 	Object    any
 }
 
-// ClusterIDFromNamespace extracts the cluster UUID from a namespace name
-// with the "cluster-" prefix.
-func ClusterIDFromNamespace(ns string) string {
-	const prefix = "cluster-"
-	if len(ns) > len(prefix) && ns[:len(prefix)] == prefix {
-		return ns[len(prefix):]
-	}
-	return ns
-}
-
 // Minimal local types for CRDs that lack standalone API modules.
 // These produce the correct JSON for kube-applier-aws without pulling
 // in the full cert-manager or external-secrets dependency trees.

@@ -13,7 +13,7 @@ import (
 var _ = Describe("Cluster silence lifecycle", func() {
 	const (
 		clusterName = "silence-int-01"
-		testNS      = "cluster-e2e-cluster-id"
+		testNS      = "account-111222333444"
 	)
 
 	AfterEach(func() {
@@ -23,11 +23,11 @@ var _ = Describe("Cluster silence lifecycle", func() {
 	})
 
 	It("creates an installing silence for provisioning clusters and removes it when ready", func() {
-		identity := silence.ClusterIdentity{Namespace: testNS, Name: clusterName}
-
 		By("creating a Cluster CR")
 		cluster := newTestCluster(clusterName)
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		// Alerts carry the cluster's MC namespace, cluster-<uid>.
+		identity := silence.IdentityFromCluster(cluster)
 
 		By("setting cluster phase to Provisioning")
 		Expect(updateClusterPhase(clusterName, testNS, hyperfleetv1alpha1.ClusterPhaseProvisioning)).To(Succeed())
@@ -53,11 +53,11 @@ var _ = Describe("Cluster silence lifecycle", func() {
 	})
 
 	It("creates a deleting silence when the cluster enters the deleting phase", func() {
-		identity := silence.ClusterIdentity{Namespace: testNS, Name: clusterName}
-
 		By("creating a provisioning cluster with an installing silence")
 		cluster := newTestCluster(clusterName)
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		// Alerts carry the cluster's MC namespace, cluster-<uid>.
+		identity := silence.IdentityFromCluster(cluster)
 		Expect(updateClusterPhase(clusterName, testNS, hyperfleetv1alpha1.ClusterPhaseProvisioning)).To(Succeed())
 
 		Eventually(func(g Gomega) {

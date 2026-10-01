@@ -8,7 +8,9 @@ import (
 
 // NodePool is the Schema for the nodepools API.
 // It represents a set of worker nodes for a Cluster.
-// The parent Cluster shares the same metadata.Namespace (cluster UUID).
+// It lives in its cluster's account namespace, is named "<cluster>.<nodepool>",
+// and points at the cluster through a controller ownerReference and the
+// hyperfleet.io/cluster-uid label.
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:subresource:status

@@ -39,10 +39,11 @@ func minClusterSpec(oidcConfigID string) map[string]any {
 	}
 }
 
-// metaUID extracts metadata.uid from any decoded K8s-native response body (Cluster or OidcConfig).
-func metaUID(obj map[string]any) string {
-	uid, _ := oidcConfigMetadata(obj)["uid"].(string)
-	return uid
+// metaName extracts metadata.name from any decoded K8s-native response body (Cluster or
+// OidcConfig); routes address resources by name.
+func metaName(obj map[string]any) string {
+	name, _ := oidcConfigMetadata(obj)["name"].(string)
+	return name
 }
 
 // clusterLabel extracts a metadata.labels entry from a decoded Cluster response body.
@@ -61,8 +62,8 @@ func clusterIssuerURL(cluster map[string]any) string {
 }
 
 // uniqueClusterName returns a short, unique-enough cluster name that fits within
-// hyperfleetdb.MaxClusterNameLen (18 chars, since HyperShift expands it into
-// "cluster-<uuid>-<name>" which must fit a 63-char k8s namespace name).
+// v1alpha1.MaxClusterNameLength (18 chars, since HyperShift expands it into
+// "cluster-<uid>-<name>" which must fit a 63-char k8s namespace name).
 func uniqueClusterName(tag string) string {
 	return fmt.Sprintf("e2e%s%d", tag, time.Now().UnixMilli())
 }
@@ -165,14 +166,14 @@ var _ = Describe("OIDC Config Lifecycle: Managed", Ordered, Label("oidcconfig", 
 	It("binds a managed config to a cluster, reaches Ready via real CloudFront TLS, then unbinds and deletes cleanly", func() {
 		By("creating a managed OIDC config")
 		created := createOidcConfig(apiClient, accountID, map[string]any{"type": "managed"})
-		configID := metaUID(created)
+		configID := metaName(created)
 		issuerURL, _ := oidcConfigSpec(created)["issuerUrl"].(string)
 		Expect(issuerURL).NotTo(BeEmpty())
 		DeferCleanup(func() { deleteOidcConfigAndWait(apiClient, accountID, configID) })
 
 		By("verifying it starts Pending (AwaitingCluster) with no cluster bound yet")
 		fetched := waitForOidcConfigPhase(apiClient, accountID, configID, "Pending", 30*time.Second)
-		Expect(clusterLabel(fetched, "hyperfleet.io/cluster-namespace")).To(BeEmpty())
+		Expect(clusterLabel(fetched, "hyperfleet.io/claimed-by-cluster-uid")).To(BeEmpty())
 
 		By("creating a cluster referencing the config")
 		resp, err := apiClient.Post("/api/v0/clusters", map[string]any{
@@ -183,7 +184,7 @@ var _ = Describe("OIDC Config Lifecycle: Managed", Ordered, Label("oidcconfig", 
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "code=%s", apiErrorCode(resp.Body))
 		var cluster map[string]any
 		Expect(json.Unmarshal(resp.Body, &cluster)).To(Succeed())
-		clusterID := metaUID(cluster)
+		clusterID := metaName(cluster)
 		// Safety net if a later assertion fails before the explicit delete below runs.
 		DeferCleanup(func() { deleteClusterAndWait(apiClient, accountID, clusterID) })
 		Expect(clusterIssuerURL(cluster)).To(Equal(issuerURL), "cluster's issuerURL should be service-set from the OIDC config")
@@ -194,7 +195,7 @@ var _ = Describe("OIDC Config Lifecycle: Managed", Ordered, Label("oidcconfig", 
 		By("deleting the cluster and confirming the claim releases")
 		deleteClusterAndWait(apiClient, accountID, clusterID)
 		unbound := waitForOidcConfigPhase(apiClient, accountID, configID, "Pending", 1*time.Minute)
-		Expect(clusterLabel(unbound, "hyperfleet.io/cluster-namespace")).To(BeEmpty())
+		Expect(clusterLabel(unbound, "hyperfleet.io/claimed-by-cluster-uid")).To(BeEmpty())
 	})
 })
 
@@ -214,7 +215,7 @@ var _ = Describe("OIDC Config Lifecycle: Reusability", Ordered, Label("oidcconfi
 
 	It("rejects a concurrent second bind, then allows sequential reuse after the first cluster releases it", func() {
 		created := createOidcConfig(apiClient, accountID, map[string]any{"type": "managed"})
-		configID := metaUID(created)
+		configID := metaName(created)
 		DeferCleanup(func() { deleteOidcConfigAndWait(apiClient, accountID, configID) })
 
 		By("cluster A claims the config")
@@ -226,7 +227,7 @@ var _ = Describe("OIDC Config Lifecycle: Reusability", Ordered, Label("oidcconfi
 		Expect(respA.StatusCode).To(Equal(http.StatusCreated), "code=%s", apiErrorCode(respA.Body))
 		var clusterA map[string]any
 		Expect(json.Unmarshal(respA.Body, &clusterA)).To(Succeed())
-		clusterAID := metaUID(clusterA)
+		clusterAID := metaName(clusterA)
 		// Safety net if a later assertion fails before the explicit delete below runs.
 		DeferCleanup(func() { deleteClusterAndWait(apiClient, accountID, clusterAID) })
 
@@ -250,7 +251,7 @@ var _ = Describe("OIDC Config Lifecycle: Reusability", Ordered, Label("oidcconfi
 		By("deleting cluster A releases the claim without deleting the config")
 		deleteClusterAndWait(apiClient, accountID, clusterAID)
 		released := waitForOidcConfigPhase(apiClient, accountID, configID, "Pending", 1*time.Minute)
-		Expect(clusterLabel(released, "hyperfleet.io/cluster-namespace")).To(BeEmpty())
+		Expect(clusterLabel(released, "hyperfleet.io/claimed-by-cluster-uid")).To(BeEmpty())
 
 		By("cluster B can now claim the same, still-existing config")
 		respB2, err := apiClient.Post("/api/v0/clusters", map[string]any{
@@ -261,7 +262,7 @@ var _ = Describe("OIDC Config Lifecycle: Reusability", Ordered, Label("oidcconfi
 		Expect(respB2.StatusCode).To(Equal(http.StatusCreated), "code=%s", apiErrorCode(respB2.Body))
 		var clusterB map[string]any
 		Expect(json.Unmarshal(respB2.Body, &clusterB)).To(Succeed())
-		clusterBID := metaUID(clusterB)
+		clusterBID := metaName(clusterB)
 		DeferCleanup(func() { deleteClusterAndWait(apiClient, accountID, clusterBID) })
 
 		By("waiting for cluster B's finalizer to land before deleting it")
@@ -302,7 +303,7 @@ var _ = Describe("OIDC Config Lifecycle: Cross-Account Isolation", Label("oidcco
 		apiClientB.AWSProfile = customerProfile
 
 		created := createOidcConfig(apiClientA, accountA, map[string]any{"type": "managed"})
-		configID := metaUID(created)
+		configID := metaName(created)
 		DeferCleanup(func() { deleteOidcConfigAndWait(apiClientA, accountA, configID) })
 
 		By("account A can see it")
@@ -324,7 +325,7 @@ var _ = Describe("OIDC Config Lifecycle: Cross-Account Isolation", Label("oidcco
 		}
 		Expect(json.Unmarshal(listResp.Body, &list)).To(Succeed())
 		for _, item := range list.Items {
-			Expect(metaUID(item)).NotTo(Equal(configID), "account B should never see account A's config in List")
+			Expect(metaName(item)).NotTo(Equal(configID), "account B should never see account A's config in List")
 		}
 
 		By("account B cannot Delete it either")
@@ -382,7 +383,7 @@ var _ = Describe("OIDC Config Lifecycle: Unmanaged", Ordered, Label("oidcconfig"
 			"secretArn":        fixture.Secret,
 			"installerRoleArn": fixture.RoleArn,
 		})
-		configID := metaUID(created)
+		configID := metaName(created)
 		// Safety net: delete any bound cluster (an OIDC claim would block config deletion), then the config.
 		DeferCleanup(func() {
 			if clusterID != "" {
@@ -415,7 +416,7 @@ var _ = Describe("OIDC Config Lifecycle: Unmanaged", Ordered, Label("oidcconfig"
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "code=%s", apiErrorCode(resp.Body))
 		var cluster map[string]any
 		Expect(json.Unmarshal(resp.Body, &cluster)).To(Succeed())
-		clusterID = metaUID(cluster)
+		clusterID = metaName(cluster)
 		Expect(clusterIssuerURL(cluster)).To(Equal(issuerURL))
 
 		By("waiting for the cluster's finalizer to land before deleting it")

@@ -32,8 +32,8 @@ import (
 var _ = Describe("Placement Controller", func() {
 	Context("When reconciling a Cluster", func() {
 		const (
-			clusterName = "test-placement-cluster"
-			testNS      = "cluster-test-cluster-id"
+			clusterName = "test-placement-cl"
+			testNS      = "account-123456789012"
 		)
 
 		ctx := context.Background()
@@ -63,7 +63,7 @@ var _ = Describe("Placement Controller", func() {
 				_ = k8sClient.Delete(ctx, cluster)
 			}
 			placement := &hyperfleetv1alpha1.Placement{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + "-placement"}, placement); err == nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, placement); err == nil {
 				_ = k8sClient.Delete(ctx, placement)
 			}
 		})
@@ -83,10 +83,38 @@ var _ = Describe("Placement Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			var placement hyperfleetv1alpha1.Placement
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + "-placement"}, &placement)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, &placement)).To(Succeed())
 			Expect(placement.Spec.ClusterName).To(Equal(clusterName))
 			Expect(placement.Spec.ManagementCluster).To(Equal(mcName))
 			Expect(placement.Status.Phase).To(Equal(hyperfleetv1alpha1.PlacementPhaseBound))
+
+			// Owned by the cluster: a controller ownerReference and the uid label.
+			Expect(metav1.IsControlledBy(&placement, resource)).To(BeTrue())
+			Expect(placement.Labels[hyperfleetv1alpha1.ClusterUIDLabel]).To(Equal(string(resource.UID)))
+		})
+
+		It("should replace a Placement left by an earlier cluster with the same name", func() {
+			resource := newTestCluster(clusterName)
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			earlier := resource.DeepCopy()
+			earlier.UID = "00000000-0000-0000-0000-000000000003"
+			stale := createPlacement(ctx, earlier, "old-mc", true)
+
+			reconciler := &PlacementReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testNS, Name: clusterName}}
+
+			// First pass deletes the stale Placement; the next creates ours.
+			_, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var placement hyperfleetv1alpha1.Placement
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, &placement)).To(Succeed())
+			Expect(placement.UID).NotTo(Equal(stale.UID))
+			Expect(metav1.IsControlledBy(&placement, resource)).To(BeTrue())
+			Expect(placement.Spec.ManagementCluster).To(Equal(mcName))
 		})
 
 		It("should update Cluster status with placementRef", func() {

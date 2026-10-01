@@ -57,7 +57,8 @@ type GettableSilence struct {
 }
 
 // ClusterIdentity labels used to scope silences to a hosted cluster.
-// Namespace is unique per HCP cluster (cluster-$UUID); name is the cluster CR name.
+// Namespace is the cluster's MC namespace, unique per HCP cluster (cluster-<uid>);
+// name is the cluster CR name.
 type ClusterIdentity struct {
 	Namespace string
 	Name      string

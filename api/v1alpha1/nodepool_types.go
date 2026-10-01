@@ -34,7 +34,8 @@ const (
 )
 
 // NodePoolSpec defines the desired state of a NodePool.
-// The parent Cluster is identified by the shared metadata.Namespace (cluster UUID).
+// metadata.name is "<cluster>.<nodepool>". The parent Cluster is identified by the
+// controller ownerReference and the hyperfleet.io/cluster-uid label, both set at create.
 type NodePoolSpec struct {
 	// DisplayName is a human-readable name for the node pool.
 	// +hyperfleet:write-mode=mutable
@@ -58,12 +59,6 @@ type NodePoolSpec struct {
 	// +hyperfleet:write-mode=service-set
 	// +optional
 	AccountID string `json:"accountId,omitempty"`
-
-	// InternalPoolID is a platform-assigned unique identifier.
-	// +k8s:openapi-gen=false
-	// +hyperfleet:write-mode=service-set
-	// +optional
-	InternalPoolID string `json:"internalPoolId,omitempty"`
 
 	// NodePool contains the upstream HyperShift fields, mirrored as
 	// passthrough types with per-field visibility and write-mode markers.
@@ -99,12 +94,15 @@ type NodePoolStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=hfnp
+// +kubebuilder:validation:XValidation:rule="self.metadata.name.matches('^[a-z0-9]([-a-z0-9]{0,16}[a-z0-9])?[.][a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$')",message="metadata.name must be <cluster>.<nodepool>, each part a DNS label with no dots"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // NodePool is the Schema for the nodepools API.
 // It represents a set of worker nodes for a Cluster.
-// The parent Cluster shares the same metadata.Namespace (cluster UUID).
+// It lives in its cluster's account namespace, is named "<cluster>.<nodepool>",
+// and points at the cluster through a controller ownerReference and the
+// hyperfleet.io/cluster-uid label.
 type NodePool struct {
 	metav1.TypeMeta `json:",inline"`
 

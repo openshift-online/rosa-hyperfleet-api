@@ -3,7 +3,8 @@
 package public
 
 // NodePoolSpec defines the desired state of a NodePool.
-// The parent Cluster is identified by the shared metadata.Namespace (cluster UUID).
+// metadata.name is "<cluster>.<nodepool>". The parent Cluster is identified by the
+// controller ownerReference and the hyperfleet.io/cluster-uid label, both set at create.
 type NodePoolSpec struct {
 	// DisplayName is a human-readable name for the node pool.
 	// +hyperfleet:write-mode=mutable
