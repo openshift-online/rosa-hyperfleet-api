@@ -3,8 +3,8 @@
 Rules for any code that stores or reconciles HyperFleet resources through hyperfleet-db:
 platform-api, the operator, and anything new. New and reviewed code follows them.
 
-> This describes the **target** model. Items marked _(PR n)_ don't exist yet; the
-> [Implementation plan](#implementation-plan) builds them.
+> The [Implementation plan](#implementation-plan) at the end records how this
+> model was introduced; all of it is in place.
 
 ## The rules
 
@@ -210,7 +210,8 @@ uniqueness rules multiply.
 ## 8. Sharding
 
 Each operator replica reconciles one slice of the rows, keyed by the owning cluster's
-uid (or the row's own uid if it has no owner):
+uid (or the row's own uid if it has no owner). The operator sets
+`ShardConfig.KeyLabel` to `hyperfleet.io/cluster-uid`, which makes hyperfleet-db use:
 
 ```sql
 abs(hashtext(COALESCE(metadata->'labels'->>'hyperfleet.io/cluster-uid', uid::text))::bigint) % $mod = ANY($owned)

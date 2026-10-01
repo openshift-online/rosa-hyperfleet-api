@@ -2,13 +2,19 @@ package reader
 
 import "fmt"
 
-// ShardSpec restricts a List or Watch to namespaces whose hash,
-// modulo Mod, falls in Owned. Nil *ShardSpec means unsharded.
-// Shard membership is immutable per object: namespace is part of the
-// primary key and never updated in place.
+// ShardSpec restricts a List or Watch to rows whose shard key hashes,
+// modulo Mod, into Owned. Nil *ShardSpec means unsharded.
+//
+// The shard key is the namespace unless KeyLabel is set. With KeyLabel, it is
+// the value of that label, or the row's own uid when the label is absent: an
+// owner and the objects carrying its uid in KeyLabel land on the same shard.
+// Shard membership must be immutable per object: the namespace is part of the
+// primary key, and a KeyLabel must be set at create and never changed (a
+// watcher does not see an object move out of its shard).
 type ShardSpec struct {
-	Mod   int   // hash modulus, > 0
-	Owned []int // residues owned by this replica, each in [0, Mod)
+	Mod      int    // hash modulus, > 0
+	Owned    []int  // residues owned by this replica, each in [0, Mod)
+	KeyLabel string // optional label whose value is the shard key
 }
 
 func (s *ShardSpec) Validate() error {
@@ -32,10 +38,16 @@ func (s *ShardSpec) Validate() error {
 }
 
 func (s *ShardSpec) shardClause(startParam int) (string, []any) {
+	if s.KeyLabel == "" {
+		clause := fmt.Sprintf(
+			"abs(hashtext(namespace)::bigint) %% $%d = ANY($%d::int[])",
+			startParam, startParam+1)
+		return clause, []any{s.Mod, s.Owned}
+	}
 	clause := fmt.Sprintf(
-		"abs(hashtext(namespace)::bigint) %% $%d = ANY($%d::int[])",
-		startParam, startParam+1)
-	return clause, []any{s.Mod, s.Owned}
+		"abs(hashtext(COALESCE(metadata->'labels'->>$%d, uid::text))::bigint) %% $%d = ANY($%d::int[])",
+		startParam, startParam+1, startParam+2)
+	return clause, []any{s.KeyLabel, s.Mod, s.Owned}
 }
 
 // AppendQuery appends the shard WHERE predicate to query and args.

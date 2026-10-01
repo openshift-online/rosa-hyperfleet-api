@@ -3,6 +3,7 @@ package hyperfleetdb_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	runtimescheme "sigs.k8s.io/controller-runtime/pkg/scheme"
 )
@@ -499,4 +501,110 @@ verified:
 		allNs[ev.Namespace] = true
 	}
 	assert.Len(t, allNs, len(namespaces), "union of both shards must cover all namespaces")
+}
+
+// TestShardedManager_KeyLabelKeepsOwnerAndChildrenTogether verifies that with
+// KeyLabel set, an owner (keyed by its own uid) and every object carrying its
+// uid in KeyLabel are reconciled by the same replica, and only by it — even
+// when they share a namespace with other owners.
+func TestShardedManager_KeyLabelKeepsOwnerAndChildrenTogether(t *testing.T) {
+	const (
+		mod      = 2
+		keyLabel = "test.example.com/owner-uid"
+		ns       = "account-1"
+	)
+
+	conn := sharedDB.Connect(t)
+	sharedDB.TruncateAll(t, conn)
+	_ = conn.Close(context.Background())
+
+	type seen struct {
+		replica int
+		key     string
+	}
+	events := make(chan seen, 200)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var client0 ctrl.Manager
+	for replica := range mod {
+		mgr, err := hyperfleetdb.NewManager(hyperfleetdb.Options{
+			Scheme: testScheme,
+			DSN:    sharedDB.ConnStr,
+			Shard:  &hyperfleetdb.ShardConfig{Mod: mod, Owned: []int{replica}, KeyLabel: keyLabel},
+			Logger: logr.Discard(),
+		})
+		require.NoError(t, err)
+		if replica == 0 {
+			client0 = mgr
+		}
+		for _, obj := range []client.Object{&Widget{}, &Gadget{}} {
+			kind := fmt.Sprintf("%T", obj)
+			require.NoError(t, ctrl.NewControllerManagedBy(mgr).
+				Named(fmt.Sprintf("r%d-%s", replica, strings.ToLower(strings.TrimPrefix(kind, "*hyperfleetdb_test.")))).
+				For(obj).
+				Complete(reconcile.Func(func(_ context.Context, req ctrl.Request) (ctrl.Result, error) {
+					events <- seen{replica: replica, key: req.Name}
+					return ctrl.Result{}, nil
+				})))
+		}
+		go func() { _ = mgr.Start(ctx) }()
+	}
+	time.Sleep(time.Second)
+
+	// Owners until both residues are represented; each owner gets two children
+	// in the same namespace, labeled with the owner's uid.
+	c := client0.GetClient()
+	residueOf := func(uid string) int {
+		var r int
+		require.NoError(t, sharedDB.Connect(t).QueryRow(context.Background(),
+			"SELECT abs(hashtext($1)::bigint) % $2", uid, mod).Scan(&r))
+		return r
+	}
+	wantReplica := map[string]int{} // object name → replica that must own it
+	residues := map[int]bool{}
+	for i := 0; len(residues) < mod || i < 4; i++ {
+		require.Less(t, i, 40, "could not place owners on every residue")
+		owner := &Widget{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: fmt.Sprintf("owner-%d", i)}}
+		require.NoError(t, c.Create(ctx, owner))
+		r := residueOf(string(owner.UID))
+		residues[r] = true
+		wantReplica[owner.Name] = r
+		for j := range 2 {
+			child := &Gadget{ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns, Name: fmt.Sprintf("owner-%d.child-%d", i, j),
+				Labels: map[string]string{keyLabel: string(owner.UID)},
+			}}
+			require.NoError(t, c.Create(ctx, child))
+			wantReplica[child.Name] = r
+		}
+	}
+
+	got := map[string][]int{}
+	deadline := time.After(15 * time.Second)
+	idle := time.NewTimer(2 * time.Second)
+	defer idle.Stop()
+collect:
+	for {
+		select {
+		case ev := <-events:
+			got[ev.key] = append(got[ev.key], ev.replica)
+			idle.Reset(2 * time.Second)
+		case <-idle.C:
+			if len(got) >= len(wantReplica) {
+				break collect
+			}
+			idle.Reset(2 * time.Second)
+		case <-deadline:
+			break collect
+		}
+	}
+
+	for name, want := range wantReplica {
+		replicas := got[name]
+		require.NotEmpty(t, replicas, "%s was never reconciled", name)
+		for _, r := range replicas {
+			assert.Equal(t, want, r, "%s reconciled by replica %d, want %d", name, r, want)
+		}
+	}
 }

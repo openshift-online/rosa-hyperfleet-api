@@ -1,110 +1,136 @@
-# Namespace-Hash Sharding
+# Cluster-Keyed Sharding
 
-The hyperfleet operator uses namespace-hash sharding to horizontally scale
-controllers across multiple replicas. Each operator replica owns a subset of
-namespaces determined by `abs(hashtext(namespace)::bigint) % replicaCount`, so it only
-reconciles resources whose namespace hashes to its shard.
+The hyperfleet operator scales horizontally by giving each replica one slice of
+the rows to watch and reconcile. Rows are keyed by their **owning cluster's
+uid**, so a cluster and all its objects are always handled by the same replica.
 
-## How It Works
+## Why shard
 
-### Shard Assignment
+Reconcile work grows with the fleet: every cluster means AWS calls,
+management-cluster desires in DynamoDB, retries and rate limits. Sharding
+spreads that work across replicas and limits the blast radius of one bad pod
+(a crash loop or a stuck worker only affects its slice).
 
-The pgruntime cache partitions its List/Watch streams using PostgreSQL's
-`hashtext()` function:
+Keying by cluster means no cluster is ever reconciled in two places (outside a
+rescale, see [Limits](#limits)), and a reconciler that looks at a cluster's
+children sees them in its own cache.
 
+Only watches and reconciles are sharded. Reads (`GetClient()`,
+`GetAPIReader()`, and platform-api's `hyperfleetdb.NewClient()`) always see
+every row.
+
+Today the operator runs as one shard (`REPLICA_COUNT=1`); scaling out is a
+configuration change.
+
+## How it works
+
+### Shard key
+
+The hyperfleet-db cache filters its List/Watch streams with:
+
+```sql
+abs(hashtext(COALESCE(metadata->'labels'->>'hyperfleet.io/cluster-uid', uid::text))::bigint) % $mod = ANY($owned)
 ```
-shard = abs(hashtext(namespace)::bigint) % replicaCount
-```
 
-Hashing on namespace gives **cluster-level affinity**: all resources for the same
-cluster (Cluster, NodePools, Manifests) land in the same shard, because they
-share a namespace (the cluster ID). This means one operator replica handles a
-cluster and all its child resources -- no cross-pod coordination needed.
+- An object that belongs to a cluster (NodePool, Placement) carries the
+  cluster's uid in the `hyperfleet.io/cluster-uid` label and hashes on it.
+- A Cluster has no such label and hashes on its own uid — the same string.
+- Anything else (OidcConfig, Index, Manifest) hashes on its own uid.
 
-The sharding is configured via `pgruntime.ShardConfig`:
+The label is set once, at create, and never changes; this is what keeps an
+object on one shard for its whole life. The namespace is not used: all of an
+account's clusters share one namespace, and would otherwise share one replica.
+
+The operator configures it through `hyperfleetdb.ShardConfig`:
 
 ```go
-pgruntime.ShardConfig{
-    Mod:   replicaCount,
-    Owned: []int{ordinal},
+hyperfleetdb.ShardConfig{
+    Mod:      replicaCount,
+    Owned:    []int{ordinal},
+    KeyLabel: v1alpha1.ClusterUIDLabel,
     UnshardedGVKs: []schema.GroupVersionKind{
         v1alpha1.SchemeGroupVersion.WithKind("ManagementCluster"),
     },
 }
 ```
 
-- **Mod**: the modulus (total number of shards, equal to `replicaCount`)
-- **Owned**: the shard indices this replica owns (typically just `[ordinal]`)
-- **UnshardedGVKs**: GVKs exempt from sharding (every replica sees them)
+- **Mod**: the number of shards (`REPLICA_COUNT`)
+- **Owned**: the shard indices this replica owns (`[ordinal]`)
+- **KeyLabel**: the label holding the shard key; without it, hyperfleet-db
+  falls back to hashing the namespace
+- **UnshardedGVKs**: kinds every replica watches in full
 
-### Operator Replica Shard Assignment
+### Replica assignment
 
-The operator runs as a **StatefulSet**. Each pod derives its shard from two
-values:
+The operator runs as a **StatefulSet**. Each pod owns the shard equal to its
+ordinal, parsed from the hostname (`hyperfleet-operator-2` → 2), with
+`REPLICA_COUNT` (set by Helm from `replicaCount`) as the modulus.
 
-- **Ordinal**: parsed from the pod hostname (e.g., `hyperfleet-operator-2` -> 2)
-- **REPLICA_COUNT**: total number of replicas (env var, set by Helm to match `replicaCount`)
+### ManagementCluster visibility
 
-Each pod owns the shard equal to its ordinal:
+ManagementCluster is listed in `UnshardedGVKs`, so every pod sees every
+management cluster and the PlacementReconciler on each pod has the full MC
+registry.
 
-```
-my_shard = ordinal
-```
+## What it means for controller code
 
-Example with 4 replicas:
+- **Carry the label.** An object whose events should trigger a cluster's
+  reconcile must carry that cluster's `hyperfleet.io/cluster-uid`, or its events
+  go to the wrong replica.
+- **Be idempotent.** During a rescale a cluster can briefly be reconciled by
+  two pods.
+- **No decisions from local counts across clusters.** A replica's cache holds
+  only its slice. For something like placing onto a management cluster with
+  limited capacity, claim with an `Index` or use an optimistic update on a
+  shared object.
 
-| Pod   | Shard | Reconciles namespaces where                 |
-| ----- | ----- | ------------------------------------------- |
-| Pod-0 | 0     | `abs(hashtext(namespace)::bigint) % 4 == 0` |
-| Pod-1 | 1     | `abs(hashtext(namespace)::bigint) % 4 == 1` |
-| Pod-2 | 2     | `abs(hashtext(namespace)::bigint) % 4 == 2` |
-| Pod-3 | 3     | `abs(hashtext(namespace)::bigint) % 4 == 3` |
-
-### ManagementCluster Visibility
-
-ManagementCluster is **cluster-scoped** and declared in `UnshardedGVKs`. Unsharded
-GVKs bypass the shard filter entirely, so every pod sees all ManagementClusters
-through the standard manager client. This means the PlacementReconciler on every
-pod automatically has access to the full MC registry -- no separate client needed.
-
-### Platform API
-
-The API uses `pgruntime.NewClient()` which is never sharded. It sees all data
-regardless of shard configuration. No shard-related configuration is needed for
-the API.
+See [hyperfleet-db guidelines §8](hyperfleet-db-guidelines.md#8-sharding).
 
 ## Configuration
-
-### Environment Variables
 
 | Variable        | Default | Description                                 |
 | --------------- | ------- | ------------------------------------------- |
 | `REPLICA_COUNT` | `1`     | Number of operator replicas (= shard count) |
 | `POSTGRES_DSN`  | --      | PostgreSQL connection string (required)     |
 
-### Helm Values (Operator)
-
 ```yaml
+# Helm values (operator)
 replicaCount: 4
 ```
 
-The chart automatically sets `REPLICA_COUNT` to match `replicaCount`.
+The chart sets `REPLICA_COUNT` to match `replicaCount`. Changing it rolls the
+StatefulSet, and each pod derives its shard again on startup.
 
-## Scaling
+## Limits
 
-To scale from 2 to 4 operator replicas:
+- **Rescale overlap.** While the StatefulSet rolls to a new `REPLICA_COUNT`,
+  old and new pods disagree on the modulus, so a cluster can be reconciled by
+  two pods (or by none) for a short time. Nothing fences this: writes to
+  hyperfleet-db are optimistic (a stale write gets `Conflict`), which keeps the
+  database consistent, but side effects outside it — DynamoDB desires, AWS
+  calls — can run twice. Reconcilers must be idempotent for this to be safe.
+- **No failover.** A shard belongs to exactly one pod. While that pod is down
+  or restarting, its clusters are not reconciled; the work resumes when it is
+  back. There is no takeover by another pod.
+- **Cross-cluster decisions.** A replica only sees its own clusters, so any
+  decision that depends on a global count must use a shared claim (see above).
+- **PostgreSQL major upgrades.** `hashtext()` may change across major
+  versions, reshuffling assignments once. All replicas restart during such an
+  upgrade, so the effect is a burst of duplicate reconciles.
 
-1. Update `replicaCount: 4` in the operator Helm values
-2. The chart sets `REPLICA_COUNT=4` on every pod
-3. Each pod re-derives its shard on startup (rolling restart)
+## Upgrade path: fixed buckets with lease ownership
 
-No per-pod configuration, no manual shard assignment.
+The limits above come from tying shards to pod ordinals. The planned next step
+keeps the schema as is:
 
-### Constraints
+1. Hash into a fixed number of buckets (e.g. `Mod = 256`) that never changes
+   with the replica count.
+2. Each pod owns a set of buckets by holding a Postgres **advisory lock** per
+   bucket (`pg_try_advisory_lock`), released automatically when its session
+   ends.
+3. Pods rebalance by releasing and acquiring buckets; a bucket whose holder
+   dies is free as soon as its session drops and is taken by another pod.
 
-- Changing `replicaCount` requires a rolling restart of the StatefulSet so each
-  pod picks up the new modulus. During the rollout, some namespaces may
-  temporarily be handled by two pods or none, which is safe because pgruntime
-  uses fenced writes.
-- The direct client (used by `pgruntime.NewClient()`) is never sharded and
-  always sees all data. Only the cache/watch layer is partitioned.
+A bucket then has one owner at a time (no rescale overlap, provided a pod stops
+reconciling a bucket before giving up its lock), a dead pod's buckets fail over
+without waiting for it, and scaling no longer reshuffles every cluster.

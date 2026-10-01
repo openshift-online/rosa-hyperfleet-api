@@ -79,7 +79,7 @@ ManagementCluster CRs in PostgreSQL serve as the registry of available managemen
 
 ## Deployment
 
-The operator runs as a StatefulSet, deployed via a Helm chart through ArgoCD. It connects to PostgreSQL for CR storage and to DynamoDB for desire management. The StatefulSet provides stable pod ordinals used for [namespace-hash sharding](sharding.md).
+The operator runs as a StatefulSet, deployed via a Helm chart through ArgoCD. It connects to PostgreSQL for CR storage and to DynamoDB for desire management. The StatefulSet provides stable pod ordinals used for [cluster-keyed sharding](sharding.md).
 
 ```
 charts/hyperfleet-operator/
@@ -102,4 +102,4 @@ Required configuration:
 
 ## Horizontal Scaling via Namespace-Hash Sharding
 
-The operator scales horizontally via namespace-hash sharding. The pgruntime cache partitions its List/Watch streams using `abs(hashtext(namespace)::bigint) % replicaCount`, giving cluster-level affinity — all resources for one cluster land in the same shard. Each StatefulSet replica owns a single shard equal to its pod ordinal. See [Sharding](sharding.md) for configuration and scaling details.
+The operator scales horizontally via cluster-keyed sharding. The hyperfleet-db cache partitions its List/Watch streams by the hash of each row's `hyperfleet.io/cluster-uid` label (or its own uid), modulo `replicaCount`, so a cluster and all its objects land in the same shard. Each StatefulSet replica owns a single shard equal to its pod ordinal. See [Sharding](sharding.md) for configuration and scaling details.

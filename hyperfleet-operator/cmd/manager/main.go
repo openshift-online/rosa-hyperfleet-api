@@ -129,6 +129,9 @@ func main() {
 		Shard: &hyperfleetdb.ShardConfig{
 			Mod:   replicaCount,
 			Owned: []int{ordinal},
+			// Key every row by its owning cluster's uid (or its own uid), so a
+			// cluster and all its objects are reconciled by one replica.
+			KeyLabel: v1alpha1.ClusterUIDLabel,
 			UnshardedGVKs: []schema.GroupVersionKind{
 				v1alpha1.SchemeGroupVersion.WithKind("ManagementCluster"),
 			},

@@ -29,12 +29,16 @@ import (
 )
 
 // ShardConfig partitions the cache's informer List/Watch streams across
-// replicas by hashtext(namespace) % Mod. The direct client and cache reader
-// are never sharded. This type mirrors internal reader.ShardSpec but lives
-// in the public API and adds per-GVK opt-out via UnshardedGVKs.
+// replicas by hashtext(key) % Mod. The key is the namespace, or with KeyLabel
+// set, that label's value falling back to the object's own uid, so an owner
+// and everything carrying its uid in KeyLabel share a replica. KeyLabel must
+// be set at create and never changed. The direct client and cache reader are
+// never sharded. This type mirrors internal reader.ShardSpec but lives in the
+// public API and adds per-GVK opt-out via UnshardedGVKs.
 type ShardConfig struct {
 	Mod           int
 	Owned         []int
+	KeyLabel      string
 	UnshardedGVKs []schema.GroupVersionKind
 }
 
@@ -69,7 +73,7 @@ func NewManager(opts Options) (manager.Manager, error) {
 	if opts.Shard != nil {
 		owned := make([]int, len(opts.Shard.Owned))
 		copy(owned, opts.Shard.Owned)
-		shardSpec = &reader.ShardSpec{Mod: opts.Shard.Mod, Owned: owned}
+		shardSpec = &reader.ShardSpec{Mod: opts.Shard.Mod, Owned: owned, KeyLabel: opts.Shard.KeyLabel}
 		if err := shardSpec.Validate(); err != nil {
 			return nil, fmt.Errorf("pgruntime: %w", err)
 		}

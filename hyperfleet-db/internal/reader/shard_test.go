@@ -88,3 +88,16 @@ func TestShardSpec_ToListFilter_MultiOwned(t *testing.T) {
 	assert.Equal(t, 4, f.WhereArgs[0])
 	assert.Equal(t, []int{1, 3}, f.WhereArgs[1])
 }
+
+func TestShardSpec_KeyLabel(t *testing.T) {
+	s := reader.ShardSpec{Mod: 4, Owned: []int{1}, KeyLabel: "hyperfleet.io/cluster-uid"}
+
+	query, args := s.AppendQuery("SELECT * FROM t WHERE gvk = $1", []any{"g"})
+	assert.Contains(t, query,
+		"AND abs(hashtext(COALESCE(metadata->'labels'->>$2, uid::text))::bigint) % $3 = ANY($4::int[])")
+	assert.Equal(t, []any{"g", "hyperfleet.io/cluster-uid", 4, []int{1}}, args)
+
+	f := s.ToListFilter()
+	assert.Equal(t, []string{"abs(hashtext(COALESCE(metadata->'labels'->>$2, uid::text))::bigint) % $3 = ANY($4::int[])"}, f.WhereClauses)
+	assert.Equal(t, []any{"hyperfleet.io/cluster-uid", 4, []int{1}}, f.WhereArgs)
+}
