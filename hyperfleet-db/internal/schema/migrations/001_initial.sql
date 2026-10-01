@@ -25,6 +25,10 @@ CREATE INDEX IF NOT EXISTS idx_resources_list
 CREATE INDEX IF NOT EXISTS idx_resources_watch
     ON kubernetes_resources (gvk, txid_stamp);
 
+-- Label selectors: containment (@>) and key-exists (?) on metadata->'labels'.
+CREATE INDEX IF NOT EXISTS idx_resources_labels
+    ON kubernetes_resources USING GIN ((metadata->'labels'));
+
 -- Compaction horizon per GVK
 CREATE TABLE IF NOT EXISTS compaction_horizon (
     gvk           TEXT   NOT NULL PRIMARY KEY,

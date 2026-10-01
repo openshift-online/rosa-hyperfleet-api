@@ -80,6 +80,9 @@ func metadataFieldToSQL(field string) (string, error) {
 		return "name", nil
 	case "namespace":
 		return "namespace", nil
+	case "uid":
+		// Compared as text so a malformed uid matches nothing instead of erroring.
+		return "uid::text", nil
 	default:
 		return jsonbPathToSQL("metadata", field)
 	}

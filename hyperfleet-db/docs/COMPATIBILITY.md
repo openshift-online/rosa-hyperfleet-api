@@ -32,6 +32,7 @@ These features work but behave differently from standard controller-runtime agai
 | `GetAPIReader()` vs `GetClient()` | Different: uncached vs cached reads                     | Identical: both go to DB                                                                                                       |
 | Periodic resync                   | Informers re-list every 10h to catch missed events      | No resync — poll-based watch can't miss events within the compaction window                                                    |
 | `IndexField()`                    | Registers cache indexes used by field selectors         | No-op — accepted but ignored. `MatchingFields` queries the database directly                                                   |
+| Label / field selectors           | Evaluated by the apiserver                              | Translated to SQL. Label selectors use a GIN index; `metadata.name`/`namespace`/`uid` hit columns; `spec`/`status` paths scan JSON |
 | Cluster-scoped resources          | RESTMapper marks types as cluster-scoped; empty ns      | Works with empty namespace                                                                                                     |
 
 ### Sharding specifics

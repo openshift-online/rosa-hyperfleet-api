@@ -112,9 +112,6 @@ func (c *pgCache) List(ctx context.Context, list client.ObjectList, opts ...clie
 		if err != nil {
 			return err
 		}
-		if listOpts.LabelSelector != nil && !listOpts.LabelSelector.Matches(labelSet(obj.GetLabels())) {
-			continue
-		}
 		items = append(items, obj)
 	}
 

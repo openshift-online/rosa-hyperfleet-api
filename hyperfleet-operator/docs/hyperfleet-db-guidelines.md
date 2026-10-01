@@ -47,8 +47,8 @@ What works as usual:
   (`Status().Update`).
 - **Writes that change nothing are skipped.** They don't bump the version or wake
   watchers, so writing desired state every reconcile is cheap.
-- **Label selectors** are backed by SQL _(PR 1)_. **Field selectors** on `metadata.name`,
-  `metadata.namespace`, and `metadata.uid` _(PR 1)_ hit columns. Selectors on `spec`/`status`
+- **Label selectors** are backed by SQL. **Field selectors** on `metadata.name`,
+  `metadata.namespace`, and `metadata.uid` hit columns. Selectors on `spec`/`status`
   paths scan JSON, so keep them off hot paths.
 - **Delete** sets a deletion timestamp while finalizers remain. After that the row is a
   tombstone, and creating the same name again makes a **new object with a new uid**.

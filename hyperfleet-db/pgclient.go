@@ -102,9 +102,6 @@ func (c *pgClient) List(ctx context.Context, list client.ObjectList, opts ...cli
 		if err != nil {
 			return err
 		}
-		if listOpts.LabelSelector != nil && !listOpts.LabelSelector.Matches(labelSet(obj.GetLabels())) {
-			continue
-		}
 		items = append(items, obj)
 	}
 
@@ -568,23 +565,6 @@ func uidFromUUID(u [16]byte) apitypes.UID {
 	return apitypes.UID(fmt.Sprintf("%x-%x-%x-%x-%x", u[0:4], u[4:6], u[6:8], u[8:10], u[10:16]))
 }
 
-// labelSet adapts map[string]string to labels.Set for selector matching.
-type labelSet map[string]string
-
-func (ls labelSet) Has(key string) bool {
-	_, ok := ls[key]
-	return ok
-}
-
-func (ls labelSet) Get(key string) string {
-	return ls[key]
-}
-
-func (ls labelSet) Lookup(label string) (value string, exists bool) {
-	value, exists = ls[label]
-	return
-}
-
 type continueToken struct {
 	Offset int64 `json:"offset"`
 }
@@ -623,6 +603,16 @@ func buildListFilter(listOpts client.ListOptions) (*reader.ListFilter, error) {
 
 	if listOpts.FieldSelector != nil && !listOpts.FieldSelector.Empty() {
 		clauses, args, err := buildFieldSelectorFilter(listOpts.FieldSelector, paramIdx)
+		if err != nil {
+			return nil, err
+		}
+		f.WhereClauses = append(f.WhereClauses, clauses...)
+		f.WhereArgs = append(f.WhereArgs, args...)
+		paramIdx += len(args)
+	}
+
+	if listOpts.LabelSelector != nil && !listOpts.LabelSelector.Empty() {
+		clauses, args, err := buildLabelSelectorFilter(listOpts.LabelSelector, paramIdx)
 		if err != nil {
 			return nil, err
 		}
