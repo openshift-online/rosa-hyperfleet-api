@@ -99,12 +99,12 @@ sequenceDiagram
     User->>PG: Delete Cluster CR (sets DeletionTimestamp)
     CC->>PG: Detect DeletionTimestamp, set phase=Deleting
 
-    Note over CC: Step 1 — Delete associated NodePools
-    CC->>PG: List NodePools labeled hyperfleet.io/cluster-uid={uid}
-    CC->>PG: Delete each NodePool CR
+    Note over CC: Step 1 — Garbage collector deletes the cluster's children
+    participant GC as Garbage Collector
+    GC->>PG: Delete NodePools and Placement whose owner is being deleted
     NPC->>DDB: NodePool finalizer cleans up ApplyDesire, writes DeleteDesire
     NPC->>PG: Remove NodePool finalizer → CR deleted
-    CC->>CC: Requeue until all NodePools are gone
+    CC->>CC: Requeue until nothing carries hyperfleet.io/cluster-uid={uid}
 
     Note over CC: Step 2 — Clean up ApplyDesires
     CC->>DDB: Delete all 7 ApplyDesire specs from specs-applydesires
@@ -120,18 +120,14 @@ sequenceDiagram
     CC->>CC: Requeue until confirmed
     CC->>DDB: Delete ReadDesire spec for HostedCluster
 
-    Note over CC: Step 5 — Delete Placement
-    CC->>PG: Delete Placement CR
-
-    Note over CC: Step 6 — Remove finalizer
+    Note over CC: Step 5 — Remove finalizer
     CC->>PG: Remove finalizer → Cluster CR deleted
 ```
 
 ### Deletion Steps
 
-1. **NodePool cascade**: Lists the cluster's NodePools by the `hyperfleet.io/cluster-uid` label (never by name or namespace), deletes each one. Each NodePool has its own finalizer that cleans up its ApplyDesire and writes a DeleteDesire before clearing. Requeues until all NodePools are fully gone.
+1. **Children**: The cluster does not delete its children. The garbage collector deletes every object whose controller owner is missing, has a different uid, or is being deleted — here the cluster's NodePools and Placement. The finalizer waits until no NodePool or Placement carries the `hyperfleet.io/cluster-uid` label; a child inserted mid-deletion is collected the same way. The MC is read from `status.placementRef`, which the controller records before rendering anything. Each NodePool has its own finalizer that cleans up its ApplyDesire and writes a DeleteDesire before clearing. Requeues until all NodePools are fully gone.
 2. **ApplyDesire cleanup**: Deletes all 7 ApplyDesire specs from DynamoDB. This must happen before writing DeleteDesires to prevent kube-applier from racing and re-applying resources that are being deleted.
 3. **HostedCluster DeleteDesire**: Writes a DeleteDesire for the HostedCluster resource and waits for confirmation. Deleting the HostedCluster first allows HyperShift to clean up worker nodes and load balancers before the namespace is removed.
 4. **Namespace DeleteDesire**: Writes a DeleteDesire for `cluster-{uid}`, cascading all remaining MC resources. After confirmation, deletes the HostedCluster ReadDesire spec from DynamoDB.
-5. **Placement cleanup**: Deletes the Placement CR (last, after MC resources are confirmed gone).
-6. **Finalizer removal**: Removes the `hyperfleet.io/cluster` finalizer, allowing Kubernetes to complete the CR deletion.
+5. **Finalizer removal**: Removes the `hyperfleet.io/cluster` finalizer, allowing Kubernetes to complete the CR deletion.

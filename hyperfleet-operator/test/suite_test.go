@@ -210,6 +210,14 @@ var _ = BeforeSuite(func() {
 	nodePoolStatusEvents := make(chan event.GenericEvent, 256)
 	manifestStatusEvents := make(chan event.GenericEvent, 256)
 
+	for _, owned := range controller.ClusterOwnedKinds() {
+		Expect((&controller.GarbageCollector{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+			Owned:  owned,
+		}).SetupWithManager(mgr)).To(Succeed())
+	}
+
 	Expect((&controller.PlacementReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),

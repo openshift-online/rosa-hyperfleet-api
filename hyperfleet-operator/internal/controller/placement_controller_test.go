@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -104,8 +105,15 @@ var _ = Describe("Placement Controller", func() {
 			reconciler := &PlacementReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 			req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testNS, Name: clusterName}}
 
-			// First pass deletes the stale Placement; the next creates ours.
-			_, err := reconciler.Reconcile(ctx, req)
+			// The stale Placement is not ours: the reconciler waits for it.
+			result, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).NotTo(BeZero())
+
+			// The garbage collector deletes it (owner name reused by a new uid);
+			// then the reconciler creates ours.
+			gc := &GarbageCollector{Client: k8sClient, Scheme: k8sClient.Scheme(), Owned: &hyperfleetv1alpha1.Placement{}}
+			_, err = gc.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(stale)})
 			Expect(err).NotTo(HaveOccurred())
 			_, err = reconciler.Reconcile(ctx, req)
 			Expect(err).NotTo(HaveOccurred())

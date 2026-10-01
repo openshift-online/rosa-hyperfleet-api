@@ -177,6 +177,17 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "nodepool")
 		os.Exit(1)
 	}
+	for _, owned := range controller.ClusterOwnedKinds() {
+		if err := (&controller.GarbageCollector{
+			Client:                  mgr.GetClient(),
+			Scheme:                  mgr.GetScheme(),
+			Owned:                   owned,
+			MaxConcurrentReconciles: maxConcurrentReconciles,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create controller", "controller", "garbage-collector")
+			os.Exit(1)
+		}
+	}
 	if err := (&controller.PlacementReconciler{
 		Client:                  mgr.GetClient(),
 		Scheme:                  mgr.GetScheme(),

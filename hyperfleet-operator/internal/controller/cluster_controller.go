@@ -69,8 +69,8 @@ type ClusterReconciler struct {
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=clusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=clusters/finalizers,verbs=update
-// +kubebuilder:rbac:groups=hyperfleet.io,resources=nodepools,verbs=get;list;watch;delete
-// +kubebuilder:rbac:groups=hyperfleet.io,resources=placements,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=hyperfleet.io,resources=nodepools,verbs=get;list;watch
+// +kubebuilder:rbac:groups=hyperfleet.io,resources=placements,verbs=get;list;watch
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=oidcconfigs,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=hyperfleet.io,resources=indices,verbs=get;list;watch;create;delete
 
@@ -165,6 +165,12 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	mc := placement.Spec.ManagementCluster
+	// Record the MC on the cluster before anything is rendered to it: once the
+	// cluster is deleted, the garbage collector may remove the Placement before
+	// the finalizer runs, and the finalizer must still know where to clean up.
+	if err := r.recordPlacement(ctx, &cluster, placement); err != nil {
+		return ctrl.Result{}, err
+	}
 	specsPrefix := dynamo.SpecsPrefix(mc)
 	statusPrefix := dynamo.StatusPrefix(mc)
 
@@ -304,24 +310,6 @@ func (r *ClusterReconciler) reconcileDelete(ctx context.Context, cluster *hyperf
 		return r.cleanupAndRemoveFinalizer(ctx, cluster)
 	}
 
-	// Delete NodePool CRs so HyperShift tears down worker nodes. A cluster's
-	// objects are selected by its uid label, never by name or namespace.
-	var nodePools hyperfleetv1alpha1.NodePoolList
-	if err := r.List(ctx, &nodePools, client.MatchingLabels{hyperfleetv1alpha1.ClusterUIDLabel: string(cluster.UID)}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("list nodepools: %w", err)
-	}
-	pendingNodePools := 0
-	for i := range nodePools.Items {
-		np := &nodePools.Items[i]
-		if np.DeletionTimestamp.IsZero() {
-			log.Info("Deleting NodePool", "nodePool", np.Name)
-			if err := r.Delete(ctx, np); err != nil && !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("delete nodepool %s: %w", np.Name, err)
-			}
-		}
-		pendingNodePools++
-	}
-
 	specsPrefix := dynamo.SpecsPrefix(mc)
 	statusPrefix := dynamo.StatusPrefix(mc)
 	ns := hyperfleetv1alpha1.ManagementClusterNamespace(cluster.UID)
@@ -402,9 +390,13 @@ func (r *ClusterReconciler) reconcileDelete(ctx context.Context, cluster *hyperf
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	// Wait for NodePool CRs to be fully removed.
-	if pendingNodePools > 0 {
-		log.Info("Waiting for NodePools to be deleted", "count", pendingNodePools)
+	// Wait for the cluster's children (NodePools, Placement) to be gone. The
+	// garbage collector deletes them because this cluster is being deleted,
+	// and each NodePool's finalizer tears down its HyperShift NodePool.
+	if pending, err := countClusterOwned(ctx, r.Client, r.Scheme, cluster); err != nil {
+		return ctrl.Result{}, err
+	} else if pending > 0 {
+		log.Info("Waiting for owned objects to be garbage collected", "count", pending)
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
@@ -439,11 +431,14 @@ func (r *ClusterReconciler) cleanupAndRemoveFinalizer(ctx context.Context, clust
 		return ctrl.Result{}, fmt.Errorf("release index claims: %w", err)
 	}
 
-	if placement, err := getPlacement(ctx, r, cluster); err == nil {
-		log.Info("Deleting Placement", "placement", placement.Name)
-		if err := r.Delete(ctx, placement); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("delete placement: %w", err)
-		}
+	// Nothing may carry this cluster's uid when it goes: a child inserted
+	// after an earlier check is collected by the garbage collector, and this
+	// finalizer waits for it.
+	if pending, err := countClusterOwned(ctx, r.Client, r.Scheme, cluster); err != nil {
+		return ctrl.Result{}, err
+	} else if pending > 0 {
+		log.Info("Waiting for owned objects to be garbage collected", "count", pending)
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -461,6 +456,29 @@ func (r *ClusterReconciler) cleanupAndRemoveFinalizer(ctx context.Context, clust
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// recordPlacement sets cluster.status.placementRef from placement if it is not
+// already recorded.
+func (r *ClusterReconciler) recordPlacement(ctx context.Context, cluster *hyperfleetv1alpha1.Cluster, placement *hyperfleetv1alpha1.Placement) error {
+	if ref := cluster.Status.PlacementRef; ref != nil && ref.Name == placement.Name && ref.ManagementCluster == placement.Spec.ManagementCluster {
+		return nil
+	}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var latest hyperfleetv1alpha1.Cluster
+		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), &latest); err != nil {
+			return err
+		}
+		latest.Status.PlacementRef = &hyperfleetv1alpha1.PlacementReference{
+			Name:              placement.Name,
+			ManagementCluster: placement.Spec.ManagementCluster,
+		}
+		if err := r.Status().Update(ctx, &latest); err != nil {
+			return err
+		}
+		cluster.Status.PlacementRef = latest.Status.PlacementRef
+		return nil
+	})
 }
 
 func (r *ClusterReconciler) updateStatusFromDynamo(ctx context.Context, cluster *hyperfleetv1alpha1.Cluster, statusPrefix, readDocID string, applyEntries []DesireStatusEntry) {

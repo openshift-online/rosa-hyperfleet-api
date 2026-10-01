@@ -22,6 +22,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -275,18 +276,33 @@ var _ = Describe("Cluster Controller", func() {
 				}},
 			}
 
-			// Third deletion reconcile: all 6 confirmed deleted → cleans up
-			// desire specs and ReadDesire, deletes Placement, removes finalizer.
+			// Third deletion reconcile: all 6 confirmed deleted, but the cluster
+			// still owns its Placement, so the finalizer waits.
+			result, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: clusterName},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).NotTo(BeZero(), "should wait while the Placement still carries the cluster uid")
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName}, &updated)).To(Succeed())
+			Expect(controllerutil.ContainsFinalizer(&updated, clusterFinalizer)).To(BeTrue())
+
+			// The garbage collector deletes the Placement of a cluster being deleted.
+			gc := &GarbageCollector{Client: k8sClient, Scheme: k8sClient.Scheme(), Owned: &hyperfleetv1alpha1.Placement{}}
+			_, err = gc.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			err = k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, &p)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the garbage collector should delete the Placement")
+
+			// Fourth deletion reconcile: nothing owned remains → cleans up desire
+			// specs and ReadDesire, removes finalizer.
 			_, err = reconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Namespace: testNS, Name: clusterName},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			deleteApplies = filterDeleteDesires(fd.applies)
-			Expect(deleteApplies).To(HaveLen(18), "6 desires re-upserted on third pass")
-
-			// Verify the Placement was deleted.
-			err = k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, &p)
-			Expect(err).To(HaveOccurred())
+			Expect(deleteApplies).To(HaveLen(24), "6 desires re-upserted on each of four passes")
 
 			// Verify desire specs were cleaned up once at the end (not on every pass).
 			// 6 ApplyDesire cleanups + 1 ReadDesire cleanup.

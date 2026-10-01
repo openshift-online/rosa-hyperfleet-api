@@ -36,7 +36,7 @@ it is **not an apiserver**. Know the differences:
 | admission / CRD schema validation     | **none**. CEL and OpenAPI markers enforce nothing; validate in platform-api      |
 | a cached, possibly stale `Get`/`List` | **always a Postgres query**. Never stale, but not free: don't call it in loops   |
 | `Patch`, `DeleteAllOf`, `GenerateName`, `DryRun` | **not supported**. Use `Get` + `Update`, and set names explicitly     |
-| Kubernetes garbage collection         | **not built in**. Use ours ([§6](#6-ownership-and-cleanup)) _(PR 3)_             |
+| Kubernetes garbage collection         | **not built in**. Use ours ([§6](#6-ownership-and-cleanup))                      |
 | unique fields beyond the name         | **only the primary key** `(kind, namespace, name)`. Use an `Index` ([§7](#7-uniqueness)) |
 | transactions across objects           | **none**. Each write is one row; converge in reconcile                           |
 

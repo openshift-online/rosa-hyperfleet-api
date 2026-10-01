@@ -57,7 +57,7 @@ These features return an error, panic, or are not available. If you're porting a
 | `GetConfig()` / `GetHTTPClient()` | Panics                       | Don't create additional kube clients from the manager     |
 | `DryRun` option                   | Returns error                | Don't use                                                 |
 | `GracePeriodSeconds` option       | Returns error                | Handle graceful shutdown in your reconciler               |
-| `PropagationPolicy` option        | Returns error                | Clean up children via finalizers                          |
+| `PropagationPolicy` option        | Returns error                | Owners' children are collected by the operator's garbage collector |
 | `Preconditions` option            | Returns error                | Use `ResourceVersion` on the object                       |
 | `GenerateName`                    | Returns error                | Set `Name` explicitly before `Create()`                   |
 | Event recording                   | Not available                | Use structured logging or Prometheus metrics              |
@@ -72,4 +72,4 @@ These are the features that accept input without error but don't behave as expec
 
 | Feature          | What happens                    | What to do instead                                |
 | ---------------- | ------------------------------- | ------------------------------------------------- |
-| Owner references | Stored but no garbage collector | Use finalizers on the parent to clean up children |
+| Owner references | Stored but no garbage collector | hyperfleet-operator runs its own (`GarbageCollector`); see its hyperfleet-db guidelines |

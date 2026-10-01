@@ -509,4 +509,44 @@ var _ = Describe("Cluster lifecycle", func() {
 		Expect(k8sClient.List(ctx, &oldClaims, client.MatchingLabels{hyperfleetv1alpha1.OwnerUIDLabel: string(a.UID)})).To(Succeed())
 		Expect(oldClaims.Items).To(BeEmpty(), "the deleted cluster's DNS claim should be released")
 	})
+
+	It("should garbage-collect a NodePool inserted while its cluster is being deleted", func() {
+		By("creating a placed cluster")
+		cluster := newTestCluster("e2e-gc-race")
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		Eventually(func(g Gomega) {
+			var latest hyperfleetv1alpha1.Cluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
+			g.Expect(latest.Status.PlacementRef).NotTo(BeNil())
+		}).Should(Succeed())
+
+		By("deleting it, then inserting a NodePool that still points at it")
+		Expect(k8sClient.Delete(ctx, &hyperfleetv1alpha1.Cluster{ObjectMeta: metav1.ObjectMeta{Namespace: testNS, Name: "e2e-gc-race"}})).To(Succeed())
+		late := newTestNodePool(cluster)
+		Expect(k8sClient.Create(ctx, late)).To(Succeed())
+
+		By("verifying both the late NodePool and the cluster are gone")
+		Eventually(func() error {
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(late), &hyperfleetv1alpha1.NodePool{})
+		}).ShouldNot(Succeed())
+		Eventually(func() error {
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &hyperfleetv1alpha1.Cluster{})
+		}).ShouldNot(Succeed())
+	})
+
+	It("should garbage-collect a NodePool pointing at an old uid under a reused cluster name", func() {
+		cluster := newTestCluster("e2e-gc-reuse")
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+
+		earlier := cluster.DeepCopy()
+		earlier.UID = "00000000-0000-0000-0000-00000000cafe"
+		stale := newTestNodePool(earlier)
+		Expect(k8sClient.Create(ctx, stale)).To(Succeed())
+
+		Eventually(func() error {
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(stale), &hyperfleetv1alpha1.NodePool{})
+		}).ShouldNot(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &hyperfleetv1alpha1.Cluster{})).To(Succeed(),
+			"the cluster now holding the name is untouched")
+	})
 })

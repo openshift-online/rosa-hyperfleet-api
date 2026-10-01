@@ -71,12 +71,11 @@ func (r *PlacementReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// A Placement under this name controlled by another uid was left by an earlier
-	// cluster with the same name. It is not ours: delete it and start over.
+	// cluster with the same name. It is not ours: the garbage collector deletes
+	// it, and its deletion re-enqueues this cluster through Owns().
 	if err == nil && !metav1.IsControlledBy(&placement, &cluster) {
-		log.Info("Deleting Placement left by an earlier cluster", "placement", placementName, "owner", metav1.GetControllerOf(&placement))
-		if err := r.Delete(ctx, &placement); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("delete stale placement: %w", err)
-		}
+		log.Info("Waiting for garbage collection of a Placement left by an earlier cluster",
+			"placement", placementName, "owner", metav1.GetControllerOf(&placement))
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
