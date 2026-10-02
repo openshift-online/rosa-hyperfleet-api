@@ -39,3 +39,23 @@ func TestMigrateCreatesAllTables(t *testing.T) {
 	}
 	assert.Equal(t, expected, tables)
 }
+
+func TestMigrateCreatesLabelsGINIndex(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires postgres")
+	}
+
+	db := testinfra.StartPostgres(t)
+	conn := db.Connect(t)
+
+	var accessMethod string
+	err := conn.QueryRow(context.Background(), `
+		SELECT am.amname
+		FROM pg_class idx
+		JOIN pg_index i ON i.indexrelid = idx.oid
+		JOIN pg_am am ON am.oid = idx.relam
+		WHERE idx.relname = 'idx_resources_labels'
+	`).Scan(&accessMethod)
+	require.NoError(t, err)
+	assert.Equal(t, "gin", accessMethod)
+}

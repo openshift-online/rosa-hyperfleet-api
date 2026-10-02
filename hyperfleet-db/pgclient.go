@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db/internal/model"
@@ -101,9 +102,6 @@ func (c *pgClient) List(ctx context.Context, list client.ObjectList, opts ...cli
 		obj, err := resourceToObject(r, c.scheme)
 		if err != nil {
 			return err
-		}
-		if listOpts.LabelSelector != nil && !listOpts.LabelSelector.Matches(labelSet(obj.GetLabels())) {
-			continue
 		}
 		items = append(items, obj)
 	}
@@ -205,6 +203,13 @@ func (c *pgClient) Update(ctx context.Context, obj client.Object, opts ...client
 	if err != nil {
 		return fmt.Errorf("parse resource version: %w", err)
 	}
+	expectedUID, err := parseObjectUID(obj)
+	if err != nil {
+		return fmt.Errorf("parse UID: %w", err)
+	}
+	if expectedVersion > 0 && expectedUID == nil {
+		return apierrors.NewBadRequest("metadata.uid is required for updates")
+	}
 
 	ns, name := obj.GetNamespace(), obj.GetName()
 
@@ -221,6 +226,10 @@ func (c *pgClient) Update(ctx context.Context, obj client.Object, opts ...client
 	}
 	if current == nil {
 		return apierrors.NewNotFound(groupResource(gvk), name)
+	}
+	if expectedUID != nil && current.UID != *expectedUID {
+		return apierrors.NewConflict(groupResource(gvk), name,
+			fmt.Errorf("object UID changed from %s to %s", *expectedUID, current.UID))
 	}
 
 	newSpec, err := extractSpec(obj)
@@ -247,6 +256,7 @@ func (c *pgClient) Update(ctx context.Context, obj client.Object, opts ...client
 		Metadata:          metadata,
 		DeletionTimestamp: current.DeletionTimestamp,
 		ExpectedVersion:   expectedVersion,
+		ExpectedUID:       expectedUID,
 	})
 	if err != nil {
 		r, wErr := mapWriteError(ctx, w, err, gvk, name, 0)
@@ -291,6 +301,10 @@ func (c *pgClient) Delete(ctx context.Context, obj client.Object, opts ...client
 	if err != nil {
 		return fmt.Errorf("parse resource version: %w", err)
 	}
+	expectedUID, err := parseObjectUID(obj)
+	if err != nil {
+		return fmt.Errorf("parse UID: %w", err)
+	}
 
 	var spec, status, metadata json.RawMessage
 	var existingDeletionTimestamp *time.Time
@@ -302,7 +316,12 @@ func (c *pgClient) Delete(ctx context.Context, obj client.Object, opts ...client
 		if current == nil {
 			return apierrors.NewNotFound(groupResource(gvk), name)
 		}
+		if expectedUID != nil && current.UID != *expectedUID {
+			return apierrors.NewConflict(groupResource(gvk), name,
+				fmt.Errorf("object UID changed from %s to %s", *expectedUID, current.UID))
+		}
 		expectedVersion = current.ObjectVersion
+		expectedUID = &current.UID
 		spec = current.Spec
 		status = current.Status
 		metadata = current.Metadata
@@ -315,6 +334,9 @@ func (c *pgClient) Delete(ctx context.Context, obj client.Object, opts ...client
 		metadata, err = extractMetadata(obj)
 		if err != nil {
 			return err
+		}
+		if expectedUID == nil {
+			return apierrors.NewBadRequest("metadata.uid is required when deleting with resourceVersion")
 		}
 	}
 
@@ -334,6 +356,7 @@ func (c *pgClient) Delete(ctx context.Context, obj client.Object, opts ...client
 		Metadata:          metadata,
 		DeletionTimestamp: deletionTS,
 		ExpectedVersion:   expectedVersion,
+		ExpectedUID:       expectedUID,
 	})
 	if err != nil {
 		_, wErr := mapWriteError(ctx, w, err, gvk, name, 0)
@@ -422,6 +445,13 @@ func (sw *pgStatusWriter) Update(ctx context.Context, obj client.Object, opts ..
 	if err != nil {
 		return fmt.Errorf("parse resource version: %w", err)
 	}
+	expectedUID, err := parseObjectUID(obj)
+	if err != nil {
+		return fmt.Errorf("parse UID: %w", err)
+	}
+	if expectedUID == nil {
+		return apierrors.NewBadRequest("metadata.uid is required for status updates")
+	}
 
 	status, err := extractStatus(obj)
 	if err != nil {
@@ -444,6 +474,7 @@ func (sw *pgStatusWriter) Update(ctx context.Context, obj client.Object, opts ..
 		Name:            name,
 		Status:          status,
 		ExpectedVersion: expectedVersion,
+		ExpectedUID:     expectedUID,
 	})
 	if err != nil {
 		r, wErr := mapWriteError(ctx, w, err, gvk, name, 0)
@@ -568,21 +599,15 @@ func uidFromUUID(u [16]byte) apitypes.UID {
 	return apitypes.UID(fmt.Sprintf("%x-%x-%x-%x-%x", u[0:4], u[4:6], u[6:8], u[8:10], u[10:16]))
 }
 
-// labelSet adapts map[string]string to labels.Set for selector matching.
-type labelSet map[string]string
-
-func (ls labelSet) Has(key string) bool {
-	_, ok := ls[key]
-	return ok
-}
-
-func (ls labelSet) Get(key string) string {
-	return ls[key]
-}
-
-func (ls labelSet) Lookup(label string) (value string, exists bool) {
-	value, exists = ls[label]
-	return
+func parseObjectUID(obj client.Object) (*uuid.UUID, error) {
+	if obj.GetUID() == "" {
+		return nil, nil
+	}
+	u, err := uuid.Parse(string(obj.GetUID()))
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 
 type continueToken struct {
@@ -623,6 +648,16 @@ func buildListFilter(listOpts client.ListOptions) (*reader.ListFilter, error) {
 
 	if listOpts.FieldSelector != nil && !listOpts.FieldSelector.Empty() {
 		clauses, args, err := buildFieldSelectorFilter(listOpts.FieldSelector, paramIdx)
+		if err != nil {
+			return nil, err
+		}
+		f.WhereClauses = append(f.WhereClauses, clauses...)
+		f.WhereArgs = append(f.WhereArgs, args...)
+		paramIdx += len(args)
+	}
+
+	if listOpts.LabelSelector != nil && !listOpts.LabelSelector.Empty() {
+		clauses, args, err := buildLabelSelectorFilter(listOpts.LabelSelector, paramIdx)
 		if err != nil {
 			return nil, err
 		}

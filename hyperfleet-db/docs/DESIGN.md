@@ -26,7 +26,9 @@ These are the properties the system promises. Everything else exists to uphold t
 - **I3 — Exactly-once delivery per state.** A watcher starting from watermark W receives every object state-change with `txid_stamp > W` at least once (re-delivery of in-flight txids is expected and deduplicated), with no losses, regardless of doorbell behavior. Coalescing rapid updates to the latest state per object is permitted — Kubernetes watch semantics.
 - **I4 — RV monotonicity.** The watermark resourceVersion observed by any client never moves backwards. Under RDS Multi-AZ synchronous replication, failover preserves all committed transactions. On database restore, restarting controller pods forces a relist from the current state.
 - **I5 — Compaction safety.** A watcher can never silently skip a compacted event: if its watermark predates the `compacted_xid` for any GVK, it receives `410 Gone` and relists; otherwise its stream is complete.
-- **I6 — Optimistic concurrency.** An update presenting a stale `object_version` is rejected (409); no lost updates on a single object.
+- **I6 — Optimistic concurrency and incarnation safety.** An update presenting a
+  stale `object_version` or a UID from an older same-name incarnation is rejected
+  (409); no lost updates or stale-incarnation writes on one object.
 - **I7 — Partition completeness.** When sharding is enabled, the union of all replicas' owned residues for a given `Mod` must cover `[0, Mod)`. Every namespace hashes to exactly one residue, so every namespace is watched by at least one replica. During scale-up (changing `Mod`), a transient period exists where some namespaces are watched by both old and new replicas — this is benign (duplicate reconciles, deduplicated by the informer cache).
 
 **Not provided:** Owner-reference garbage collection is intentionally left to controllers. In Kubernetes, the API server's GC cascade-deletes dependents when their owner is removed; here, controllers handle this via standard controller-runtime patterns (`Owns()` watches + finalizer-driven cleanup). This keeps the storage layer simple — no cross-object graph traversal.
@@ -72,6 +74,8 @@ CREATE INDEX idx_resources_list
     WHERE deletion_timestamp IS NULL;
 CREATE INDEX idx_resources_watch
     ON kubernetes_resources (gvk, txid_stamp);
+CREATE INDEX idx_resources_labels
+    ON kubernetes_resources USING GIN ((metadata->'labels'));
 
 -- 2. Compaction horizon per GVK
 CREATE TABLE compaction_horizon (
@@ -97,6 +101,7 @@ SELECT * FROM pgctl_write(
     $status_only,       -- TRUE for WriteStatus path
     $gvk, $ns, $name,
     $expected_version,
+    $expected_uid,      -- NULL for create; UID read with the object for update/delete
     $force_write,       -- TRUE bypasses no-op suppression
     $spec, $status, $metadata, $deletion_ts
 );
@@ -112,9 +117,16 @@ Inside `pgctl_write()`, the steps are:
 
 **Tombstone revival:** A create that hits `unique_violation` may be blocked by a tombstone awaiting compaction. The write path attempts to revive it: `UPDATE ... SET uid = gen_random_uuid(), object_version = 1, deletion_timestamp = NULL ... WHERE deletion_timestamp IS NOT NULL AND (no finalizers)`. A fresh UID ensures watchers and owner references treat this as a new object. If the blocking row is live or dying (has finalizers), the UPDATE matches zero rows and the write returns `AlreadyExists`.
 
-**(a) SUPPRESSION CHECK** — upholds I3. PK-read the existing row; if content is identical (see §3.3c), return `(uid, version, 0, false)` immediately — no upsert.
+**(a) SUPPRESSION CHECK** — upholds I3/I6. For an update, verify the current
+`object_version` and expected UID before considering suppression. A stale version
+or UID returns 409 even if the submitted content happens to match. If identity is
+current and content is identical (see §3.3c), return `(uid, version, 0, false)` —
+no upsert. Creates skip suppression so an occupied name reaches the primary-key
+conflict path.
 
-**(b) UPSERT** — upholds I1/I6. The upsert stamps the row with `pg_current_xact_id()` and checks `object_version = $expected_version`; zero rows ⇒ `RAISE EXCEPTION` with `P0002` (409 Conflict).
+**(b) UPSERT** — upholds I1/I6. The upsert stamps the row with `pg_current_xact_id()`
+and checks `object_version = $expected_version` and, when provided,
+`uid = $expected_uid`; zero rows ⇒ `RAISE EXCEPTION` with `P0002` (409 Conflict).
 
 Client rules: errors raised inside `pgctl_write()` abort the implicit transaction automatically (no partial state). Any ambiguous commit outcome (connection dropped mid-COMMIT) is resolved by reading back the row using the returned `txid` before retrying — the write is idempotent to verify because `object_version` and `txid_stamp` identify it.
 
@@ -126,19 +138,30 @@ Client rules: errors raised inside `pgctl_write()` abort the implicit transactio
 
 In Kubernetes, spec (desired state) and status (observed state) are written by different controllers — e.g., the API server writes spec while a controller writes status. The system supports this with a `WriteStatus` path that uses the **same `pgctl_write()` stored procedure** (§3.3). The differences are:
 
-1. **UPDATE only touches `status`** — `spec`, `metadata`, and `deletion_timestamp` are unchanged. There is no create path; the object must already exist (`ExpectedVersion > 0`).
+1. **UPDATE only touches `status`** — `spec`, `metadata`, and `deletion_timestamp` are unchanged. There is no create path; the object must already exist (`ExpectedVersion > 0`) and the request carries its expected UID.
 2. **Same `object_version` and `txid_stamp`.** Both `Write()` and `WriteStatus()` bump the same `object_version` column and stamp the same `txid_stamp` on `kubernetes_resources`. This ensures watchers see a single event stream covering both spec and status changes.
 3. **No-op suppression compares only `status`** (not all four content fields). See §3.3c.
 
 The call pattern is identical to §3.3 — `pgctl_write(...)` in autocommit mode, debouncer ring after if `changed=TRUE`.
 
-**Symmetric `WriteObject` path:** `WriteObject` mirrors `WriteStatus` — it updates only `spec`, `metadata`, and `deletion_timestamp`, leaving `status` untouched. This is the write path used by controller-runtime's `client.Update()` (via pgruntime), matching the Kubernetes API server's behavior where `Update` writes spec + metadata only. `WriteObject` passes `null` for the status parameter; the stored procedure uses `COALESCE(p_status, status)` to preserve the existing status column. Like `WriteStatus`, `ExpectedVersion` must be > 0 (no create path).
+**Symmetric `WriteObject` path:** `WriteObject` mirrors `WriteStatus` — it updates only `spec`, `metadata`, and `deletion_timestamp`, leaving `status` untouched. This is the write path used by controller-runtime's `client.Update()` (via pgruntime), matching the Kubernetes API server's behavior where `Update` writes spec + metadata only. `WriteObject` passes `null` for the status parameter; the stored procedure uses `COALESCE(p_status, status)` to preserve the existing status column. Like `WriteStatus`, `ExpectedVersion` must be > 0 and the expected UID must match (no create path).
 
 ### 3.3c No-Op Write Suppression
 
-Content-equal writes consume no sequence number, emit no doorbell, and bump no `object_version`. This matches Kubernetes API-server semantics where an update that changes nothing does not advance resourceVersion. The feature is default-on; callers set `ForceWrite: true` to bypass it.
+Content-equal updates with a current `object_version` and UID consume no sequence
+number, emit no doorbell, and bump no `object_version`. This matches Kubernetes
+API-server semantics where an update that changes nothing does not advance
+resourceVersion. A stale version or UID is still a conflict. Creates are not
+suppressed. The feature is default-on for updates; callers set `ForceWrite: true` to
+bypass suppression.
 
-**Mechanism:** inside `pgctl_write()`, before the counter increment, the stored procedure reads the existing row by primary key. If the row exists and all compared fields are equal to the incoming values, the procedure returns `(uid, version, 0, false)` immediately — no counter increment, no upsert. The caller sees `changed=FALSE` and skips the doorbell.
+**Mechanism:** inside `pgctl_write()`, before the counter increment, the stored
+procedure reads the existing row by primary key. For an update, it first checks the
+expected version and UID. If both match and the compared content is equal, it returns
+`(uid, version, 0, false)` immediately — no counter increment, no upsert. The caller
+sees `changed=FALSE` and skips the doorbell. For Create (`ExpectedVersion == 0`),
+the procedure skips suppression and lets the unique key return `AlreadyExists` for
+an occupied live/dying name.
 
 **Field comparison rules (inside `pgctl_write()`):**
 
@@ -146,7 +169,10 @@ Content-equal writes consume no sequence number, emit no doorbell, and bump no `
 - `WriteObject()` (null status parameter) compares `spec`, `metadata`, and `deletion_timestamp` (not `status`). The stored procedure handles null status via `(p_status IS NULL OR v_existing.status = p_status)` in the suppression check.
 - `WriteStatus()` compares only `status`.
 
-**Create-path behavior (ExpectedVersion == 0):** if the row already exists and content matches, the write is treated as a replayed create — returns `Changed: false` with the existing row's version and UID. If content differs, returns `ErrAlreadyExists` as before.
+**Create-path behavior (ExpectedVersion == 0):** any occupied live/dying name
+returns `ErrAlreadyExists`, including identical content. A fully-deleted tombstone
+may be revived with a new UID. An API-level idempotency key, if added later, is a
+separate request-replay feature and does not change this storage contract.
 
 **`WriteResult.Changed`** indicates whether the write produced a new state. Callers can use this to skip downstream side-effects on no-ops.
 
@@ -154,7 +180,8 @@ Content-equal writes consume no sequence number, emit no doorbell, and bump no `
 
 - **I1 (commit ordering):** suppressed writes don't stamp a new txid — no ordering concern.
 - **I3 (exactly-once delivery):** no event emitted for no state change — correct Kubernetes semantics.
-- **I6 (optimistic concurrency):** content-equal ⇒ intent satisfied regardless of version.
+- **I6 (optimistic concurrency):** content-equal suppresses only when expected
+  version and UID match; stale versions/incarnations return Conflict.
 
 **Performance:** one PK read per write inside the stored procedure. Under load tests with unique content per write (suppression finds "no match" and proceeds normally), no measurable regression.
 
@@ -262,11 +289,14 @@ Every entry names the invariant at stake, the interleaving, the defense, and the
 - **R12 — Concurrent spec/status writes (I1).** Writer A writes spec, writer B writes status to the same resource. Each gets a distinct `txid_stamp`; the watcher must see both state changes. _Defense:_ `pg_current_xact_id()` is unique per transaction; `object_version` serializes updates via optimistic concurrency. _Test:_ interleaved spec and status writes each get distinct txids; watcher starting from hwm sees correct state.
 - **R13 — Single-goroutine poll serialization (I3).** Rapid doorbell bursts overlapping with the baseline timer must not produce concurrent poll cycles — the watermark is not safe for concurrent access and concurrent polls could deliver events out of order. _Defense:_ single-goroutine scheduler (§3.5) — only one goroutine reads the watermark, the listen goroutine only forwards into a buffered channel. _Test:_ fire 10 rapid doorbells while baseline timer is due; assert exactly one poll executes at a time and events arrive in txid order.
 - **R15 — Mid-poll compaction (I5).** Compaction runs and advances the horizon while a watcher is mid-poll. The watcher must not see an inconsistent state (some rows deleted, horizon advanced, within a single poll cycle). _Defense:_ REPEATABLE READ snapshot isolation — the poll transaction sees the database as of its snapshot instant; the compaction's DELETE and horizon UPDATE are invisible within the poll cycle. _Test:_ start a watcher poll (paused via hook), run compaction in a separate session, resume the poll; assert the watcher sees all pre-compaction rows and no unexplained gaps.
-- **RB4 — No-op write suppression (I1/I3).** Content-equal writes must be suppressed without violating any invariant. Six sub-cases:
+- **RB4 — No-op update suppression (I1/I3/I6).** Content-equal updates with the
+  current UID/version are suppressed without violating any invariant. Stale
+  identity/version conflicts, and duplicate Creates are not suppressed. Six
+  sub-cases:
   - **RB4a** — Identical write suppressed: no txid_stamp consumed, no version bump.
   - **RB4b** — Real change after no-op correctly stamped (gets a txid, watcher sees exactly one event).
   - **RB4c** — Watcher sees no event for suppressed write (I3).
-  - **RB4d** — Replayed create with identical content suppressed.
+  - **RB4d** — Replayed identical Create returns `AlreadyExists`; Create is not no-op suppressed.
   - **RB4e** — WriteStatus suppression (only status field compared).
   - **RB4f** — ForceWrite bypasses suppression.
 

@@ -12,7 +12,7 @@ The standard reconciler pattern works unchanged:
 - `Create()`, `Update()`, `Delete()`, `Status().Update()`
 - Finalizers, labels, annotations
 - Generation tracking
-- Optimistic concurrency via `ResourceVersion` (409 Conflict on stale writes)
+- Optimistic concurrency via `ResourceVersion` and UID (409 Conflict on stale versions or object incarnations)
 - Health and readiness checks
 - `apierrors.IsNotFound()` / `IsConflict()` / `IsAlreadyExists()`
 
@@ -25,7 +25,7 @@ These features work but behave differently from standard controller-runtime agai
 | What                              | Standard kube                                           | pgruntime                                                                                                                      |
 | --------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Read consistency                  | `GetClient()` reads from cache — can be seconds stale   | `GetClient()` reads from DB — always current                                                                                   |
-| No-op writes                      | May or may not bump `ResourceVersion`                   | Content-equal writes suppressed: no version bump, no event                                                                     |
+| No-op writes                      | May or may not bump `ResourceVersion`                   | Content-equal updates with current UID/version are suppressed; duplicate Create always returns `AlreadyExists`                 |
 | Delete lifecycle                  | Object removed immediately after finalizers clear       | Tombstone row persists until compaction (24h default). Invisible to callers — `Get()` returns NotFound, `List()` excludes them |
 | Horizontal scaling                | Leader election (1 active replica) or external sharding | Multiple replicas via namespace-hash sharding (`Options.Shard`); direct client always sees full dataset                        |
 | Event delivery                    | HTTP/2 streaming watch                                  | Poll (5s baseline) with `pg_notify` doorbell (~100ms typical delivery)                                                         |

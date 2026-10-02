@@ -12,8 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// B6 — Replayed create with identical content is suppressed (no-op).
-// Replayed create with different content returns ErrAlreadyExists.
+// Repeated creates return a conflict even when their content is identical.
 func TestCreateConflict_ReturnsAlreadyExists(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires postgres")
@@ -36,11 +35,9 @@ func TestCreateConflict_ReturnsAlreadyExists(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, r1.Changed)
 
-	// Second create with identical content — suppressed (no-op)
-	r2, err := w.Write(ctx, req)
-	require.NoError(t, err, "replayed create with identical content must succeed as no-op")
-	assert.False(t, r2.Changed, "replayed create with identical content must be suppressed")
-	assert.Equal(t, r1.ObjectVersion, r2.ObjectVersion)
+	// A duplicate name is a conflict even when content is identical.
+	_, err = w.Write(ctx, req)
+	require.ErrorIs(t, err, writer.ErrAlreadyExists)
 
 	// Create with DIFFERENT content — ErrAlreadyExists
 	req.Spec = json.RawMessage(`{"replicas":99}`)

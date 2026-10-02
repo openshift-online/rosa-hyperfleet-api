@@ -9,6 +9,7 @@ import (
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db/internal/model"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db/internal/reader"
 	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db/internal/resourceversion"
+	"github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db/internal/writer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -129,8 +130,8 @@ func TestRB4c_WatcherSeesNoEventForSuppressed(t *testing.T) {
 	_ = listenConn.Close(ctx)
 }
 
-// RB4d — Create-path suppression: replayed create with identical content (I1).
-func TestRB4d_ReplayedCreateSuppressed(t *testing.T) {
+// RB4d — Duplicate Create conflicts even when content is identical.
+func TestRB4d_DuplicateCreateConflicts(t *testing.T) {
 	truncateAll(t)
 	ctx := context.Background()
 
@@ -141,13 +142,10 @@ func TestRB4d_ReplayedCreateSuppressed(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, r1.Changed)
 
-	// Replay: same content, ExpectedVersion=0 (create attempt).
+	// A repeated Create is not an update/no-op, even when content matches.
 	req.ExpectedVersion = 0
-	r2, err := w.Write(ctx, req)
-	require.NoError(t, err)
-	assert.False(t, r2.Changed, "replayed create with identical content must be suppressed")
-	assert.Equal(t, r1.ObjectVersion, r2.ObjectVersion)
-	assert.Equal(t, r1.UID, r2.UID)
+	_, err = w.Write(ctx, req)
+	assert.ErrorIs(t, err, writer.ErrAlreadyExists)
 }
 
 // RB4e — WriteStatus suppression (I1/I4).

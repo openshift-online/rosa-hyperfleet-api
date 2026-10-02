@@ -90,6 +90,122 @@ func TestConflictReturns409(t *testing.T) {
 	assert.ErrorIs(t, err, writer.ErrConflict)
 }
 
+func TestStaleVersionConflictsEvenWhenContentMatches(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires postgres")
+	}
+
+	db := testinfra.StartPostgres(t)
+	w := setupWriter(t, db)
+	ctx := context.Background()
+
+	initial := makeReq()
+	created, err := w.Write(ctx, initial)
+	require.NoError(t, err)
+
+	current := makeReq()
+	current.Spec = json.RawMessage(`{"replicas":5}`)
+	current.ExpectedVersion = created.ObjectVersion
+	current.ExpectedUID = &created.UID
+	updated, err := w.Write(ctx, current)
+	require.NoError(t, err)
+
+	stale := current
+	stale.ExpectedVersion = created.ObjectVersion
+	stale.ExpectedUID = &created.UID
+	_, err = w.Write(ctx, stale)
+	assert.ErrorIs(t, err, writer.ErrConflict)
+	assert.Equal(t, int64(2), updated.ObjectVersion)
+}
+
+func TestExpectedUIDProtectsRecreatedName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires postgres")
+	}
+
+	db := testinfra.StartPostgres(t)
+	w := setupWriter(t, db)
+	ctx := context.Background()
+
+	oldReq := makeReq()
+	old, err := w.Write(ctx, oldReq)
+	require.NoError(t, err)
+
+	deleted := oldReq
+	deleted.ExpectedVersion = old.ObjectVersion
+	deleted.ExpectedUID = &old.UID
+	deletionTime := time.Now()
+	deleted.DeletionTimestamp = &deletionTime
+	_, err = w.Write(ctx, deleted)
+	require.NoError(t, err)
+
+	replacement, err := w.Write(ctx, makeReq())
+	require.NoError(t, err)
+	require.NotEqual(t, old.UID, replacement.UID)
+	require.Equal(t, old.ObjectVersion, replacement.ObjectVersion,
+		"recreated object intentionally starts at the same object version")
+
+	stale := makeReq()
+	stale.ExpectedVersion = old.ObjectVersion
+	stale.ExpectedUID = &old.UID
+	_, err = w.Write(ctx, stale)
+	assert.ErrorIs(t, err, writer.ErrConflict)
+
+	_, err = w.WriteObject(ctx, model.ObjectWriteRequest{
+		GVK:             oldReq.GVK,
+		Namespace:       oldReq.Namespace,
+		Name:            oldReq.Name,
+		Spec:            oldReq.Spec,
+		Metadata:        oldReq.Metadata,
+		ExpectedVersion: old.ObjectVersion,
+		ExpectedUID:     &old.UID,
+	})
+	assert.ErrorIs(t, err, writer.ErrConflict)
+}
+
+func TestWriteStatusRejectsStaleUID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires postgres")
+	}
+
+	db := testinfra.StartPostgres(t)
+	w := setupWriter(t, db)
+	ctx := context.Background()
+
+	createReq := makeReq()
+	old, err := w.Write(ctx, createReq)
+	require.NoError(t, err)
+
+	deleted := createReq
+	deleted.ExpectedVersion = old.ObjectVersion
+	deleted.ExpectedUID = &old.UID
+	deletionTime := time.Now()
+	deleted.DeletionTimestamp = &deletionTime
+	_, err = w.Write(ctx, deleted)
+	require.NoError(t, err)
+
+	replacement, err := w.Write(ctx, makeReq())
+	require.NoError(t, err)
+	require.NotEqual(t, old.UID, replacement.UID)
+
+	_, err = w.WriteStatus(ctx, model.StatusWriteRequest{
+		GVK:             createReq.GVK,
+		Namespace:       createReq.Namespace,
+		Name:            createReq.Name,
+		Status:          json.RawMessage(`{"phase":"stale"}`),
+		ExpectedVersion: old.ObjectVersion,
+		ExpectedUID:     &old.UID,
+	})
+	assert.ErrorIs(t, err, writer.ErrConflict)
+
+	var status json.RawMessage
+	err = db.Connect(t).QueryRow(ctx,
+		`SELECT status FROM kubernetes_resources WHERE gvk = $1 AND namespace = $2 AND name = $3`,
+		createReq.GVK, createReq.Namespace, createReq.Name).Scan(&status)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{}`, string(status))
+}
+
 func TestWriteStatus_UpdatesOnlyStatus(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires postgres")

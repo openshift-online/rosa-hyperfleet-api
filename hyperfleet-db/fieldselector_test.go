@@ -14,6 +14,7 @@ func TestFieldPathToSQL(t *testing.T) {
 	}{
 		{"metadata.name", "name"},
 		{"metadata.namespace", "namespace"},
+		{"metadata.uid", "uid::text"},
 		{"metadata.labels", "metadata->>'labels'"},
 		{"spec.color", "spec->>'color'"},
 		{"spec.template.containers", "spec->'template'->>'containers'"},

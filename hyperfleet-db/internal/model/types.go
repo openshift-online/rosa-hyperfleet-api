@@ -44,8 +44,9 @@ type WriteRequest struct {
 	Status            json.RawMessage
 	Metadata          json.RawMessage
 	DeletionTimestamp *time.Time
-	ExpectedVersion   int64 // 0 for create, >0 for update
-	ForceWrite        bool  // skip no-op suppression; default false = suppress content-equal writes
+	ExpectedVersion   int64      // 0 for create, >0 for update
+	ExpectedUID       *uuid.UUID // UID precondition for writes to an existing object
+	ForceWrite        bool       // skip no-op suppression; default false = suppress content-equal writes
 }
 
 type StatusWriteRequest struct {
@@ -54,7 +55,8 @@ type StatusWriteRequest struct {
 	Name            string
 	Status          json.RawMessage
 	ExpectedVersion int64
-	ForceWrite      bool // skip no-op suppression; default false = suppress content-equal writes
+	ExpectedUID     *uuid.UUID // UID precondition for writes to an existing object
+	ForceWrite      bool       // skip no-op suppression; default false = suppress content-equal writes
 }
 
 type ObjectWriteRequest struct {
@@ -65,6 +67,7 @@ type ObjectWriteRequest struct {
 	Metadata          json.RawMessage
 	DeletionTimestamp *time.Time
 	ExpectedVersion   int64
+	ExpectedUID       *uuid.UUID // UID precondition for writes to an existing object
 	ForceWrite        bool
 }
 

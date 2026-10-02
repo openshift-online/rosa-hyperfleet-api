@@ -106,14 +106,14 @@ func (w *Writer) ReadBack(ctx context.Context, gvk, namespace, name string, txid
 
 // --- Stored procedure path (production, hooks==nil) ---
 
-const pgctlWriteSQL = `SELECT * FROM pgctl_write($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`
+const pgctlWriteSQL = `SELECT * FROM pgctl_write($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`
 
 func (w *Writer) writeStoredProc(ctx context.Context, req model.WriteRequest) (model.WriteResult, error) {
 	start := time.Now()
 
 	result, err := w.callStoredProc(ctx, writeParams{
 		statusOnly: false, gvk: req.GVK, namespace: req.Namespace, name: req.Name,
-		expectedVersion: req.ExpectedVersion, forceWrite: req.ForceWrite,
+		expectedVersion: req.ExpectedVersion, expectedUID: req.ExpectedUID, forceWrite: req.ForceWrite,
 		spec: req.Spec, status: req.Status, metadata: req.Metadata,
 		deletionTimestamp: req.DeletionTimestamp,
 	})
@@ -127,7 +127,7 @@ func (w *Writer) writeStatusStoredProc(ctx context.Context, req model.StatusWrit
 
 	result, err := w.callStoredProc(ctx, writeParams{
 		statusOnly: true, gvk: req.GVK, namespace: req.Namespace, name: req.Name,
-		expectedVersion: req.ExpectedVersion, forceWrite: req.ForceWrite,
+		expectedVersion: req.ExpectedVersion, expectedUID: req.ExpectedUID, forceWrite: req.ForceWrite,
 		spec: nil, status: req.Status, metadata: nil,
 		deletionTimestamp: nil,
 	})
@@ -141,7 +141,7 @@ func (w *Writer) writeObjectStoredProc(ctx context.Context, req model.ObjectWrit
 
 	result, err := w.callStoredProc(ctx, writeParams{
 		statusOnly: false, gvk: req.GVK, namespace: req.Namespace, name: req.Name,
-		expectedVersion: req.ExpectedVersion, forceWrite: req.ForceWrite,
+		expectedVersion: req.ExpectedVersion, expectedUID: req.ExpectedUID, forceWrite: req.ForceWrite,
 		spec: req.Spec, status: nil, metadata: req.Metadata,
 		deletionTimestamp: req.DeletionTimestamp,
 	})
@@ -158,10 +158,14 @@ func (w *Writer) callStoredProc(ctx context.Context, p writeParams) (model.Write
 	var txid uint64
 	var changed bool
 	var suppressUs, upsertUs int64
+	var expectedUID any
+	if p.expectedUID != nil {
+		expectedUID = *p.expectedUID
+	}
 
 	err := w.conn.QueryRow(ctx, pgctlWriteSQL,
 		p.statusOnly, p.gvk, p.namespace, p.name,
-		p.expectedVersion, p.forceWrite,
+		p.expectedVersion, expectedUID, p.forceWrite,
 		p.spec, p.status, p.metadata, p.deletionTimestamp,
 	).Scan(&uid, &version, &txid, &changed, &suppressUs, &upsertUs)
 	w.observeStep("stored_proc", time.Since(t0))
@@ -211,6 +215,7 @@ func (w *Writer) writeMultiStatement(ctx context.Context, req model.WriteRequest
 	p := writeParams{
 		statusOnly: false,
 		gvk:        req.GVK, namespace: req.Namespace, name: req.Name,
+		expectedVersion: req.ExpectedVersion, expectedUID: req.ExpectedUID,
 		forceWrite: req.ForceWrite,
 	}
 
@@ -281,9 +286,10 @@ func (w *Writer) writeMultiStatement(ctx context.Context, req model.WriteRequest
 				    deletion_timestamp = $5, updated_at = now()
 				WHERE gvk = $6 AND namespace = $7 AND name = $8
 				  AND object_version = $9
+				  AND ($10::uuid IS NULL OR uid = $10)
 				RETURNING uid, object_version`,
 				txid, req.Spec, req.Status, req.Metadata, req.DeletionTimestamp,
-				req.GVK, req.Namespace, req.Name, req.ExpectedVersion,
+				req.GVK, req.Namespace, req.Name, req.ExpectedVersion, req.ExpectedUID,
 			).Scan(&uid, &version)
 			if err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
@@ -301,6 +307,7 @@ func (w *Writer) writeStatusMultiStatement(ctx context.Context, req model.Status
 	p := writeParams{
 		statusOnly: true,
 		gvk:        req.GVK, namespace: req.Namespace, name: req.Name,
+		expectedVersion: req.ExpectedVersion, expectedUID: req.ExpectedUID,
 		forceWrite: req.ForceWrite,
 	}
 
@@ -319,9 +326,10 @@ func (w *Writer) writeStatusMultiStatement(ctx context.Context, req model.Status
 			    status = $2, updated_at = now()
 			WHERE gvk = $3 AND namespace = $4 AND name = $5
 			  AND object_version = $6
+			  AND ($7::uuid IS NULL OR uid = $7)
 			RETURNING uid, object_version`,
 			txid, req.Status,
-			req.GVK, req.Namespace, req.Name, req.ExpectedVersion,
+			req.GVK, req.Namespace, req.Name, req.ExpectedVersion, req.ExpectedUID,
 		).Scan(&uid, &version)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -338,6 +346,7 @@ func (w *Writer) writeObjectMultiStatement(ctx context.Context, req model.Object
 	p := writeParams{
 		statusOnly: false,
 		gvk:        req.GVK, namespace: req.Namespace, name: req.Name,
+		expectedVersion: req.ExpectedVersion, expectedUID: req.ExpectedUID,
 		forceWrite: req.ForceWrite,
 	}
 
@@ -359,9 +368,10 @@ func (w *Writer) writeObjectMultiStatement(ctx context.Context, req model.Object
 			    updated_at = now()
 			WHERE gvk = $5 AND namespace = $6 AND name = $7
 			  AND object_version = $8
+			  AND ($9::uuid IS NULL OR uid = $9)
 			RETURNING uid, object_version`,
 			txid, req.Spec, req.Metadata, req.DeletionTimestamp,
-			req.GVK, req.Namespace, req.Name, req.ExpectedVersion,
+			req.GVK, req.Namespace, req.Name, req.ExpectedVersion, req.ExpectedUID,
 		).Scan(&uid, &version)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -396,6 +406,7 @@ type writeParams struct {
 	namespace         string
 	name              string
 	expectedVersion   int64
+	expectedUID       *uuid.UUID
 	forceWrite        bool
 	spec              json.RawMessage
 	status            json.RawMessage
@@ -462,14 +473,26 @@ func (w *Writer) execWriteInner(ctx context.Context, p writeParams, isContentEqu
 
 	t0 = time.Now()
 	if !p.forceWrite {
-		existing, err := readExisting(ctx, tx, p.gvk, p.namespace, p.name)
+		var existing *existingRow
+		if p.expectedVersion > 0 {
+			var err error
+			existing, err = readExisting(ctx, tx, p.gvk, p.namespace, p.name)
+			if err != nil {
+				return model.WriteResult{}, err
+			}
+		}
 		w.observeStep("suppression_check", time.Since(t0))
-		if err != nil {
-			return model.WriteResult{}, err
+
+		if existing != nil && p.expectedVersion > 0 &&
+			(existing.objectVersion != p.expectedVersion ||
+				(p.expectedUID != nil && existing.uid != *p.expectedUID)) {
+			if err := w.hooks.AfterSuppressionCheck(ctx, tx, false); err != nil {
+				return model.WriteResult{}, err
+			}
+			return model.WriteResult{}, ErrConflict
 		}
 
-		suppressed := existing != nil && isContentEqual(existing)
-
+		suppressed := existing != nil && p.expectedVersion > 0 && isContentEqual(existing)
 		if err := w.hooks.AfterSuppressionCheck(ctx, tx, suppressed); err != nil {
 			return model.WriteResult{}, err
 		}

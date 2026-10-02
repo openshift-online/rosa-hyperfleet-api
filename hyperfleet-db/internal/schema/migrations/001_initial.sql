@@ -25,6 +25,11 @@ CREATE INDEX IF NOT EXISTS idx_resources_list
 CREATE INDEX IF NOT EXISTS idx_resources_watch
     ON kubernetes_resources (gvk, txid_stamp);
 
+-- Label selectors are applied in SQL. The default jsonb_ops GIN operator class
+-- supports both JSONB containment (@>) and key existence (?) predicates.
+CREATE INDEX IF NOT EXISTS idx_resources_labels
+    ON kubernetes_resources USING GIN ((metadata->'labels'));
+
 -- Compaction horizon per GVK
 CREATE TABLE IF NOT EXISTS compaction_horizon (
     gvk           TEXT   NOT NULL PRIMARY KEY,
@@ -45,6 +50,7 @@ CREATE OR REPLACE FUNCTION pgctl_write(
     p_namespace        TEXT,
     p_name             TEXT,
     p_expected_version BIGINT,
+    p_expected_uid     UUID,
     p_force_write      BOOLEAN,
     p_spec             JSONB,
     p_status           JSONB,
@@ -64,15 +70,23 @@ DECLARE
 BEGIN
     v_txid := pg_current_xact_id();
 
-    -- 1. Suppression check (skip if force_write)
+    -- 1. Suppression check (skip creates and force_write).
+    -- A duplicate Create must reach the primary-key check and return AlreadyExists.
     v_t0 := clock_timestamp();
-    IF NOT p_force_write THEN
+    IF NOT p_force_write AND p_expected_version > 0 THEN
         SELECT kr.uid, kr.object_version, kr.spec, kr.status, kr.metadata, kr.deletion_timestamp
           INTO v_existing
           FROM kubernetes_resources kr
          WHERE kr.gvk = p_gvk AND kr.namespace = p_namespace AND kr.name = p_name;
 
         IF FOUND THEN
+            -- A content-equal update is a no-op only if both the version and
+            -- incarnation still match. Otherwise a stale writer gets Conflict.
+            IF v_existing.object_version <> p_expected_version
+               OR (p_expected_uid IS NOT NULL AND v_existing.uid <> p_expected_uid) THEN
+                RAISE EXCEPTION 'conflict' USING ERRCODE = 'P0002';
+            END IF;
+
             -- Branch: WriteStatus — compare status only
             IF p_status_only THEN
                 IF v_existing.status = p_status THEN
@@ -116,7 +130,8 @@ BEGIN
                updated_at      = now()
          WHERE gvk = p_gvk AND namespace = p_namespace AND name = p_name
            AND object_version = p_expected_version
-        RETURNING uid, object_version INTO v_uid, v_version;
+           AND (p_expected_uid IS NULL OR uid = p_expected_uid)
+         RETURNING uid, object_version INTO v_uid, v_version;
 
         IF NOT FOUND THEN
             RAISE EXCEPTION 'conflict' USING ERRCODE = 'P0002';
@@ -167,7 +182,8 @@ BEGIN
                updated_at          = now()
          WHERE gvk = p_gvk AND namespace = p_namespace AND name = p_name
            AND object_version = p_expected_version
-        RETURNING uid, object_version INTO v_uid, v_version;
+           AND (p_expected_uid IS NULL OR uid = p_expected_uid)
+         RETURNING uid, object_version INTO v_uid, v_version;
 
         IF NOT FOUND THEN
             RAISE EXCEPTION 'conflict' USING ERRCODE = 'P0002';

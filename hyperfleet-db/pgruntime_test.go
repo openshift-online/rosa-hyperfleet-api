@@ -15,6 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -149,6 +150,29 @@ func TestClient_CRUD(t *testing.T) {
 	assert.True(t, apierrors.IsNotFound(err))
 }
 
+func TestClient_CreateIgnoresClientUID(t *testing.T) {
+	mgr := newManager(t)
+	c := mgr.GetClient()
+	ctx := context.Background()
+
+	clientUID := types.UID("11111111-1111-4111-8111-111111111111")
+	w := &Widget{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "uid-is-database-owned",
+			UID:       clientUID,
+		},
+		Spec: WidgetSpec{Color: "blue"},
+	}
+	require.NoError(t, c.Create(ctx, w))
+	assert.NotEmpty(t, w.UID)
+	assert.NotEqual(t, clientUID, w.UID, "Create must ignore a client-supplied UID")
+
+	got := &Widget{}
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(w), got))
+	assert.Equal(t, w.UID, got.UID)
+}
+
 func TestClient_NotFound(t *testing.T) {
 	mgr := newManager(t)
 	c := mgr.GetClient()
@@ -175,6 +199,15 @@ func TestClient_AlreadyExists(t *testing.T) {
 	}
 	err := c.Create(ctx, w2)
 	assert.True(t, apierrors.IsAlreadyExists(err), "expected AlreadyExists, got: %v", err)
+
+	// Identical content is still a duplicate Create. No-op suppression applies to
+	// updates, not to a second create at an occupied name.
+	w3 := &Widget{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "dup"},
+		Spec:       WidgetSpec{Color: "green"},
+	}
+	err = c.Create(ctx, w3)
+	assert.True(t, apierrors.IsAlreadyExists(err), "identical duplicate Create must return AlreadyExists, got: %v", err)
 }
 
 func TestClient_Conflict(t *testing.T) {
@@ -200,6 +233,49 @@ func TestClient_Conflict(t *testing.T) {
 	stale2.Spec.Color = "v3"
 	err := c.Update(ctx, stale2)
 	assert.True(t, apierrors.IsConflict(err), "expected Conflict, got: %v", err)
+}
+
+func TestClient_StaleUIDCannotModifyRecreatedName(t *testing.T) {
+	mgr := newManager(t)
+	c := mgr.GetClient()
+	ctx := context.Background()
+	key := types.NamespacedName{Namespace: "default", Name: "recreated"}
+
+	old := &Widget{
+		ObjectMeta: metav1.ObjectMeta{Namespace: key.Namespace, Name: key.Name},
+		Spec:       WidgetSpec{Color: "old"},
+	}
+	require.NoError(t, c.Create(ctx, old))
+	staleUpdate := old.DeepCopyObject().(*Widget)
+	staleStatus := old.DeepCopyObject().(*Widget)
+	staleDelete := old.DeepCopyObject().(*Widget)
+
+	require.NoError(t, c.Delete(ctx, old))
+	current := &Widget{
+		ObjectMeta: metav1.ObjectMeta{Namespace: key.Namespace, Name: key.Name},
+		Spec:       WidgetSpec{Color: "new"},
+	}
+	require.NoError(t, c.Create(ctx, current))
+	require.NotEqual(t, old.UID, current.UID)
+	assert.Equal(t, old.ResourceVersion, current.ResourceVersion,
+		"recreated resources start at the same object version")
+
+	staleUpdate.Spec.Color = "stale-update"
+	err := c.Update(ctx, staleUpdate)
+	assert.True(t, apierrors.IsConflict(err), "stale UID update should conflict, got: %v", err)
+
+	staleStatus.Status.Phase = "stale-status"
+	err = c.Status().Update(ctx, staleStatus)
+	assert.True(t, apierrors.IsConflict(err), "stale UID status update should conflict, got: %v", err)
+
+	err = c.Delete(ctx, staleDelete)
+	assert.True(t, apierrors.IsConflict(err), "stale UID delete should conflict, got: %v", err)
+
+	got := &Widget{}
+	require.NoError(t, c.Get(ctx, key, got))
+	assert.Equal(t, "new", got.Spec.Color)
+	assert.Empty(t, got.Status.Phase)
+	assert.Equal(t, current.UID, got.UID)
 }
 
 func TestClient_StatusUpdate(t *testing.T) {
@@ -492,6 +568,15 @@ func TestClient_ListWithFieldSelector(t *testing.T) {
 		assert.Equal(t, "red-0", list.Items[0].Name)
 	})
 
+	t.Run("by metadata.uid", func(t *testing.T) {
+		red := &Widget{}
+		require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "default", Name: "red-0"}, red))
+		list := &WidgetList{}
+		require.NoError(t, c.List(ctx, list, client.MatchingFields{"metadata.uid": string(red.UID)}))
+		assert.Len(t, list.Items, 1)
+		assert.Equal(t, red.UID, list.Items[0].UID)
+	})
+
 	t.Run("no matches", func(t *testing.T) {
 		list := &WidgetList{}
 		require.NoError(t, c.List(ctx, list, client.MatchingFields{"spec.color": "nonexistent"}))
@@ -520,6 +605,120 @@ func TestClient_ListWithFieldSelector(t *testing.T) {
 		assert.Len(t, list.Items, 1)
 		assert.NotEmpty(t, list.Continue)
 	})
+}
+
+type widgetLister interface {
+	List(context.Context, client.ObjectList, ...client.ListOption) error
+}
+
+func collectRedWidgetNames(t *testing.T, ctx context.Context, lister widgetLister) []string {
+	t.Helper()
+
+	var names []string
+	token := ""
+	for {
+		list := &WidgetList{}
+		opts := []client.ListOption{
+			client.MatchingLabels{"team": "red"},
+			client.Limit(2),
+		}
+		if token != "" {
+			opts = append(opts, client.Continue(token))
+		}
+		require.NoError(t, lister.List(ctx, list, opts...))
+		for _, item := range list.Items {
+			names = append(names, item.Name)
+		}
+		token = list.Continue
+		if token == "" {
+			return names
+		}
+	}
+}
+
+func TestClient_ListWithLabelSelectorAndPagination(t *testing.T) {
+	mgr := newManager(t)
+	c := mgr.GetClient()
+	ctx := context.Background()
+
+	for i := range 7 {
+		team := "blue"
+		if i%2 == 0 {
+			team = "red"
+		}
+		w := &Widget{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      fmt.Sprintf("label-page-%d", i),
+				Labels:    map[string]string{"team": team},
+			},
+			Spec: WidgetSpec{Color: team},
+		}
+		require.NoError(t, c.Create(ctx, w))
+	}
+	withoutTeam := &Widget{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "label-page-unlabeled",
+			Labels:    map[string]string{"app": "api"},
+		},
+		Spec: WidgetSpec{Color: "unlabeled"},
+	}
+	require.NoError(t, c.Create(ctx, withoutTeam))
+
+	wantRed := []string{"label-page-0", "label-page-2", "label-page-4", "label-page-6"}
+	assert.ElementsMatch(t, wantRed, collectRedWidgetNames(t, ctx, c))
+	assert.ElementsMatch(t, wantRed, collectRedWidgetNames(t, ctx, mgr.GetCache()))
+
+	notRed, err := labels.Parse("team notin (red)")
+	require.NoError(t, err)
+	list := &WidgetList{}
+	require.NoError(t, c.List(ctx, list, client.MatchingLabelsSelector{Selector: notRed}))
+	var notRedNames []string
+	for _, item := range list.Items {
+		notRedNames = append(notRedNames, item.Name)
+	}
+	assert.ElementsMatch(t, []string{"label-page-1", "label-page-3", "label-page-5", "label-page-unlabeled"}, notRedNames,
+		"NotIn must include objects where the label key is absent")
+}
+
+func TestClient_ListWithNumericLabelSelectors(t *testing.T) {
+	mgr := newManager(t)
+	c := mgr.GetClient()
+	ctx := context.Background()
+
+	for name, labels := range map[string]map[string]string{
+		"gt-match":            {"count": "11"},
+		"lt-match":            {"count": "-1"},
+		"equal":               {"count": "10"},
+		"non-integer":         {"count": "ten"},
+		"overflow-positive":   {"count": "9223372036854775808"},
+		"overflow-negative":   {"count": "-9223372036854775809"},
+		"missing-label-value": {"app": "api"},
+	} {
+		w := &Widget{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: name, Labels: labels},
+			Spec:       WidgetSpec{Color: name},
+		}
+		require.NoError(t, c.Create(ctx, w))
+	}
+
+	for _, tt := range []struct {
+		selector string
+		want     string
+	}{
+		{selector: "count>10", want: "gt-match"},
+		{selector: "count<0", want: "lt-match"},
+	} {
+		t.Run(tt.selector, func(t *testing.T) {
+			sel, err := labels.Parse(tt.selector)
+			require.NoError(t, err)
+			list := &WidgetList{}
+			require.NoError(t, c.List(ctx, list, client.MatchingLabelsSelector{Selector: sel}))
+			require.Len(t, list.Items, 1)
+			assert.Equal(t, tt.want, list.Items[0].Name)
+		})
+	}
 }
 
 func TestClient_ListWithLimit(t *testing.T) {
