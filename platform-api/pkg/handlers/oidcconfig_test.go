@@ -33,6 +33,7 @@ func testOidcConfigCR(configID, accountID string, spec hyperfleetv1alpha1.OidcCo
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configID,
 			Namespace: "account-" + accountID,
+			Labels:    map[string]string{"hyperfleet.io/account-id": accountID},
 		},
 		Spec: spec,
 	}
@@ -133,6 +134,7 @@ func TestOidcConfigHandler_List_Pagination(t *testing.T) {
 		testOidcConfigCR("oidc-1", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 		testOidcConfigCR("oidc-2", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 		testOidcConfigCR("oidc-3", testAccountID, testManagedOidcConfigSpec(testAccountID)),
+		testOidcConfigCR("foreign", "999999999999", testManagedOidcConfigSpec("999999999999")),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
@@ -203,8 +205,13 @@ func TestOidcConfigHandler_Create_Success(t *testing.T) {
 	handler.generateID = func() string { return "generated-config-id" }
 
 	body, _ := json.Marshal(map[string]any{
+		"metadata": map[string]any{
+			"namespace": "account-999999999999",
+			"labels":    map[string]any{"hyperfleet.io/account-id": "999999999999"},
+		},
 		"spec": map[string]any{
-			"type": "managed",
+			"type":      "managed",
+			"accountId": "999999999999",
 		},
 	})
 
@@ -231,6 +238,14 @@ func TestOidcConfigHandler_Create_Success(t *testing.T) {
 	wantIssuerURL := testOidcIssuerBaseURL + "/" + testRegion + "-generated-config-id"
 	if spec["issuerUrl"] != wantIssuerURL {
 		t.Errorf("expected spec.issuerUrl=%s, got %v", wantIssuerURL, spec["issuerUrl"])
+	}
+
+	stored, err := handler.db.GetOidcConfig(req.Context(), "generated-config-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Spec.AccountID != testAccountID || stored.Labels["hyperfleet.io/account-id"] != testAccountID {
+		t.Errorf("stored ownership = (%q, %q), want caller account %q", stored.Spec.AccountID, stored.Labels["hyperfleet.io/account-id"], testAccountID)
 	}
 }
 
@@ -266,7 +281,7 @@ func TestOidcConfigHandler_Create_ManagedRejectsWhenIssuerBaseURLNotConfigured(t
 		t.Errorf("expected message to contain %s, got %q", ErrOidcConfigCreateIssuerNotConfigured.Code, errResp["message"])
 	}
 
-	if _, err := handler.db.GetOidcConfig(req.Context(), testAccountID, "generated-config-id"); err == nil {
+	if _, err := handler.db.GetOidcConfig(req.Context(), "generated-config-id"); err == nil {
 		t.Error("expected no OidcConfig CR to be created when the issuer base URL is not configured")
 	}
 }
@@ -304,7 +319,7 @@ func TestOidcConfigHandler_Create_ManagedIgnoresClientIssuerUrl(t *testing.T) {
 		t.Errorf("expected client-supplied issuerUrl to be overridden with %q, got %q", wantIssuerURL, issuerURL)
 	}
 
-	cr, err := handler.db.GetOidcConfig(req.Context(), testAccountID, "generated-config-id")
+	cr, err := handler.db.GetOidcConfig(req.Context(), "generated-config-id")
 	if err != nil {
 		t.Fatalf("failed to fetch created CR: %v", err)
 	}
@@ -547,7 +562,7 @@ func TestOidcConfigHandler_Create_UnmanagedNormalizesIssuerUrl(t *testing.T) {
 		t.Errorf("expected normalized spec.issuerUrl=%s, got %v", want, spec["issuerUrl"])
 	}
 
-	cr, err := handler.db.GetOidcConfig(req.Context(), testAccountID, "generated-config-id")
+	cr, err := handler.db.GetOidcConfig(req.Context(), "generated-config-id")
 	if err != nil {
 		t.Fatalf("failed to fetch created CR: %v", err)
 	}
@@ -795,6 +810,27 @@ func TestOidcConfigHandler_Get_WrongAccount(t *testing.T) {
 	}
 }
 
+func TestOidcConfigHandler_Delete_WrongAccount(t *testing.T) {
+	const foreignAccount = "999999999999"
+	foreign := testOidcConfigCR("oidc-foreign", foreignAccount, testManagedOidcConfigSpec(foreignAccount))
+	fc := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(foreign).Build()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v0/oidc_configs/oidc-foreign", nil)
+	req = req.WithContext(testContext(testAccountID))
+	req = mux.SetURLVars(req, map[string]string{"id": "oidc-foreign"})
+	w := httptest.NewRecorder()
+
+	handler.Delete(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+	if _, err := handler.db.GetOidcConfig(testContext(foreignAccount), "oidc-foreign"); err != nil {
+		t.Fatalf("foreign OIDC config was deleted: %v", err)
+	}
+}
+
 func TestOidcConfigHandler_Delete_Success(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
@@ -849,7 +885,7 @@ func TestOidcConfigHandler_Delete_InUse(t *testing.T) {
 		t.Errorf("expected message to contain %s, got %q", ErrOidcConfigDeleteInUse.Code, errResp["message"])
 	}
 
-	if _, err := handler.db.GetOidcConfig(req.Context(), testAccountID, "oidc-123"); err != nil {
+	if _, err := handler.db.GetOidcConfig(req.Context(), "oidc-123"); err != nil {
 		t.Errorf("expected OidcConfig to survive a blocked delete, got error: %v", err)
 	}
 }
@@ -879,7 +915,7 @@ func TestOidcConfigHandler_Delete_AfterClusterDeletedSucceeds(t *testing.T) {
 	if err := fc.Delete(context.Background(), referencingCluster); err != nil {
 		t.Fatalf("failed to delete referencing cluster: %v", err)
 	}
-	latest, err := handler.db.GetOidcConfig(context.Background(), testAccountID, "oidc-123")
+	latest, err := handler.db.GetOidcConfig(testContext(testAccountID), "oidc-123")
 	if err != nil {
 		t.Fatalf("failed to fetch oidc config: %v", err)
 	}

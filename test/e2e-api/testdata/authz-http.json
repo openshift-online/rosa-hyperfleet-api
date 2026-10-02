@@ -1,0 +1,55 @@
+{
+  "formatVersion": 1,
+  "registeredAccounts": ["111111111111", "222222222222"],
+  "policies": [
+    {
+      "id": "list",
+      "ownerAccountID": "111111111111",
+      "content": "permit(principal, action == HyperFleet::Action::\"ListClusters\", resource is HyperFleet::Collection);"
+    },
+    {
+      "id": "blue",
+      "ownerAccountID": "111111111111",
+      "content": "permit(principal, action == HyperFleet::Action::\"DescribeCluster\", resource is HyperFleet::Cluster) when { resource.hasTag(\"example.com/team\") && resource.getTag(\"example.com/team\") == \"blue\" };"
+    },
+    {
+      "id": "read",
+      "ownerAccountID": "111111111111",
+      "content": "permit(principal, action in HyperFleet::Action::\"ReadOnly\", resource);"
+    },
+    {
+      "id": "runtime-fault",
+      "ownerAccountID": "111111111111",
+      "content": "forbid(principal, action == HyperFleet::Action::\"DescribeCluster\", resource) when { resource.hasTag(\"example.com/fault\") && resource.getTag(\"example.com/fault\") == \"fault-detail-secret\" && 9223372036854775807 + 1 == 0 };"
+    },
+    {
+      "id": "describe",
+      "ownerAccountID": "111111111111",
+      "content": "permit(principal, action == HyperFleet::Action::\"DescribeCluster\", resource is HyperFleet::Cluster);"
+    },
+    {
+      "id": "forbid",
+      "ownerAccountID": "111111111111",
+      "content": "forbid(principal, action in HyperFleet::Action::\"ReadOnly\", resource);"
+    },
+    {
+      "id": "unregistered-read",
+      "ownerAccountID": "333333333333",
+      "content": "permit(principal, action in HyperFleet::Action::\"ReadOnly\", resource);"
+    }
+  ],
+  "attachments": [
+    {"id":"a-list", "policyID":"list", "principalARN":"arn:aws:iam::111111111111:user/alice", "bindingMode":"exact-principal", "scope":"global"},
+    {"id":"a-blue", "policyID":"blue", "principalARN":"arn:aws:iam::111111111111:user/alice", "bindingMode":"exact-principal", "scope":"global"},
+    {"id":"list-only", "policyID":"list", "principalARN":"arn:aws:iam::111111111111:user/list-only", "bindingMode":"exact-principal", "scope":"global"},
+    {"id":"describe-only", "policyID":"describe", "principalARN":"arn:aws:iam::111111111111:user/describe-only", "bindingMode":"exact-principal", "scope":"global"},
+    {"id":"broad", "policyID":"read", "principalARN":"arn:aws:iam::111111111111:user/broad", "bindingMode":"exact-principal", "scope":"global"},
+    {"id":"error-read", "policyID":"read", "principalARN":"arn:aws:iam::111111111111:user/error-fixture", "bindingMode":"exact-principal", "scope":"global"},
+    {"id":"error-forbid", "policyID":"runtime-fault", "principalARN":"arn:aws:iam::111111111111:user/error-fixture", "bindingMode":"exact-principal", "scope":"global"},
+    {"id":"role", "policyID":"read", "principalARN":"arn:aws:iam::111111111111:role/platform/readers", "bindingMode":"role-membership", "scope":"global"},
+    {"id":"session-forbid", "policyID":"forbid", "principalARN":"arn:aws:sts::111111111111:assumed-role/readers/blocked", "bindingMode":"exact-principal", "scope":"global"},
+    {"id":"global-forbid", "policyID":"forbid", "principalARN":"arn:aws:iam::111111111111:user/regional", "bindingMode":"exact-principal", "scope":"global"},
+    {"id":"local-permit", "policyID":"read", "principalARN":"arn:aws:iam::111111111111:user/regional", "bindingMode":"exact-principal", "scope":"regional", "region":"us-east-1"},
+    {"id":"unregistered", "policyID":"unregistered-read", "principalARN":"arn:aws:iam::333333333333:user/unregistered", "bindingMode":"exact-principal", "scope":"global"}
+  ]
+}

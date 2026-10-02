@@ -102,7 +102,7 @@ func (h *OidcConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("listing oidc configs", "account_id", accountID, "limit", limit, "offset", offset)
 
-	list, err := h.db.ListOidcConfigs(ctx, accountID)
+	list, err := h.db.ListOidcConfigs(ctx)
 	if err != nil {
 		h.logger.Error("failed to list oidc configs", "error", err, "account_id", accountID)
 		writeAPIError(w, ErrOidcConfigList, h.logger)
@@ -262,7 +262,7 @@ func (h *OidcConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("getting oidc config", "account_id", accountID, "config_id", configID)
 
-	cr, err := h.db.GetOidcConfig(ctx, accountID, configID)
+	cr, err := h.db.GetOidcConfig(ctx, configID)
 	if err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrOidcConfigGetNotFound, h.logger)
@@ -287,7 +287,7 @@ func (h *OidcConfigHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("deleting oidc config", "account_id", accountID, "config_id", configID)
 
 	// Fetch first (capturing ResourceVersion) so the in-use check and delete are CAS'd against the same object.
-	oc, err := h.db.GetOidcConfig(ctx, accountID, configID)
+	oc, err := h.db.GetOidcConfig(ctx, configID)
 	if err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrOidcConfigDeleteNotFound, h.logger)

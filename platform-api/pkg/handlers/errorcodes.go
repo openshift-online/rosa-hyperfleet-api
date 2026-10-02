@@ -106,22 +106,6 @@ var (
 	ErrOidcConfigDeleteInUse    APIError
 )
 
-// Accounts error codes
-var (
-	ErrAccountCreateInvalidBody APIError
-	ErrAccountCreateMissingID   APIError
-	ErrAccountCreateCheckFailed APIError
-	ErrAccountCreateExists      APIError
-	ErrAccountCreateFailed      APIError
-
-	ErrAccountListFailed APIError
-
-	ErrAccountGetFailed   APIError
-	ErrAccountGetNotFound APIError
-
-	ErrAccountDeleteFailed APIError
-)
-
 // Management cluster error codes
 var (
 	ErrMCCreateInvalidBody APIError
@@ -135,76 +119,6 @@ var (
 
 	ErrMCGetNotFound APIError
 	ErrMCGetFailed   APIError
-)
-
-// Authz policy error codes
-var (
-	ErrAuthzPolicyCreateInvalidBody APIError
-	ErrAuthzPolicyCreateMissingName APIError
-	ErrAuthzPolicyCreateMissingText APIError
-	ErrAuthzPolicyCreateInvalid     APIError
-
-	ErrAuthzPolicyListFailed APIError
-
-	ErrAuthzPolicyGetFailed   APIError
-	ErrAuthzPolicyGetNotFound APIError
-
-	ErrAuthzPolicyUpdateInvalidBody APIError
-	ErrAuthzPolicyUpdateInvalid     APIError
-
-	ErrAuthzPolicyDeleteFailed APIError
-	ErrAuthzPolicyDeleteInUse  APIError
-)
-
-// Authz group error codes
-var (
-	ErrAuthzGroupCreateInvalidBody APIError
-	ErrAuthzGroupCreateMissingName APIError
-	ErrAuthzGroupCreateFailed      APIError
-
-	ErrAuthzGroupListFailed APIError
-
-	ErrAuthzGroupGetFailed   APIError
-	ErrAuthzGroupGetNotFound APIError
-
-	ErrAuthzGroupDeleteFailed APIError
-
-	ErrAuthzGroupMembersUpdateInvalidBody APIError
-	ErrAuthzGroupMembersUpdateAddFailed   APIError
-	ErrAuthzGroupMembersUpdateRemFailed   APIError
-	ErrAuthzGroupMembersUpdateListFailed  APIError
-
-	ErrAuthzGroupMembersListFailed APIError
-)
-
-// Authz attachment error codes
-var (
-	ErrAuthzAttachCreateInvalidBody   APIError
-	ErrAuthzAttachCreateMissingFields APIError
-	ErrAuthzAttachCreateInvalidTarget APIError
-	ErrAuthzAttachCreateFailed        APIError
-
-	ErrAuthzAttachListFailed   APIError
-	ErrAuthzAttachDeleteFailed APIError
-)
-
-// Authz admin error codes
-var (
-	ErrAuthzAdminAddInvalidBody  APIError
-	ErrAuthzAdminAddMissingPrinc APIError
-	ErrAuthzAdminAddFailed       APIError
-
-	ErrAuthzAdminListFailed   APIError
-	ErrAuthzAdminDeleteFailed APIError
-)
-
-// Authz check error codes
-var (
-	ErrAuthzCheckInvalidBody   APIError
-	ErrAuthzCheckMissingPrinc  APIError
-	ErrAuthzCheckMissingAction APIError
-	ErrAuthzCheckMissingRes    APIError
-	ErrAuthzCheckFailed        APIError
 )
 
 // Info error codes
@@ -314,23 +228,6 @@ func init() {
 	ErrOidcConfigDeleteFailed = APIError{Code: "OIDCCONFIGS-MGMT-DELETE-002", HTTPStatus: http.StatusInternalServerError, Message: "Failed to delete OIDC config"}
 	ErrOidcConfigDeleteInUse = APIError{Code: "OIDCCONFIGS-MGMT-DELETE-003", HTTPStatus: http.StatusConflict, Message: "Cannot delete OIDC config referenced by clusters"}
 
-	// Accounts — Create
-	ErrAccountCreateInvalidBody = APIError{Code: "ACCOUNTS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrAccountCreateMissingID = APIError{Code: "ACCOUNTS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "accountId is required"}
-	ErrAccountCreateCheckFailed = APIError{Code: "ACCOUNTS-MGMT-CREATE-003", HTTPStatus: http.StatusInternalServerError, Message: "Failed to check account status"}
-	ErrAccountCreateExists = APIError{Code: "ACCOUNTS-MGMT-CREATE-004", HTTPStatus: http.StatusConflict, Message: "Account is already enabled"}
-	ErrAccountCreateFailed = APIError{Code: "ACCOUNTS-MGMT-CREATE-005", HTTPStatus: http.StatusInternalServerError, Message: "Failed to enable account"}
-
-	// Accounts — List
-	ErrAccountListFailed = APIError{Code: "ACCOUNTS-MGMT-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list accounts"}
-
-	// Accounts — Get
-	ErrAccountGetFailed = APIError{Code: "ACCOUNTS-MGMT-GET-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to get account"}
-	ErrAccountGetNotFound = APIError{Code: "ACCOUNTS-MGMT-GET-002", HTTPStatus: http.StatusNotFound, Message: "Account not found"}
-
-	// Accounts — Delete
-	ErrAccountDeleteFailed = APIError{Code: "ACCOUNTS-MGMT-DELETE-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to disable account"}
-
 	// Management clusters — Create
 	ErrMCCreateInvalidBody = APIError{Code: "MC-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
 	ErrMCCreateMissingID = APIError{Code: "MC-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "id is required"}
@@ -345,75 +242,6 @@ func init() {
 	// Management clusters — Get
 	ErrMCGetNotFound = APIError{Code: "MC-MGMT-GET-001", HTTPStatus: http.StatusNotFound, Message: "Management cluster not found"}
 	ErrMCGetFailed = APIError{Code: "MC-MGMT-GET-002", HTTPStatus: http.StatusInternalServerError, Message: "Failed to load management cluster config"}
-
-	// Authz — Policy — Create
-	ErrAuthzPolicyCreateInvalidBody = APIError{Code: "AUTHZ-POLICY-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrAuthzPolicyCreateMissingName = APIError{Code: "AUTHZ-POLICY-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "name is required"}
-	ErrAuthzPolicyCreateMissingText = APIError{Code: "AUTHZ-POLICY-CREATE-003", HTTPStatus: http.StatusBadRequest, Message: "policy (Cedar text) is required"}
-	ErrAuthzPolicyCreateInvalid = APIError{Code: "AUTHZ-POLICY-CREATE-004", HTTPStatus: http.StatusBadRequest, Message: "Invalid policy", Reason: "%w"}
-
-	// Authz — Policy — List
-	ErrAuthzPolicyListFailed = APIError{Code: "AUTHZ-POLICY-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list policies"}
-
-	// Authz — Policy — Get
-	ErrAuthzPolicyGetFailed = APIError{Code: "AUTHZ-POLICY-GET-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to get policy"}
-	ErrAuthzPolicyGetNotFound = APIError{Code: "AUTHZ-POLICY-GET-002", HTTPStatus: http.StatusNotFound, Message: "Policy not found"}
-
-	// Authz — Policy — Update
-	ErrAuthzPolicyUpdateInvalidBody = APIError{Code: "AUTHZ-POLICY-UPDATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrAuthzPolicyUpdateInvalid = APIError{Code: "AUTHZ-POLICY-UPDATE-002", HTTPStatus: http.StatusBadRequest, Message: "Invalid policy", Reason: "%w"}
-
-	// Authz — Policy — Delete
-	ErrAuthzPolicyDeleteFailed = APIError{Code: "AUTHZ-POLICY-DELETE-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to delete policy"}
-	ErrAuthzPolicyDeleteInUse = APIError{Code: "AUTHZ-POLICY-DELETE-002", HTTPStatus: http.StatusConflict, Message: "Cannot delete policy with existing attachments", Reason: "%w"}
-
-	// Authz — Group — Create
-	ErrAuthzGroupCreateInvalidBody = APIError{Code: "AUTHZ-GROUP-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrAuthzGroupCreateMissingName = APIError{Code: "AUTHZ-GROUP-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "name is required"}
-	ErrAuthzGroupCreateFailed = APIError{Code: "AUTHZ-GROUP-CREATE-003", HTTPStatus: http.StatusInternalServerError, Message: "Failed to create group"}
-
-	// Authz — Group — List
-	ErrAuthzGroupListFailed = APIError{Code: "AUTHZ-GROUP-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list groups"}
-
-	// Authz — Group — Get
-	ErrAuthzGroupGetFailed = APIError{Code: "AUTHZ-GROUP-GET-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to get group"}
-	ErrAuthzGroupGetNotFound = APIError{Code: "AUTHZ-GROUP-GET-002", HTTPStatus: http.StatusNotFound, Message: "Group not found"}
-
-	// Authz — Group — Delete
-	ErrAuthzGroupDeleteFailed = APIError{Code: "AUTHZ-GROUP-DELETE-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to delete group"}
-
-	// Authz — Group — Members
-	ErrAuthzGroupMembersUpdateInvalidBody = APIError{Code: "AUTHZ-GROUP-MEMBERS-UPDATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrAuthzGroupMembersUpdateAddFailed = APIError{Code: "AUTHZ-GROUP-MEMBERS-UPDATE-002", HTTPStatus: http.StatusInternalServerError, Message: "Failed to add group member"}
-	ErrAuthzGroupMembersUpdateRemFailed = APIError{Code: "AUTHZ-GROUP-MEMBERS-UPDATE-003", HTTPStatus: http.StatusInternalServerError, Message: "Failed to remove group member"}
-	ErrAuthzGroupMembersUpdateListFailed = APIError{Code: "AUTHZ-GROUP-MEMBERS-UPDATE-004", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list group members"}
-	ErrAuthzGroupMembersListFailed = APIError{Code: "AUTHZ-GROUP-MEMBERS-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list group members"}
-
-	// Authz — Attachment — Create
-	ErrAuthzAttachCreateInvalidBody = APIError{Code: "AUTHZ-ATTACH-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrAuthzAttachCreateMissingFields = APIError{Code: "AUTHZ-ATTACH-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "policyId, targetType, and targetId are required"}
-	ErrAuthzAttachCreateInvalidTarget = APIError{Code: "AUTHZ-ATTACH-CREATE-003", HTTPStatus: http.StatusBadRequest, Message: "targetType must be 'user' or 'group'"}
-	ErrAuthzAttachCreateFailed = APIError{Code: "AUTHZ-ATTACH-CREATE-004", HTTPStatus: http.StatusBadRequest, Message: "Failed to attach policy", Reason: "%w"}
-
-	// Authz — Attachment — List / Delete
-	ErrAuthzAttachListFailed = APIError{Code: "AUTHZ-ATTACH-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list attachments"}
-	ErrAuthzAttachDeleteFailed = APIError{Code: "AUTHZ-ATTACH-DELETE-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to detach policy"}
-
-	// Authz — Admin — Add
-	ErrAuthzAdminAddInvalidBody = APIError{Code: "AUTHZ-ADMIN-ADD-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrAuthzAdminAddMissingPrinc = APIError{Code: "AUTHZ-ADMIN-ADD-002", HTTPStatus: http.StatusBadRequest, Message: "principalArn is required"}
-	ErrAuthzAdminAddFailed = APIError{Code: "AUTHZ-ADMIN-ADD-003", HTTPStatus: http.StatusInternalServerError, Message: "Failed to add admin"}
-
-	// Authz — Admin — List / Delete
-	ErrAuthzAdminListFailed = APIError{Code: "AUTHZ-ADMIN-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list admins"}
-	ErrAuthzAdminDeleteFailed = APIError{Code: "AUTHZ-ADMIN-DELETE-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to remove admin"}
-
-	// Authz — Check
-	ErrAuthzCheckInvalidBody = APIError{Code: "AUTHZ-CHECK-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrAuthzCheckMissingPrinc = APIError{Code: "AUTHZ-CHECK-002", HTTPStatus: http.StatusBadRequest, Message: "principal is required"}
-	ErrAuthzCheckMissingAction = APIError{Code: "AUTHZ-CHECK-003", HTTPStatus: http.StatusBadRequest, Message: "action is required"}
-	ErrAuthzCheckMissingRes = APIError{Code: "AUTHZ-CHECK-004", HTTPStatus: http.StatusBadRequest, Message: "resource is required"}
-	ErrAuthzCheckFailed = APIError{Code: "AUTHZ-CHECK-005", HTTPStatus: http.StatusInternalServerError, Message: "Authorization check failed", Reason: "%w"}
 
 	// Info
 	ErrInfoRegionalAccountUnavailable = APIError{Code: "INFO-001", HTTPStatus: http.StatusServiceUnavailable, Message: "regional account ID is not configured"}

@@ -1,6 +1,8 @@
 # ROSA Authorization Service
 
-This document describes the Cedar-based authorization service for the ROSA HyperFleet API.
+This document describes a target design, not the current API implementation.
+The account-linking, CLI, and authorization-check examples below are not
+implemented by the current API.
 
 ## Overview
 

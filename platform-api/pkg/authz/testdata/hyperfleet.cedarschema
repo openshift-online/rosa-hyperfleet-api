@@ -1,0 +1,21 @@
+namespace HyperFleet {
+    type AccountID = String;
+    type Region = String;
+
+    entity Role { account: AccountID };
+    entity Principal in [Role] { account: AccountID };
+    entity Collection { account: AccountID, region: Region };
+    entity Cluster in [Collection] { account: AccountID, region: Region } tags String;
+
+    action ReadOnly;
+    action ListClusters in [ReadOnly] appliesTo {
+        principal: [Principal, Role],
+        resource: Collection,
+        context: { region: Region, accountId: AccountID, principalArn: String }
+    };
+    action DescribeCluster in [ReadOnly] appliesTo {
+        principal: [Principal, Role],
+        resource: Cluster,
+        context: { region: Region, accountId: AccountID, principalArn: String }
+    };
+}

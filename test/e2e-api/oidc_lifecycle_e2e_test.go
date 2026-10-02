@@ -67,18 +67,6 @@ func uniqueClusterName(tag string) string {
 	return fmt.Sprintf("e2e%s%d", tag, time.Now().UnixMilli())
 }
 
-// registerSelfAccount registers accountID as a privileged account (idempotent — tolerates the
-// existing-account 409), matching the pattern e2e-sdk/e2e-cli use before creating clusters.
-func registerSelfAccount(apiClient *APIClient, accountID string) {
-	resp, err := apiClient.Post("/api/v0/accounts", map[string]any{
-		"accountId": accountID, "privileged": true,
-	}, accountID)
-	Expect(err).NotTo(HaveOccurred())
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
-		Fail(fmt.Sprintf("account registration: status %d code=%s", resp.StatusCode, apiErrorCode(resp.Body)))
-	}
-}
-
 // createOidcConfig POSTs an OIDC config and returns its decoded body; fails the spec on error.
 func createOidcConfig(apiClient *APIClient, accountID string, spec map[string]any) map[string]any {
 	resp, err := apiClient.Post("/api/v0/oidc_configs", map[string]any{"spec": spec}, accountID)
@@ -159,7 +147,6 @@ var _ = Describe("OIDC Config Lifecycle: Managed", Ordered, Label("oidcconfig", 
 		Expect(baseURL).NotTo(BeEmpty(), "E2E_BASE_URL must be set")
 		accountID = e2eAccountID()
 		apiClient = NewAPIClient(baseURL)
-		registerSelfAccount(apiClient, accountID)
 	})
 
 	It("binds a managed config to a cluster, reaches Ready via real CloudFront TLS, then unbinds and deletes cleanly", func() {
@@ -209,7 +196,6 @@ var _ = Describe("OIDC Config Lifecycle: Reusability", Ordered, Label("oidcconfi
 		Expect(baseURL).NotTo(BeEmpty(), "E2E_BASE_URL must be set")
 		accountID = e2eAccountID()
 		apiClient = NewAPIClient(baseURL)
-		registerSelfAccount(apiClient, accountID)
 	})
 
 	It("rejects a concurrent second bind, then allows sequential reuse after the first cluster releases it", func() {
@@ -352,7 +338,6 @@ var _ = Describe("OIDC Config Lifecycle: Unmanaged", Ordered, Label("oidcconfig"
 		Expect(baseURL).NotTo(BeEmpty(), "E2E_BASE_URL must be set")
 		accountID = e2eAccountID()
 		apiClient = NewAPIClient(baseURL)
-		registerSelfAccount(apiClient, accountID)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 		defer cancel()

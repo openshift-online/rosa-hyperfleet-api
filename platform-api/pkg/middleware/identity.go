@@ -2,7 +2,11 @@ package middleware
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
+
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/authz"
 )
 
 type contextKey string
@@ -56,6 +60,47 @@ func Identity(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func RequireIdentity(logger *slog.Logger, isAccountRegistered func(context.Context, string) bool, region string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/v0/live", "/api/v0/ready", "/api/v0/info":
+				next.ServeHTTP(w, r)
+				return
+			}
+			accountID := GetAccountID(r.Context())
+			if accountID == "" || GetCallerARN(r.Context()) == "" {
+				if err := api.WriteError(w, api.APIError{
+					Code: "AUTH-001", HTTPStatus: http.StatusForbidden, Message: "Caller account ID and ARN are required",
+				}); err != nil {
+					logger.Error("failed to write identity error", "error", err)
+				}
+				return
+			}
+			// Reject inconsistent gateway identity before enrollment or grant selection.
+			identity := authz.Identity{AccountID: accountID, CallerARN: GetCallerARN(r.Context()), Region: region}
+			if err := identity.Validate(); err != nil {
+				logger.Warn("invalid caller identity", "error", err)
+				if err := api.WriteError(w, api.APIError{
+					Code: "AUTH-001", HTTPStatus: http.StatusForbidden, Message: "Caller identity is invalid",
+				}); err != nil {
+					logger.Error("failed to write identity error", "error", err)
+				}
+				return
+			}
+			if !isAccountRegistered(r.Context(), accountID) {
+				if err := api.WriteError(w, api.APIError{
+					Code: "AUTH-002", HTTPStatus: http.StatusForbidden, Message: "Account is not registered",
+				}); err != nil {
+					logger.Error("failed to write registration error", "error", err)
+				}
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // GetAccountID retrieves the AWS account ID from context
