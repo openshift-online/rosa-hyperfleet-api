@@ -1030,6 +1030,17 @@ func (g *Generator) renderRESTType(ti *typeInfo, restTypeSet map[string]bool, is
 		}
 	}
 
+	// Cluster responses expose an OCM-compatible proxy projection. This field
+	// belongs only to the public response; configuration.proxy remains canonical.
+	if isRoot && ti.Name == "Cluster" {
+		visibleFields = append(visibleFields, restFieldData{
+			GoName:  "Proxy",
+			GoType:  "*ClusterProxy",
+			JSONTag: "proxy,omitempty",
+			Comment: "// Proxy is a read-only projection of spec.hostedCluster.configuration.proxy.\n\t// +optional",
+		})
+	}
+
 	var embeds []restEmbedData
 	if isRoot {
 		embeds = []restEmbedData{

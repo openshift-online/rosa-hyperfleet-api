@@ -98,8 +98,6 @@ type ServiceSetFieldsHostedCluster struct {
 	OperatorConfiguration *hypershiftv1beta1.OperatorConfiguration `json:"operatorConfiguration,omitempty"`
 	// PausedUntil is service-set (platform-managed, hidden from API)
 	PausedUntil *string `json:"pausedUntil,omitempty"`
-	// Proxy is service-set (platform-managed, hidden from API)
-	Proxy string `json:"proxy,omitempty"`
 	// PullSecret is service-set (platform-managed, hidden from API)
 	PullSecret corev1.LocalObjectReference `json:"pullSecret,omitempty"`
 	// ReadinessEndpoints is service-set (platform-managed, hidden from API)
@@ -196,8 +194,6 @@ type ServiceSetFields struct {
 	PausedUntil *string `json:"pausedUntil,omitempty"`
 	// PrivateZoneID is service-set (platform-managed, hidden from API)
 	PrivateZoneID string `json:"privateZoneID,omitempty"`
-	// Proxy is service-set (platform-managed, hidden from API)
-	Proxy *v1alpha1.ProxyConfiguration `json:"proxy,omitempty"`
 	// PublicZoneID is service-set (platform-managed, hidden from API)
 	PublicZoneID string `json:"publicZoneID,omitempty"`
 	// ReadinessEndpoints is service-set (platform-managed, hidden from API)

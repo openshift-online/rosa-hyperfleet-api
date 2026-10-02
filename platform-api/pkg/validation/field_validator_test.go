@@ -3,6 +3,7 @@ package validation
 import (
 	"testing"
 
+	rest "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen/pkg/registry"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
 )
@@ -101,6 +102,50 @@ func TestValidateCreate_AllowsMutableFields(t *testing.T) {
 	errs := v.ValidateCreate(spec, featuregate.Default)
 	if errs != nil {
 		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestValidateCreate_AllowsMutableFieldsInsideServiceSetContainer(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.proxy": {
+			FieldPath: "spec.proxy",
+			WriteMode: registry.ServiceSet,
+		},
+		"spec.proxy.httpProxy": {
+			FieldPath: "spec.proxy.httpProxy",
+			WriteMode: registry.Mutable,
+		},
+		"spec.proxy.httpsProxy": {
+			FieldPath: "spec.proxy.httpsProxy",
+			WriteMode: registry.Mutable,
+		},
+	})
+
+	errs := v.ValidateCreate(map[string]any{
+		"proxy": map[string]any{
+			"httpProxy": "http://proxy.example.com:8080",
+		},
+	}, featuregate.Default)
+	if errs != nil {
+		t.Errorf("expected mutable child field to be accepted, got %v", errs)
+	}
+}
+
+func TestValidateCreate_AllowsProxyConfiguration(t *testing.T) {
+	v := NewFieldValidator("Cluster")
+	errs := v.ValidateCreate(rest.ClusterSpec{
+		HostedCluster: rest.HostedClusterSpecPassthrough{
+			Configuration: &rest.ClusterConfiguration{
+				Proxy: &rest.ProxyConfiguration{
+					HTTPProxy:  "http://proxy.example.com:8080",
+					HTTPSProxy: "https://proxy.example.com:8443",
+					NoProxy:    "localhost,127.0.0.1",
+				},
+			},
+		},
+	}, featuregate.Default)
+	if errs != nil {
+		t.Errorf("expected proxy configuration to be accepted, got %v", errs)
 	}
 }
 

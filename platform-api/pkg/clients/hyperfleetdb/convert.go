@@ -63,6 +63,13 @@ func InternalToPublicCluster(cr *hyperfleetv1alpha1.Cluster) *public.Cluster {
 	}
 	pub := v1alpha1conv.ProjectCluster(cr)
 	pub.UID = types.UID(clusterIDFromNamespace(cr.Namespace))
+	if config := pub.Spec.HostedCluster.Configuration; config != nil && config.Proxy != nil {
+		pub.Proxy = &public.ClusterProxy{
+			HTTPProxy:  config.Proxy.HTTPProxy,
+			HTTPSProxy: config.Proxy.HTTPSProxy,
+			NoProxy:    config.Proxy.NoProxy,
+		}
+	}
 	return pub
 }
 

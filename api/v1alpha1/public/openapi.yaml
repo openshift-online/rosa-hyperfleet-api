@@ -2220,6 +2220,19 @@ components:
               type: string
           metadata:
               type: object
+          proxy:
+              description: Proxy is a read-only projection of spec.hostedCluster.configuration.proxy.
+              properties:
+                  http_proxy:
+                      description: HTTPProxy is the URL of the proxy for HTTP requests.
+                      type: string
+                  https_proxy:
+                      description: HTTPSProxy is the URL of the proxy for HTTPS requests.
+                      type: string
+                  no_proxy:
+                      description: NoProxy lists hosts, domains, IP addresses, or CIDRs excluded from proxying.
+                      type: string
+              type: object
           spec:
               description: |-
                   ClusterSpec defines the desired state of a ROSA HCP cluster.
@@ -4612,6 +4625,19 @@ components:
                               More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
                           type: string
                       metadata:
+                          type: object
+                      proxy:
+                          description: Proxy is a read-only projection of spec.hostedCluster.configuration.proxy.
+                          properties:
+                              http_proxy:
+                                  description: HTTPProxy is the URL of the proxy for HTTP requests.
+                                  type: string
+                              https_proxy:
+                                  description: HTTPSProxy is the URL of the proxy for HTTPS requests.
+                                  type: string
+                              no_proxy:
+                                  description: NoProxy lists hosts, domains, IP addresses, or CIDRs excluded from proxying.
+                                  type: string
                           type: object
                       spec:
                           description: |-

@@ -91,6 +91,13 @@ func (v *FieldValidator) validate(fields, existingFields map[string]any, op Oper
 			continue
 		}
 
+		// Skip hidden fields and service-set structural containers. The latter
+		// can contain mutable descendants, such as proxy.httpProxy, and must not
+		// reject the whole object before its children are validated.
+		if meta.Hidden || isStructuralContainer(fieldPath, fieldMetaMap) {
+			continue
+		}
+
 		if meta.FeatureGate != "" {
 			if !featuregate.IsGateEnabled(meta.FeatureGate, fs) {
 				errs = append(errs, &ValidationError{
@@ -110,6 +117,19 @@ func (v *FieldValidator) validate(fields, existingFields map[string]any, op Oper
 		return errs
 	}
 	return nil
+}
+
+func isStructuralContainer(fieldPath string, fieldMetaMap map[string]registry.FieldMeta) bool {
+	prefix := fieldPath + "."
+	for childPath, childMeta := range fieldMetaMap {
+		if !strings.HasPrefix(childPath, prefix) {
+			continue
+		}
+		if childMeta.WriteMode == registry.Mutable || childMeta.WriteMode == registry.Immutable {
+			return true
+		}
+	}
+	return false
 }
 
 func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.FieldMeta, op Operation, fields, existingFields map[string]any, fs featuregate.FeatureSet) *ValidationError {

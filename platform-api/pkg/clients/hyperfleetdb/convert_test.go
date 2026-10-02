@@ -1,8 +1,10 @@
 package hyperfleetdb
 
 import (
+	"encoding/json"
 	"testing"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,6 +126,103 @@ func TestInternalToPublicCluster_FiltersServiceSetFields(t *testing.T) {
 func TestInternalToPublicCluster_NilInput(t *testing.T) {
 	result := InternalToPublicCluster(nil)
 	assert.Nil(t, result)
+}
+
+func TestInternalToPublicCluster_ProjectsProxy(t *testing.T) {
+	tests := []struct {
+		name   string
+		config *hypershiftv1beta1.ClusterConfiguration
+		want   *public.ClusterProxy
+	}{
+		{name: "no configuration"},
+		{name: "no proxy", config: &hypershiftv1beta1.ClusterConfiguration{}},
+		{
+			name: "full proxy",
+			config: &hypershiftv1beta1.ClusterConfiguration{
+				Proxy: &configv1.ProxySpec{
+					HTTPProxy:  "http://proxy.example.com:8080",
+					HTTPSProxy: "https://proxy.example.com:8443",
+					NoProxy:    "localhost,127.0.0.1,.example.com",
+					TrustedCA:  configv1.ConfigMapNameReference{Name: "private-ca"},
+				},
+			},
+			want: &public.ClusterProxy{
+				HTTPProxy:  "http://proxy.example.com:8080",
+				HTTPSProxy: "https://proxy.example.com:8443",
+				NoProxy:    "localhost,127.0.0.1,.example.com",
+			},
+		},
+		{
+			name:   "no proxy exclusions only",
+			config: &hypershiftv1beta1.ClusterConfiguration{Proxy: &configv1.ProxySpec{NoProxy: "localhost"}},
+			want:   &public.ClusterProxy{NoProxy: "localhost"},
+		},
+		{
+			name:   "empty proxy",
+			config: &hypershiftv1beta1.ClusterConfiguration{Proxy: &configv1.ProxySpec{}},
+			want:   &public.ClusterProxy{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cr := &hyperfleetv1alpha1.Cluster{}
+			cr.Spec.HostedCluster.Configuration = tt.config
+			before := cr.DeepCopy()
+			got := InternalToPublicCluster(cr)
+			assert.Equal(t, tt.want, got.Proxy)
+			assert.Equal(t, before, cr, "projection must not modify the stored cluster")
+
+			data, err := json.Marshal(got)
+			require.NoError(t, err)
+			var response map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(data, &response))
+			if tt.want == nil {
+				assert.NotContains(t, response, "proxy")
+				return
+			}
+			wantProxy := map[string]string{}
+			if tt.want.HTTPProxy != "" {
+				wantProxy["http_proxy"] = tt.want.HTTPProxy
+			}
+			if tt.want.HTTPSProxy != "" {
+				wantProxy["https_proxy"] = tt.want.HTTPSProxy
+			}
+			if tt.want.NoProxy != "" {
+				wantProxy["no_proxy"] = tt.want.NoProxy
+			}
+			wantJSON, err := json.Marshal(wantProxy)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(wantJSON), string(response["proxy"]))
+			assert.NotContains(t, string(data), "private-ca", "hidden fields must remain filtered")
+			require.NotNil(t, got.Spec.HostedCluster.Configuration.Proxy)
+			assert.Equal(t, tt.want.HTTPProxy, got.Spec.HostedCluster.Configuration.Proxy.HTTPProxy)
+			assert.Equal(t, tt.want.HTTPSProxy, got.Spec.HostedCluster.Configuration.Proxy.HTTPSProxy)
+			assert.Equal(t, tt.want.NoProxy, got.Spec.HostedCluster.Configuration.Proxy.NoProxy)
+
+			// The response alias is independent of the canonical configuration.
+			got.Proxy.HTTPProxy = "http://other.example.com"
+			assert.Equal(t, tt.want.HTTPProxy, got.Spec.HostedCluster.Configuration.Proxy.HTTPProxy)
+			copy := got.DeepCopy()
+			copy.Proxy.NoProxy = "different.example.com"
+			assert.Equal(t, tt.want.NoProxy, got.Proxy.NoProxy)
+		})
+	}
+}
+
+func TestPublicToInternalCluster_IgnoresProxyProjection(t *testing.T) {
+	pub := &public.Cluster{
+		Proxy: &public.ClusterProxy{HTTPProxy: "http://response-only.example.com"},
+		Spec: public.ClusterSpec{
+			HostedCluster: public.HostedClusterSpecPassthrough{
+				Configuration: &public.ClusterConfiguration{
+					Proxy: &public.ProxyConfiguration{HTTPProxy: "http://canonical.example.com"},
+				},
+			},
+		},
+	}
+	cr := PublicToInternalCluster(pub, testAccountID, testClusterID)
+	assert.Equal(t, "http://canonical.example.com", cr.Spec.HostedCluster.Configuration.Proxy.HTTPProxy)
+	assert.Equal(t, "http://canonical.example.com", InternalToPublicCluster(cr).Proxy.HTTPProxy)
 }
 
 func TestClusterRoundTrip(t *testing.T) {

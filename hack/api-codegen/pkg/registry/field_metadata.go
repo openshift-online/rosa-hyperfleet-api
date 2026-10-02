@@ -339,7 +339,7 @@ var FieldRegistry = TypedFieldRegistry{
 		},
 		"spec.hostedCluster.configuration.proxy": {
 			FieldPath: "spec.hostedCluster.configuration.proxy",
-			WriteMode: ServiceSet,
+			WriteMode: Mutable,
 			OwnerType: "Cluster",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
 		},
@@ -867,7 +867,7 @@ var FieldRegistry = TypedFieldRegistry{
 		},
 		"proxy": {
 			FieldPath: "proxy",
-			WriteMode: ServiceSet,
+			WriteMode: Mutable,
 			OwnerType: "ClusterConfiguration",
 			OwnerGVK:  "",
 		},

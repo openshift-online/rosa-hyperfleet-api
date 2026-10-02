@@ -46,7 +46,7 @@ type ClusterConfiguration struct {
 
 	// proxy contains the configuration for the cluster-wide proxy.
 	// +k8s:openapi-gen=true
-	// +hyperfleet:write-mode=service-set
+	// +hyperfleet:write-mode=mutable
 	Proxy *ProxyConfiguration `json:"proxy,omitempty"`
 
 	// kubelet contains the configuration for kubelet on nodes.

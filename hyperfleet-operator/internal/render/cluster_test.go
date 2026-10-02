@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
+	configv1 "github.com/openshift/api/config/v1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +22,13 @@ func testCluster() *hyperfleetv1alpha1.Cluster {
 			HostedCluster: hyperfleetv1alpha1.HostedClusterSpecPassthrough{
 				Release:   hypershiftv1beta1.Release{Image: "quay.io/ocp:4.17"},
 				IssuerURL: "https://oidc.example.com/abc12345",
+				Configuration: &hypershiftv1beta1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						HTTPProxy:  "http://proxy.example.com:8080",
+						HTTPSProxy: "https://proxy.example.com:8443",
+						NoProxy:    "localhost,127.0.0.1",
+					},
+				},
 				Networking: hypershiftv1beta1.ClusterNetworking{
 					ClusterNetwork: []hypershiftv1beta1.ClusterNetworkEntry{{CIDR: mustParseCIDR("10.128.0.0/14")}},
 					ServiceNetwork: []hypershiftv1beta1.ServiceNetworkEntry{{CIDR: mustParseCIDR("172.30.0.0/16")}},
@@ -50,6 +58,34 @@ func testCluster() *hyperfleetv1alpha1.Cluster {
 				},
 			},
 		},
+	}
+}
+
+func TestClusterResourcesPreservesProxyConfiguration(t *testing.T) {
+	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com")
+	if err != nil {
+		t.Fatalf("ClusterResources: %v", err)
+	}
+
+	var hostedCluster *hypershiftv1beta1.HostedCluster
+	for _, resource := range resources {
+		if resource.Resource == "hostedclusters" {
+			hostedCluster = resource.Object.(*hypershiftv1beta1.HostedCluster)
+			break
+		}
+	}
+	if hostedCluster == nil {
+		t.Fatal("no hostedcluster resource found")
+	}
+	if hostedCluster.Spec.Configuration == nil || hostedCluster.Spec.Configuration.Proxy == nil {
+		t.Fatal("expected proxy configuration to be preserved")
+	}
+
+	proxy := hostedCluster.Spec.Configuration.Proxy
+	if proxy.HTTPProxy != "http://proxy.example.com:8080" ||
+		proxy.HTTPSProxy != "https://proxy.example.com:8443" ||
+		proxy.NoProxy != "localhost,127.0.0.1" {
+		t.Errorf("proxy configuration was not preserved: %+v", proxy)
 	}
 }
 
