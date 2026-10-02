@@ -143,6 +143,7 @@ jobs:
           MODULE: ${{ matrix.module }}
         run: |
           BRANCH="release-${VERSION//\//-}"
+          PR_TITLE="NO-JIRA: chore(${MODULE}): bump version to ${VERSION}"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -176,7 +177,7 @@ jobs:
             git push origin "${BRANCH}"
 
             gh pr create \
-              --title "chore(${MODULE}): bump version to ${VERSION}" \
+              --title "${PR_TITLE}" \
               --body "## Auto-generated version bump
 
           This PR bumps the ${MODULE} module version to ${VERSION} and updates the changelog.
@@ -188,5 +189,6 @@ jobs:
           ### Review
           Once merged, the auto-tag-and-release workflow will create the git tag and GitHub release." \
               --base main \
-              --head "${BRANCH}"
+              --head "${BRANCH}" \
+              --label "ok-to-test"
           fi

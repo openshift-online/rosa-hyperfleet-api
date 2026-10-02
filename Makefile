@@ -1,7 +1,7 @@
 .PHONY: help build test test-unit test-integration lint clean \
 	build-hyperfleet-db build-operator build-api build-api-codegen \
 	test-hyperfleet-db test-operator test-operator-int test-api test-api-int test-api-codegen test-clientset \
-	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-zoa test-e2e-authz test-e2e-sdk test-e2e-rosa-cli \
+	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-zoa test-e2e-authz test-e2e-sdk test-e2e-rosa-cli test-rosa-cli-junit \
 	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-authz test-e2e-sdk \
 	e2e-authz-infra-up e2e-authz-infra-down e2e-init-db \
 	fmt vet verify verify-mod deps mod-tidy \
@@ -33,14 +33,18 @@ SKIP        ?= Authz
 
 ROSA_REPO_URL          ?= https://github.com/openshift/rosa
 ROSA_REPO_BRANCH       ?= hyperfleet-v2
-ROSA_MAKE_TARGET       ?= e2e-hyperfleet
 ROSA_BUILD_TARGET      ?= install
 ROSA_FOCUS      ?=
 ROSA_SKIP       ?=
 ROSA_LABEL_FILTER ?=
+ROSA_GINKGO_FOCUS ?= $(ROSA_FOCUS)
+ROSA_GINKGO_SKIP ?= $(ROSA_SKIP)
+ROSA_GINKGO_LABEL_FILTER ?= $(ROSA_LABEL_FILTER)
+ROSA_GINKGO_EFFECTIVE_LABEL_FILTER = $(if $(ROSA_GINKGO_LABEL_FILTER),($(ROSA_GINKGO_LABEL_FILTER)),(hyperfleet-sanity)) && !hyperfleet-na && !hyperfleet-deferred
 
 CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 
+MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 TOOLS_DIR        := ./hack/tools
 TOOLS_BIN_DIR    := $(TOOLS_DIR)/bin
 GOLANGCI_LINT    := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
@@ -117,7 +121,8 @@ help:
 	@echo "  test-e2e-cli         E2E CLI"
 	@echo "  test-e2e-sdk         E2E SDK (Go clientset lifecycle)"
 	@echo "  test-e2e-rosa-cli    E2E rosa CLI (clones rosa repo, builds CLI, runs hyperfleet tests)"
-	@echo "                       Supports ROSA_FOCUS, ROSA_SKIP, ROSA_LABEL_FILTER"
+	@echo "                       Supports ROSA_GINKGO_FOCUS, ROSA_GINKGO_SKIP, ROSA_GINKGO_LABEL_FILTER (legacy ROSA_* aliases supported)"
+	@echo "                       JUnit: JUNIT_REPORT_PATH (default: ARTIFACT_DIR/junit-rosa-cli.xml or ./test-results/junit-rosa-cli.xml)"
 	@echo "  test-e2e-platform-monitoring  E2E monitoring"
 	@echo ""
 	@echo "Code Quality:"
@@ -209,6 +214,8 @@ test-hyperfleet-db:
 test-operator-int:
 	cd hyperfleet-operator && go test -v -race -count=1 ./test/...
 
+# ── E2E Infrastructure ──────────────────────────────────────────────────
+
 test-e2e: test-e2e-api
 
 test-e2e-api: $(GINKGO)
@@ -245,42 +252,21 @@ test-e2e-sdk: $(GINKGO)
 	$(GINKGO) -vv --timeout=3h --junit-report=junit-sdk.xml \
 		--output-dir=$(TEST_OUTPUT_DIR) ./test/e2e-sdk
 
+# Run the ROSA CLI e2e label groups and aggregate their JUnit reports.
+test-e2e-rosa-cli: export ROSA_JUNIT_REPORT_PATH := $(or $(JUNIT_REPORT_PATH),$(or $(ARTIFACT_DIR),./test-results)/junit-rosa-cli.xml)
+test-e2e-rosa-cli: export ROSA_REPO_URL := $(ROSA_REPO_URL)
+test-e2e-rosa-cli: export ROSA_REPO_BRANCH := $(ROSA_REPO_BRANCH)
+test-e2e-rosa-cli: export ROSA_BUILD_TARGET := $(ROSA_BUILD_TARGET)
+test-e2e-rosa-cli: export ROSA_GINKGO_FOCUS := $(ROSA_GINKGO_FOCUS)
+test-e2e-rosa-cli: export ROSA_GINKGO_SKIP := $(ROSA_GINKGO_SKIP)
+test-e2e-rosa-cli: export ROSA_GINKGO_LABEL_FILTER := $(ROSA_GINKGO_LABEL_FILTER)
+test-e2e-rosa-cli: export ROSA_GINKGO_EFFECTIVE_LABEL_FILTER := $(ROSA_GINKGO_EFFECTIVE_LABEL_FILTER)
+test-e2e-rosa-cli: export HYPERFLEET_URL := $(HYPERFLEET_URL)
 test-e2e-rosa-cli:
-	@ROSA_TMPDIR=$$(mktemp -d) && \
-	trap "rm -rf $$ROSA_TMPDIR" EXIT && \
-	echo "Temporary directory: $$ROSA_TMPDIR" && \
-	echo "Cloning rosa repo from $(ROSA_REPO_URL)@$(ROSA_REPO_BRANCH)..." && \
-	git clone --depth=1 --branch $(ROSA_REPO_BRANCH) $(ROSA_REPO_URL) $$ROSA_TMPDIR && \
-	echo "Building rosa CLI..." && \
-	cd $$ROSA_TMPDIR && $(MAKE) $(ROSA_BUILD_TARGET) && \
-	export PATH="$$PWD:$$PATH" && \
-	echo "Running rosa hyperfleet E2E tests..." && \
-	name=$${CLUSTER_NAME:-hf-e2e-$$(date +%s)} && \
-	export HYPERFLEET_URL="$${HYPERFLEET_URL}" && \
-	export CLUSTER_NAME="$$name" && \
-	export OPERATOR_ROLES_PREFIX="$${OPERATOR_ROLES_PREFIX:-$$name}" && \
-	export AWS_DEFAULT_REGION="$${AWS_DEFAULT_REGION:-$${AWS_REGION}}" && \
-	export GOTOOLCHAIN=auto && \
-	export TEST_PROFILE="$${TEST_PROFILE}" && \
-	export TEST_PROFILE_DIR="$$ROSA_TMPDIR/tests/ci/data/profiles" && \
-	export WORKSPACE="$$ROSA_TMPDIR" && \
-	if [ -n "$(ROSA_SKIP)$(ROSA_LABEL_FILTER)" ]; then \
-		echo "Running with custom ginkgo filters..." && \
-		ginkgo run -v --timeout 3h \
-			$(if $(ROSA_SKIP),--skip="$(ROSA_SKIP)") \
-			$(if $(ROSA_LABEL_FILTER),--label-filter="$(ROSA_LABEL_FILTER)") \
-			./tests/e2e/; \
-	else \
-		echo "Running default rosa e2e-hyperfleet target..." && \
-		$(MAKE) \
-			TEST_PROFILE="$${TEST_PROFILE}" \
-			TEST_PROFILE_DIR="$$ROSA_TMPDIR/tests/ci/data/profiles" \
-			WORKSPACE="$$ROSA_TMPDIR" \
-			$(ROSA_MAKE_TARGET); \
-	fi
+	+@MAKE="$(MAKE)" bash "$(MAKEFILE_DIR)ci/e2e-rosa-cli.sh"
 
-
-# ── E2E Infrastructure ──────────────────────────────────────────────────
+test-rosa-cli-junit:
+	./ci/e2e-rosa-cli-junit.sh
 
 e2e-authz-infra-up:
 	podman-compose -f hack/podman-compose.e2e-authz.yaml up -d
