@@ -12,6 +12,10 @@ resources:
               goType: string
               operations:
                 - read
+            - path: spec.awsIAMLoginIssuerURL
+              goType: string
+              operations:
+                - create
             - path: spec.deleteProtection
               goType: boolean
               operations:

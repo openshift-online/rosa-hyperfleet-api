@@ -247,6 +247,13 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 	} else {
 		hcSpec.Configuration.APIServer = apiServerConfiguration().APIServer
 	}
+	authentication, err := awsIAMAuthentication(cluster, clusterID)
+	if err != nil {
+		return Resource{}, fmt.Errorf("rendering AWS IAM login for cluster %s/%s: %w", ns, clusterName, err)
+	}
+	if authentication != nil {
+		hcSpec.Configuration.Authentication = authentication
+	}
 
 	// --- Defaults (only set if customer didn't specify) ---
 	if hcSpec.Etcd.ManagementType == "" {

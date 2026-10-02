@@ -7,6 +7,12 @@
     "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
   },
   {
+    "fieldPath": "spec.awsIAMLoginIssuerURL",
+    "writeMode": "immutable",
+    "ownerType": "Cluster",
+    "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
+  },
+  {
     "fieldPath": "spec.creatorARN",
     "writeMode": "service-set",
     "hidden": true,

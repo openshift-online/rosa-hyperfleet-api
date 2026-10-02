@@ -39,6 +39,13 @@ type ClusterSpec struct {
 	// +hyperfleet:write-mode=immutable
 	// +optional
 	OidcConfigID string `json:"oidcConfigId,omitempty"`
+	// AWSIAMLoginIssuerURL is the AWS account's IAM outbound identity federation
+	// issuer. When set, users log in to the cluster's API server with AWS IAM
+	// credentials. Immutable after creation.
+	// +hyperfleet:write-mode=immutable
+	// +kubebuilder:validation:Pattern=`^https://[a-z0-9-]+\.tokens\.sts\.global\.api\.aws$`
+	// +optional
+	AWSIAMLoginIssuerURL string `json:"awsIAMLoginIssuerURL,omitempty"`
 	// HostedCluster contains the upstream HyperShift fields, mirrored as
 	// passthrough types with per-field visibility and write-mode markers.
 	// +kubebuilder:validation:Required

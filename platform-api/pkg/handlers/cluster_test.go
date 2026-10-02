@@ -1045,3 +1045,72 @@ func TestClusterHandler_Create_SameNameDifferentAccount(t *testing.T) {
 		t.Fatalf("expected 201 (same name in different account is allowed), got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+const testIAMLoginIssuer = "https://a1b2c3d4-e5f6.tokens.sts.global.api.aws"
+
+func specWithIAMLoginIssuer(issuer string) map[string]any {
+	spec := map[string]any{"awsIAMLoginIssuerURL": issuer}
+	for k, v := range minSpec {
+		spec[k] = v
+	}
+	return spec
+}
+
+func TestClusterHandler_Create_AWSIAMLogin(t *testing.T) {
+	tests := []struct {
+		name      string
+		issuer    string
+		callerARN string
+		wantCode  int
+	}{
+		{
+			name:      "When the issuer is an AWS STS issuer and the creator assumed a role it should create the cluster",
+			issuer:    testIAMLoginIssuer,
+			callerARN: "arn:aws:sts::" + testAccountID + ":assumed-role/PlatformAdmins/alice",
+			wantCode:  http.StatusCreated,
+		},
+		{
+			name:      "When the issuer is not an AWS STS issuer it should be rejected",
+			issuer:    "https://169.254.169.254",
+			callerARN: "arn:aws:iam::" + testAccountID + ":user/test",
+			wantCode:  http.StatusBadRequest,
+		},
+		{
+			name:      "When the creator is the account root it should be rejected",
+			issuer:    testIAMLoginIssuer,
+			callerARN: "arn:aws:iam::" + testAccountID + ":root",
+			wantCode:  http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fc := fake.NewClientBuilder().WithScheme(newTestScheme()).Build()
+			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+			handler := NewClusterHandler(hyperfleetdb.NewClientFrom(fc, logger), "", 0, logger)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v0/clusters", bytes.NewReader(clusterBody("my-cluster", specWithIAMLoginIssuer(tt.issuer))))
+			ctx := context.WithValue(testContext(testAccountID), middleware.ContextKeyCallerARN, tt.callerARN)
+			w := httptest.NewRecorder()
+			handler.Create(w, req.WithContext(ctx))
+
+			if w.Code != tt.wantCode {
+				t.Fatalf("expected %d, got %d: %s", tt.wantCode, w.Code, w.Body.String())
+			}
+
+			var list hyperfleetv1alpha1.ClusterList
+			if err := fc.List(context.Background(), &list); err != nil {
+				t.Fatalf("listing clusters from fake client: %v", err)
+			}
+			if tt.wantCode != http.StatusCreated {
+				if len(list.Items) != 0 {
+					t.Errorf("expected no cluster to be stored, got %d", len(list.Items))
+				}
+				return
+			}
+			if len(list.Items) != 1 || list.Items[0].Spec.AWSIAMLoginIssuerURL != tt.issuer {
+				t.Errorf("expected stored cluster with awsIAMLoginIssuerURL=%s, got %+v", tt.issuer, list.Items)
+			}
+		})
+	}
+}

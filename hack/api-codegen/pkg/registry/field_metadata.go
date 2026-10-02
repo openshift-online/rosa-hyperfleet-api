@@ -30,6 +30,12 @@ var FieldRegistry = TypedFieldRegistry{
 			OwnerType: "Cluster",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
 		},
+		"spec.awsIAMLoginIssuerURL": {
+			FieldPath: "spec.awsIAMLoginIssuerURL",
+			WriteMode: Immutable,
+			OwnerType: "Cluster",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
+		},
 		"spec.creatorARN": {
 			FieldPath: "spec.creatorARN",
 			WriteMode: ServiceSet,

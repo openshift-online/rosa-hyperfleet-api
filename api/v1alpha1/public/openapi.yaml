@@ -2074,6 +2074,13 @@ components:
           metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
           The owning AWS account is stored as the label hyperfleet.io/account-id.
       properties:
+          awsIAMLoginIssuerURL:
+              description: |-
+                  AWSIAMLoginIssuerURL is the AWS account's IAM outbound identity federation
+                  issuer. When set, users log in to the cluster's API server with AWS IAM
+                  credentials. Immutable after creation.
+              pattern: ^https://[a-z0-9-]+\.tokens\.sts\.global\.api\.aws$
+              type: string
           controlPlaneUpgradePolicy:
               description: ControlPlaneUpgradePolicy is the control plane upgrade policy defined by the user.
               properties:
@@ -2226,6 +2233,13 @@ components:
                   metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
                   The owning AWS account is stored as the label hyperfleet.io/account-id.
               properties:
+                  awsIAMLoginIssuerURL:
+                      description: |-
+                          AWSIAMLoginIssuerURL is the AWS account's IAM outbound identity federation
+                          issuer. When set, users log in to the cluster's API server with AWS IAM
+                          credentials. Immutable after creation.
+                      pattern: ^https://[a-z0-9-]+\.tokens\.sts\.global\.api\.aws$
+                      type: string
                   controlPlaneUpgradePolicy:
                       description: ControlPlaneUpgradePolicy is the control plane upgrade policy defined by the user.
                       properties:
@@ -4619,6 +4633,13 @@ components:
                               metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
                               The owning AWS account is stored as the label hyperfleet.io/account-id.
                           properties:
+                              awsIAMLoginIssuerURL:
+                                  description: |-
+                                      AWSIAMLoginIssuerURL is the AWS account's IAM outbound identity federation
+                                      issuer. When set, users log in to the cluster's API server with AWS IAM
+                                      credentials. Immutable after creation.
+                                  pattern: ^https://[a-z0-9-]+\.tokens\.sts\.global\.api\.aws$
+                                  type: string
                               controlPlaneUpgradePolicy:
                                   description: ControlPlaneUpgradePolicy is the control plane upgrade policy defined by the user.
                                   properties:
