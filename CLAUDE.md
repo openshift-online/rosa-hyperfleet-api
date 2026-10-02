@@ -44,6 +44,7 @@ make verify-mod         # Verify go.mod tidiness
 
 make test-unit          # All unit tests (api, operator, codegen, clientset)
 make test-integration   # Integration tests (fleetdb, operator)
+make test-api-int       # API integration tests
 make test-api-codegen   # Codegen tool tests
 make test-clientset     # Clientset tests
 ```
@@ -62,6 +63,15 @@ hack/tools/go.mod                       ← dev tooling dependencies
 ```
 
 Cross-module refs use permanent `replace` directives to sibling dirs.
+
+## Versioning & Releases
+
+The `api/` and `clientset/` modules use automated versioning via GitHub Actions:
+
+- **`.github/workflows/auto-version-bump.yaml`** — on merge to main, detects changes in `api/` or `clientset/`, bumps the version in `api/version.go` or `clientset/version.go`, and appends to `api/CHANGES.md` or `clientset/CHANGES.md`
+- **`.github/workflows/auto-tag-and-release.yaml`** — creates Git tags (`api/v0.1.x`, `clientset/v0.1.x`) and GitHub Releases when version files change
+
+No manual tagging is needed — merging to main triggers the pipeline automatically.
 
 ## Key Conventions
 

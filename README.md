@@ -26,6 +26,7 @@ make help    # full target list
 ```
 hyperfleet-db/go.mod             ← standalone
 api/go.mod                       ← standalone (CRD types)
+clientset/go.mod                 ← generated typed K8s client for HyperFleet CRDs
 hyperfleet-operator/go.mod       ← requires: hyperfleet-db, api
 platform-api/go.mod              ← requires: hyperfleet-db, api
 ```
