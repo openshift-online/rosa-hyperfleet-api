@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
 
+	"github.com/openshift-online/rosa-hyperfleet-api/api/iamauth"
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
@@ -157,6 +158,11 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	if errs := h.validator.ValidateCreate(&req.Spec, featuregate.Default); errs != nil {
 		writeAPIError(w, ErrClusterValidation.WithErrors(errs), h.logger)
+		return
+	}
+
+	if apiErr := validateAWSIAMLogin(&req.Spec, middleware.GetCallerARN(ctx)); apiErr != nil {
+		writeAPIError(w, *apiErr, h.logger)
 		return
 	}
 
@@ -421,4 +427,22 @@ func (h *ClusterHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if err := api.Write(w, http.StatusAccepted, response); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
+}
+
+// validateAWSIAMLogin rejects AWS IAM login settings the operator could not render.
+// The issuer URL is fetched by the hosted kube-apiserver from the management
+// cluster network, so only AWS STS issuers are accepted. The creator is made
+// cluster-admin, which only works for IAM roles and users.
+func validateAWSIAMLogin(spec *public.ClusterSpec, callerARN string) *APIError {
+	if spec.AWSIAMLoginIssuerURL == "" {
+		return nil
+	}
+	if !iamauth.ValidIssuerURL(spec.AWSIAMLoginIssuerURL) {
+		return &ErrClusterCreateInvalidIAMLoginIssuer
+	}
+	if _, err := iamauth.CreatorSubjectPattern(callerARN); err != nil {
+		apiErr := ErrClusterCreateIAMLoginUnsupported.WithReason(callerARN)
+		return &apiErr
+	}
+	return nil
 }

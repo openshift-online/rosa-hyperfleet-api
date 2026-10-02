@@ -36,6 +36,9 @@ var (
 	ErrClusterCreateOidcConfigNotReady APIError
 	ErrClusterCreateOidcConfigInUse    APIError
 
+	ErrClusterCreateInvalidIAMLoginIssuer APIError
+	ErrClusterCreateIAMLoginUnsupported   APIError
+
 	ErrClusterGetNotFound APIError
 	ErrClusterGetFailed   APIError
 
@@ -234,6 +237,8 @@ func init() {
 	ErrClusterCreateOidcConfigNotFound = APIError{Code: "CLUSTERS-MGMT-CREATE-010", HTTPStatus: http.StatusNotFound, Message: "Referenced OIDC config not found"}
 	ErrClusterCreateOidcConfigNotReady = APIError{Code: "CLUSTERS-MGMT-CREATE-011", HTTPStatus: http.StatusUnprocessableEntity, Message: "Referenced OIDC config is not ready"}
 	ErrClusterCreateOidcConfigInUse = APIError{Code: "CLUSTERS-MGMT-CREATE-012", HTTPStatus: http.StatusConflict, Message: "Referenced OIDC config is already associated with another cluster", Reason: "an OidcConfig backs at most one cluster; %q is already in use"}
+	ErrClusterCreateInvalidIAMLoginIssuer = APIError{Code: "CLUSTERS-MGMT-CREATE-014", HTTPStatus: http.StatusBadRequest, Message: "spec.awsIAMLoginIssuerURL must be an AWS IAM outbound identity federation issuer (https://<id>.tokens.sts.global.api.aws)"}
+	ErrClusterCreateIAMLoginUnsupported = APIError{Code: "CLUSTERS-MGMT-CREATE-015", HTTPStatus: http.StatusBadRequest, Message: "AWS IAM login requires the cluster to be created by an IAM role or IAM user", Reason: "%q cannot be made cluster-admin; create the cluster with an IAM role or IAM user"}
 
 	// Cluster — Get
 	ErrClusterGetNotFound = APIError{Code: "CLUSTERS-MGMT-GET-001", HTTPStatus: http.StatusNotFound, Message: "Cluster not found"}
