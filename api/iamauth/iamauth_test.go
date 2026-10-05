@@ -1,7 +1,6 @@
 package iamauth
 
 import (
-	"regexp"
 	"testing"
 )
 
@@ -29,56 +28,27 @@ func TestValidIssuerURL(t *testing.T) {
 	}
 }
 
-func TestCreatorSubjectPattern(t *testing.T) {
+func TestCreatorSubjectCondition(t *testing.T) {
 	tests := []struct {
 		name      string
 		callerARN string
-		sub       string
-		wantMatch bool
+		want      string
 		wantErr   bool
 	}{
 		{
-			name:      "When the creator assumed a role it should match the role ARN",
+			name:      "When the creator assumed a role it should match the role in that account with any path",
 			callerARN: "arn:aws:sts::111122223333:assumed-role/PlatformAdmins/alice",
-			sub:       "arn:aws:iam::111122223333:role/PlatformAdmins",
-			wantMatch: true,
-		},
-		{
-			name:      "When the role has a path it should still match",
-			callerARN: "arn:aws:sts::111122223333:assumed-role/PlatformAdmins/alice",
-			sub:       "arn:aws:iam::111122223333:role/team/x/PlatformAdmins",
-			wantMatch: true,
-		},
-		{
-			name:      "When a role name only shares a suffix it should not match",
-			callerARN: "arn:aws:sts::111122223333:assumed-role/PlatformAdmins/alice",
-			sub:       "arn:aws:iam::111122223333:role/XPlatformAdmins",
-		},
-		{
-			name:      "When a role name only shares a prefix it should not match",
-			callerARN: "arn:aws:sts::111122223333:assumed-role/PlatformAdmins/alice",
-			sub:       "arn:aws:iam::111122223333:role/PlatformAdmins2",
-		},
-		{
-			name:      "When the role is in another account it should not match",
-			callerARN: "arn:aws:sts::111122223333:assumed-role/PlatformAdmins/alice",
-			sub:       "arn:aws:iam::444455556666:role/PlatformAdmins",
-		},
-		{
-			name:      "When the role name has regex characters they should be literal",
-			callerARN: "arn:aws:sts::111122223333:assumed-role/a.b+c/alice",
-			sub:       "arn:aws:iam::111122223333:role/aXbbc",
+			want:      "claims.sub.startsWith('arn:aws:iam::111122223333:role/') && claims.sub.endsWith('/PlatformAdmins')",
 		},
 		{
 			name:      "When the creator is an IAM user it should match exactly",
 			callerARN: "arn:aws:iam::111122223333:user/ops/bob",
-			sub:       "arn:aws:iam::111122223333:user/ops/bob",
-			wantMatch: true,
+			want:      "claims.sub == 'arn:aws:iam::111122223333:user/ops/bob'",
 		},
 		{
-			name:      "When the creator is an IAM user it should not match another user",
-			callerARN: "arn:aws:iam::111122223333:user/ops/bob",
-			sub:       "arn:aws:iam::111122223333:user/ops/bobby",
+			name:      "When the creator is in GovCloud it should keep the partition",
+			callerARN: "arn:aws-us-gov:sts::111122223333:assumed-role/Admins/alice",
+			want:      "claims.sub.startsWith('arn:aws-us-gov:iam::111122223333:role/') && claims.sub.endsWith('/Admins')",
 		},
 		{
 			name:      "When the creator is root it should be rejected",
@@ -96,6 +66,11 @@ func TestCreatorSubjectPattern(t *testing.T) {
 			wantErr:   true,
 		},
 		{
+			name:      "When the user name contains a quote it should be rejected",
+			callerARN: "arn:aws:iam::111122223333:user/a'b",
+			wantErr:   true,
+		},
+		{
 			name:      "When the account is not 12 digits it should be rejected",
 			callerARN: "arn:aws:sts::1111' || true:assumed-role/a/alice",
 			wantErr:   true,
@@ -109,18 +84,18 @@ func TestCreatorSubjectPattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pattern, err := CreatorSubjectPattern(tt.callerARN)
+			got, err := CreatorSubjectCondition(tt.callerARN)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("expected an error, got pattern %q", pattern)
+					t.Fatalf("expected an error, got %q", got)
 				}
 				return
 			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got := regexp.MustCompile(pattern).MatchString(tt.sub); got != tt.wantMatch {
-				t.Errorf("pattern %q matching %q = %v, want %v", pattern, tt.sub, got, tt.wantMatch)
+			if got != tt.want {
+				t.Errorf("CreatorSubjectCondition() = %q, want %q", got, tt.want)
 			}
 		})
 	}

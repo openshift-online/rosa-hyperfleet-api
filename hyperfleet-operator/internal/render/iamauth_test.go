@@ -59,20 +59,17 @@ func TestHostedClusterAWSIAMLogin(t *testing.T) {
 		}
 	})
 
-	t.Run("When AWS IAM login is enabled it should reject tokens from other accounts", func(t *testing.T) {
-		provider := renderedHostedCluster(t, testClusterWithIAMLogin()).Spec.Configuration.Authentication.OIDCProviders[0]
+	t.Run("When AWS IAM login is enabled it should only reject tokens from other accounts", func(t *testing.T) {
+		rules := renderedHostedCluster(t, testClusterWithIAMLogin()).Spec.Configuration.Authentication.OIDCProviders[0].ClaimValidationRules
 		want := "claims['https://sts.amazonaws.com/'].aws_account == '123456789012'"
-		for _, rule := range provider.ClaimValidationRules {
-			if rule.Type == configv1.TokenValidationRuleTypeCEL && rule.CEL.Expression == want {
-				return
-			}
+		if len(rules) != 1 || rules[0].Type != configv1.TokenValidationRuleTypeCEL || rules[0].CEL.Expression != want {
+			t.Errorf("claim validation rules = %+v, want only %q", rules, want)
 		}
-		t.Errorf("missing account validation rule %q in %+v", want, provider.ClaimValidationRules)
 	})
 
 	t.Run("When AWS IAM login is enabled it should make only the creator cluster-admin", func(t *testing.T) {
 		mappings := renderedHostedCluster(t, testClusterWithIAMLogin()).Spec.Configuration.Authentication.OIDCProviders[0].ClaimMappings
-		want := `claims.sub.matches(r'^arn:aws:iam::123456789012:role/(?:[^:]*/)?PlatformAdmins$') ? ['system:cluster-admins'] : []`
+		want := "claims.sub.startsWith('arn:aws:iam::123456789012:role/') && claims.sub.endsWith('/PlatformAdmins') ? ['system:cluster-admins'] : []"
 		if mappings.Groups.Expression != want {
 			t.Errorf("groups expression = %q, want %q", mappings.Groups.Expression, want)
 		}
@@ -98,15 +95,10 @@ func TestHostedClusterAWSIAMLogin(t *testing.T) {
 		}
 	})
 
-	t.Run("When AWS IAM login is enabled it should not use reserved extra key domains", func(t *testing.T) {
+	t.Run("When AWS IAM login is enabled it should not add optional mappings or rules", func(t *testing.T) {
 		provider := renderedHostedCluster(t, testClusterWithIAMLogin()).Spec.Configuration.Authentication.OIDCProviders[0]
-		for _, extra := range provider.ClaimMappings.Extra {
-			domain := strings.SplitN(extra.Key, "/", 2)[0]
-			for _, reserved := range []string{"kubernetes.io", "k8s.io", "openshift.io"} {
-				if domain == reserved || strings.HasSuffix(domain, "."+reserved) {
-					t.Errorf("extra key %q uses reserved domain %q", extra.Key, reserved)
-				}
-			}
+		if provider.ClaimMappings.UID != nil || len(provider.ClaimMappings.Extra) != 0 || len(provider.UserValidationRules) != 0 {
+			t.Errorf("expected no uid, extra or user validation rules, got %+v", provider)
 		}
 	})
 

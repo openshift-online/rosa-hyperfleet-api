@@ -42,15 +42,16 @@ func ClusterAudience(clusterID string) string {
 	return "rosa:cluster:" + clusterID
 }
 
-// CreatorSubjectPattern returns an RE2 pattern matching the "sub" claim of STS
-// tokens minted by the principal that made a request as callerARN.
+// CreatorSubjectCondition returns a CEL condition that is true when an STS
+// token's "sub" claim is the principal that made a request as callerARN.
 //
 // API Gateway reports role sessions as arn:aws:sts::<acct>:assumed-role/<name>/<session>,
 // while tokens carry sub = arn:aws:iam::<acct>:role/[<path>/]<name>. Role names are
-// unique within an account regardless of path, so account + name with any path
-// matches exactly that role. IAM users are matched exactly. Other principals
-// (root, federated users) are rejected.
-func CreatorSubjectPattern(callerARN string) (string, error) {
+// unique within an account regardless of path, so the condition matches the
+// account and name with any path. IAM users are matched exactly. Other principals
+// (root, federated users) are rejected. Every interpolated value is restricted to
+// characters that need no escaping in a CEL string.
+func CreatorSubjectCondition(callerARN string) (string, error) {
 	parts := strings.SplitN(callerARN, ":", 6)
 	if len(parts) != 6 || parts[0] != "arn" {
 		return "", fmt.Errorf("%q is not an ARN", callerARN)
@@ -66,9 +67,9 @@ func CreatorSubjectPattern(callerARN string) (string, error) {
 		if len(role) != 3 || !roleNameRE.MatchString(role[1]) {
 			return "", fmt.Errorf("%q is not a valid assumed-role ARN", callerARN)
 		}
-		return fmt.Sprintf(`^arn:%s:iam::%s:role/(?:[^:]*/)?%s$`, partition, account, regexp.QuoteMeta(role[1])), nil
+		return fmt.Sprintf("claims.sub.startsWith('arn:%s:iam::%s:role/') && claims.sub.endsWith('/%s')", partition, account, role[1]), nil
 	case service == "iam" && userResourceRE.MatchString(resource):
-		return "^" + regexp.QuoteMeta(callerARN) + "$", nil
+		return fmt.Sprintf("claims.sub == '%s'", callerARN), nil
 	default:
 		return "", fmt.Errorf("%q cannot be granted cluster-admin: only IAM roles and IAM users are supported", callerARN)
 	}

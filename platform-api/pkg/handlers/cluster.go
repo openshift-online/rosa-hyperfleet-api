@@ -440,7 +440,7 @@ func validateAWSIAMLogin(spec *public.ClusterSpec, callerARN string) *APIError {
 	if !iamauth.ValidIssuerURL(spec.AWSIAMLoginIssuerURL) {
 		return &ErrClusterCreateInvalidIAMLoginIssuer
 	}
-	if _, err := iamauth.CreatorSubjectPattern(callerARN); err != nil {
+	if _, err := iamauth.CreatorSubjectCondition(callerARN); err != nil {
 		apiErr := ErrClusterCreateIAMLoginUnsupported.WithReason(callerARN)
 		return &apiErr
 	}
