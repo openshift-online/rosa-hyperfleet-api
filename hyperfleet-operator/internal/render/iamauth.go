@@ -16,6 +16,8 @@ const (
 	clusterAdminsGroup = "system:cluster-admins"
 	// maxTokenLifetimeSeconds rejects tokens minted with a longer DurationSeconds.
 	maxTokenLifetimeSeconds = 900
+	// usernamePrefix is prepended to the token's sub (the IAM principal ARN).
+	usernamePrefix = "aws:"
 )
 
 // awsIAMAuthentication renders the HostedCluster authentication configuration
@@ -53,9 +55,16 @@ func awsIAMAuthentication(cluster *hyperfleetv1alpha1.Cluster, clusterID string)
 			URL:       spec.AWSIAMLoginIssuerURL,
 			Audiences: []configv1.TokenAudience{configv1.TokenAudience(iamauth.ClusterAudience(clusterID))},
 		},
+		// Several openshift/api fields lack omitempty; leaving them unset would
+		// serialize as null, which the HostedCluster CRD rejects.
+		OIDCClients: []configv1.OIDCClientConfig{},
 		ClaimMappings: configv1.TokenClaimMappings{
 			// The "aws:" prefix keeps IAM identities out of the system: namespace.
-			Username: configv1.UsernameClaimMapping{Expression: "'aws:' + claims.sub"},
+			Username: configv1.UsernameClaimMapping{
+				Claim:        "sub",
+				PrefixPolicy: configv1.Prefix,
+				Prefix:       &configv1.UsernamePrefix{PrefixString: usernamePrefix},
+			},
 			// Groups only ever come from the service-controlled creator match,
 			// never from request or session tags the caller could set.
 			Groups: configv1.PrefixedClaimMapping{TokenClaimMapping: configv1.TokenClaimMapping{
@@ -64,7 +73,7 @@ func awsIAMAuthentication(cluster *hyperfleetv1alpha1.Cluster, clusterID string)
 			UID: &configv1.TokenClaimOrExpressionMapping{Claim: "sub"},
 			// Everyone assuming a role shares one username; record the human for audit.
 			Extra: []configv1.ExtraMapping{{
-				Key:             "rosa.openshift.io/source-identity",
+				Key:             "hyperfleet.io/aws-source-identity",
 				ValueExpression: fmt.Sprintf("has(%[1]s.source_identity) ? %[1]s.source_identity : ''", stsClaims),
 			}},
 		},

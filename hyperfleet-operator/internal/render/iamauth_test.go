@@ -1,6 +1,8 @@
 package render
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -74,8 +76,37 @@ func TestHostedClusterAWSIAMLogin(t *testing.T) {
 		if mappings.Groups.Expression != want {
 			t.Errorf("groups expression = %q, want %q", mappings.Groups.Expression, want)
 		}
-		if mappings.Username.Expression != "'aws:' + claims.sub" {
-			t.Errorf("username expression = %q", mappings.Username.Expression)
+		if mappings.Username.Claim != "sub" || mappings.Username.PrefixPolicy != configv1.Prefix ||
+			mappings.Username.Prefix == nil || mappings.Username.Prefix.PrefixString != "aws:" {
+			t.Errorf("username mapping = %+v, want claim sub with prefix aws:", mappings.Username)
+		}
+	})
+
+	t.Run("When AWS IAM login is enabled it should not serialize nulls the HostedCluster CRD rejects", func(t *testing.T) {
+		// Several openshift/api fields lack omitempty; a nil value becomes null,
+		// which server-side apply rejects against the HostedCluster schema.
+		raw, err := json.Marshal(renderedHostedCluster(t, testClusterWithIAMLogin()).Spec.Configuration.Authentication)
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		var decoded any
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if path := findNull(decoded, "authentication"); path != "" {
+			t.Errorf("%s serializes as null", path)
+		}
+	})
+
+	t.Run("When AWS IAM login is enabled it should not use reserved extra key domains", func(t *testing.T) {
+		provider := renderedHostedCluster(t, testClusterWithIAMLogin()).Spec.Configuration.Authentication.OIDCProviders[0]
+		for _, extra := range provider.ClaimMappings.Extra {
+			domain := strings.SplitN(extra.Key, "/", 2)[0]
+			for _, reserved := range []string{"kubernetes.io", "k8s.io", "openshift.io"} {
+				if domain == reserved || strings.HasSuffix(domain, "."+reserved) {
+					t.Errorf("extra key %q uses reserved domain %q", extra.Key, reserved)
+				}
+			}
 		}
 	})
 
@@ -117,4 +148,25 @@ func TestHostedClusterAWSIAMLogin(t *testing.T) {
 			}
 		})
 	}
+}
+
+// findNull returns the path of the first null value in v, or "" if there is none.
+func findNull(v any, path string) string {
+	switch val := v.(type) {
+	case nil:
+		return path
+	case map[string]any:
+		for k, child := range val {
+			if p := findNull(child, path+"."+k); p != "" {
+				return p
+			}
+		}
+	case []any:
+		for i, child := range val {
+			if p := findNull(child, fmt.Sprintf("%s[%d]", path, i)); p != "" {
+				return p
+			}
+		}
+	}
+	return ""
 }
