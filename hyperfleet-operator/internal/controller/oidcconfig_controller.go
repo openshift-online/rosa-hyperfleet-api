@@ -255,15 +255,16 @@ func (r *OidcConfigReconciler) reconcileUnmanaged(ctx context.Context, oc *hyper
 			r.setReadyCondition(ctx, oc, "SecretStoreFailed", err.Error())
 			return ctrl.Result{}, fmt.Errorf("store private key: %w", err)
 		}
+	}
 
-		// Verify the key is actually readable from Secrets Manager before
-		// proceeding to readiness checks. This prevents a race where the
-		// status is set to Ready before the signing key is confirmed
-		// readable by consumers.
-		if _, err := r.OIDC.ReadPrivateKey(ctx, oc.Spec.AccountID, configID); err != nil {
-			log.Info("Private key stored but not yet readable, requeueing", "config", configID)
-			return ctrl.Result{RequeueAfter: privateKeyReadbackDelay}, nil
-		}
+	// Verify the key is actually readable from Secrets Manager before
+	// proceeding to readiness checks. This runs on every reconcile (not
+	// just after a fresh store) so that retries where PrivateKeyExists
+	// returns true still confirm the secret value is accessible.
+	if _, err := r.OIDC.ReadPrivateKey(ctx, oc.Spec.AccountID, configID); err != nil {
+		log.Info("Private key not yet readable, requeueing", "config", configID)
+		r.setReadyConditionAndPhase(ctx, oc, "SecretReadbackFailed", err.Error(), hyperfleetv1alpha1.OidcConfigPhasePending)
+		return ctrl.Result{RequeueAfter: privateKeyReadbackDelay}, nil
 	}
 
 	return r.checkReadiness(ctx, oc, func(reason, message string) (ctrl.Result, error) {

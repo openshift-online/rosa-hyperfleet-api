@@ -681,7 +681,12 @@ var _ = Describe("OidcConfig Controller", func() {
 
 			var updated hyperfleetv1alpha1.OidcConfig
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-readback-fail"}, &updated)).To(Succeed())
-			Expect(updated.Status.Phase).NotTo(Equal(hyperfleetv1alpha1.OidcConfigPhaseReady))
+			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhasePending))
+
+			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("SecretReadbackFailed"))
 		})
 
 		It("should proceed to checkReadiness when ReadPrivateKey succeeds after StorePrivateKey", func() {
@@ -718,6 +723,99 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-readback-ok"}, &updated)).To(Succeed())
 			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseReady))
 			Expect(updated.Status.Thumbprint).To(Equal("readback-thumb"))
+		})
+
+		It("should requeue when keyExists is true but ReadPrivateKey still fails", func() {
+			oc := &hyperfleetv1alpha1.OidcConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-retry-readback", Namespace: testNS},
+				Spec: hyperfleetv1alpha1.OidcConfigSpec{
+					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
+					IssuerUrl:        "https://customer-oidc.example.com/retry-readback",
+					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
+					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
+					AccountID:        testAccountID,
+				},
+			}
+			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+
+			// PrivateKeyExists returns true (DescribeSecret succeeds) but
+			// ReadPrivateKey (GetSecretValue) fails — the retry path must
+			// still gate on readback, not skip to checkReadiness.
+			infra := &fakeOidcInfra{
+				keyExists:         true,
+				thumbprint:        "thumb",
+				readPrivateKeyErr: fmt.Errorf("AccessDeniedException: not authorized"),
+			}
+			r := newReconciler(infra)
+
+			// Reconcile 1: adds finalizer.
+			// Reconcile 2: key exists so skip copy, ReadPrivateKey fails, requeue.
+			result, err := reconcileN(r, testNS, "unmanaged-retry-readback", 2)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
+
+			Expect(infra.storeCalled).To(Equal(0))
+			Expect(infra.readPrivateKeyCalled).To(Equal(1))
+			Expect(infra.computeThumbprintCalled).To(Equal(0))
+
+			var updated hyperfleetv1alpha1.OidcConfig
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-retry-readback"}, &updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhasePending))
+
+			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("SecretReadbackFailed"))
+		})
+
+		It("should clear Ready and requeue when a previously Ready config has a readback failure", func() {
+			oc := &hyperfleetv1alpha1.OidcConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-ready-revoke", Namespace: testNS},
+				Spec: hyperfleetv1alpha1.OidcConfigSpec{
+					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
+					IssuerUrl:        "https://customer-oidc.example.com/ready-revoke",
+					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
+					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
+					AccountID:        testAccountID,
+				},
+			}
+			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+
+			infra := &fakeOidcInfra{
+				crossAccountKey: generateTestRSAKeyPEM(),
+				thumbprint:      "thumb",
+			}
+			r := newReconciler(infra)
+
+			// Reach Ready state: reconcile 1 adds finalizer, reconcile 2 copies key and sets Ready.
+			_, err := reconcileN(r, testNS, "unmanaged-ready-revoke", 2)
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated hyperfleetv1alpha1.OidcConfig
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-ready-revoke"}, &updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseReady))
+
+			readyCond := meta.FindStatusCondition(updated.Status.Conditions, "Ready")
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
+
+			// Simulate: secret becomes unreadable on next reconcile.
+			infra.keyExists = true
+			infra.readPrivateKeyErr = fmt.Errorf("ResourceNotFoundException: secret deleted")
+
+			result, err := r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: testNS, Name: "unmanaged-ready-revoke"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
+
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-ready-revoke"}, &updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhasePending))
+
+			readyCond = meta.FindStatusCondition(updated.Status.Conditions, "Ready")
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Reason).To(Equal("SecretReadbackFailed"))
 		})
 
 		It("should return error when checking private key existence fails", func() {
