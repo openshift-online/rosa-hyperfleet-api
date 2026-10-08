@@ -263,53 +263,6 @@ func TestClusterResourcesClearsStaleServiceAccountSigningKey(t *testing.T) {
 	}
 }
 
-func TestExtractUUIDFromIssuerURL(t *testing.T) {
-	tests := []struct {
-		name string
-		url  string
-		want string
-	}{
-		{
-			name: "full UUID in CloudFront URL",
-			url:  "https://d2nd8tiva4zh6j.cloudfront.net/21305398-14aa-4003-96a3-f3b860e04a1c",
-			want: "21305398-14aa-4003-96a3-f3b860e04a1c",
-		},
-		{
-			name: "UUID with trailing slash",
-			url:  "https://oidc.example.com/abc12345-1234-5678-90ab-cdef12345678/",
-			want: "abc12345-1234-5678-90ab-cdef12345678",
-		},
-		{
-			name: "short UUID-like string",
-			url:  "https://oidc.example.com/abc12345",
-			want: "",
-		},
-		{
-			name: "no UUID in path",
-			url:  "https://example.com/some-path",
-			want: "",
-		},
-		{
-			name: "empty string",
-			url:  "",
-			want: "",
-		},
-		{
-			name: "path with no hyphens",
-			url:  "https://example.com/nohyphens",
-			want: "",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := extractUUIDFromIssuerURL(tt.url)
-			if got != tt.want {
-				t.Errorf("extractUUIDFromIssuerURL(%q) = %q, want %q", tt.url, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestHostedClusterDNS(t *testing.T) {
 	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "")
 	if err != nil {
@@ -343,10 +296,46 @@ func TestHostedClusterDNS(t *testing.T) {
 		t.Errorf("release.image = %q, want %q", got, "quay.io/ocp:4.17")
 	}
 
-	// When using a pre-created OIDC config, InfraID should match the UUID from issuerURL
-	// instead of the cluster ID, so HyperShift uploads to the correct S3 path.
+	// testCluster() has no OidcConfigID, so InfraID defaults to clusterID.
 	if got := hc.Spec.InfraID; got != "abc12345" {
-		t.Errorf("infraID = %q, want %q (extracted from issuerURL)", got, "abc12345")
+		t.Errorf("infraID = %q, want %q (clusterID)", got, "abc12345")
+	}
+}
+
+// TestHostedClusterInfraIDManagedOidcConfig verifies InfraID is derived from issuerURL's trailing
+// path segment for a managed OidcConfig, since that's the S3 key HyperShift uploads OIDC
+// discovery docs to.
+func TestHostedClusterInfraIDManagedOidcConfig(t *testing.T) {
+	cluster := testClusterWithOidcConfig()
+	cluster.Spec.HostedCluster.IssuerURL = "https://oidc.example.com/2130539814aa400396a3f3b860e04a1c"
+
+	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "")
+	if err != nil {
+		t.Fatalf("ClusterResources: %v", err)
+	}
+	hc := hostedClusterFrom(t, resources)
+
+	want := "2130539814aa400396a3f3b860e04a1c"
+	if got := hc.Spec.InfraID; got != want {
+		t.Errorf("infraID = %q, want %q", got, want)
+	}
+}
+
+// TestHostedClusterInfraIDUnmanagedOidcConfig verifies InfraID stays clusterID for an unmanaged
+// OidcConfig, regardless of the customer-supplied issuerURL's shape.
+func TestHostedClusterInfraIDUnmanagedOidcConfig(t *testing.T) {
+	cluster := testClusterWithOidcConfig()
+	cluster.Spec.HostedCluster.IssuerURL = "https://customer-idp.example.com/some/arbitrary/path"
+
+	resources, err := ClusterResources(cluster, true, "f7a3.0.example.com", "")
+	if err != nil {
+		t.Fatalf("ClusterResources: %v", err)
+	}
+	hc := hostedClusterFrom(t, resources)
+
+	const clusterID = "abc12345" // from namespace "cluster-abc12345"
+	if got := hc.Spec.InfraID; got != clusterID {
+		t.Errorf("infraID = %q, want %q", got, clusterID)
 	}
 }
 
