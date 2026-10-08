@@ -48,6 +48,10 @@ const (
 
 	// issuerURLConflictRequeueInterval is the recheck interval for a config parked on IssuerURLConflict.
 	issuerURLConflictRequeueInterval = 5 * time.Minute
+
+	// privateKeyReadbackDelay is the requeue interval when a newly stored
+	// private key is not yet readable from Secrets Manager.
+	privateKeyReadbackDelay = 5 * time.Second
 )
 
 // OidcConfigReconciler reconciles OidcConfig objects
@@ -250,6 +254,15 @@ func (r *OidcConfigReconciler) reconcileUnmanaged(ctx context.Context, oc *hyper
 		if err := r.OIDC.StorePrivateKey(ctx, oc.Spec.AccountID, configID, keyData); err != nil {
 			r.setReadyCondition(ctx, oc, "SecretStoreFailed", err.Error())
 			return ctrl.Result{}, fmt.Errorf("store private key: %w", err)
+		}
+
+		// Verify the key is actually readable from Secrets Manager before
+		// proceeding to readiness checks. This prevents a race where the
+		// status is set to Ready before the signing key is confirmed
+		// readable by consumers.
+		if _, err := r.OIDC.ReadPrivateKey(ctx, oc.Spec.AccountID, configID); err != nil {
+			log.Info("Private key stored but not yet readable, requeueing", "config", configID)
+			return ctrl.Result{RequeueAfter: privateKeyReadbackDelay}, nil
 		}
 	}
 

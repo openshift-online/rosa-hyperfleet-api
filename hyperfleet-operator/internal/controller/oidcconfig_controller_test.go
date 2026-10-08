@@ -24,6 +24,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -48,15 +49,18 @@ type fakeOidcInfra struct {
 
 	storeErr             error
 	existsErr            error
+	readPrivateKeyErr    error
 	readCrossAccountErr  error
 	deleteKeyErr         error
 	computeThumbprintErr error
 
-	keyExists       bool
-	crossAccountKey []byte
+	keyExists          bool
+	crossAccountKey    []byte
+	readPrivateKeyData []byte
 
 	storeCalled             int
 	existsCalled            int
+	readPrivateKeyCalled    int
 	readCalled              int
 	deleteKeyCalled         int
 	computeThumbprintCalled int
@@ -80,6 +84,17 @@ func (f *fakeOidcInfra) PrivateKeyExists(_ context.Context, accountID, _ string)
 	f.existsCalled++
 	f.lastAccountID = accountID
 	return f.keyExists, f.existsErr
+}
+
+func (f *fakeOidcInfra) ReadPrivateKey(_ context.Context, accountID, _ string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.readPrivateKeyCalled++
+	f.lastAccountID = accountID
+	if f.readPrivateKeyErr != nil {
+		return nil, f.readPrivateKeyErr
+	}
+	return f.readPrivateKeyData, nil
 }
 
 func (f *fakeOidcInfra) ReadCrossAccountSecret(_ context.Context, _, _ string) ([]byte, error) {
@@ -632,6 +647,77 @@ var _ = Describe("OidcConfig Controller", func() {
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal("CrossAccountReadFailed"))
+		})
+
+		It("should requeue without setting Ready when ReadPrivateKey fails after StorePrivateKey", func() {
+			oc := &hyperfleetv1alpha1.OidcConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-readback-fail", Namespace: testNS},
+				Spec: hyperfleetv1alpha1.OidcConfigSpec{
+					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
+					IssuerUrl:        "https://customer-oidc.example.com/readback-fail",
+					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
+					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
+					AccountID:        testAccountID,
+				},
+			}
+			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+
+			infra := &fakeOidcInfra{
+				crossAccountKey:   generateTestRSAKeyPEM(),
+				thumbprint:        "thumb",
+				readPrivateKeyErr: fmt.Errorf("ResourceNotFoundException: secret not found"),
+			}
+			r := newReconciler(infra)
+
+			// Reconcile 1: adds finalizer.
+			// Reconcile 2: copies key, ReadPrivateKey fails, requeue.
+			result, err := reconcileN(r, testNS, "unmanaged-readback-fail", 2)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
+
+			Expect(infra.storeCalled).To(Equal(1))
+			Expect(infra.readPrivateKeyCalled).To(Equal(1))
+			Expect(infra.computeThumbprintCalled).To(Equal(0))
+
+			var updated hyperfleetv1alpha1.OidcConfig
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-readback-fail"}, &updated)).To(Succeed())
+			Expect(updated.Status.Phase).NotTo(Equal(hyperfleetv1alpha1.OidcConfigPhaseReady))
+		})
+
+		It("should proceed to checkReadiness when ReadPrivateKey succeeds after StorePrivateKey", func() {
+			oc := &hyperfleetv1alpha1.OidcConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "unmanaged-readback-ok", Namespace: testNS},
+				Spec: hyperfleetv1alpha1.OidcConfigSpec{
+					Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
+					IssuerUrl:        "https://customer-oidc.example.com/readback-ok",
+					SecretArn:        "arn:aws:secretsmanager:us-east-1:123456789012:secret:key",
+					InstallerRoleArn: "arn:aws:iam::123456789012:role/installer",
+					AccountID:        testAccountID,
+				},
+			}
+			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+
+			infra := &fakeOidcInfra{
+				crossAccountKey:    generateTestRSAKeyPEM(),
+				thumbprint:         "readback-thumb",
+				readPrivateKeyData: generateTestRSAKeyPEM(),
+			}
+			r := newReconciler(infra)
+
+			// Reconcile 1: adds finalizer.
+			// Reconcile 2: copies key, ReadPrivateKey succeeds, checkReadiness sets Ready.
+			result, err := reconcileN(r, testNS, "unmanaged-readback-ok", 2)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(thumbprintRefreshDelay))
+
+			Expect(infra.storeCalled).To(Equal(1))
+			Expect(infra.readPrivateKeyCalled).To(Equal(1))
+			Expect(infra.computeThumbprintCalled).To(Equal(1))
+
+			var updated hyperfleetv1alpha1.OidcConfig
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: "unmanaged-readback-ok"}, &updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(hyperfleetv1alpha1.OidcConfigPhaseReady))
+			Expect(updated.Status.Thumbprint).To(Equal("readback-thumb"))
 		})
 
 		It("should return error when checking private key existence fails", func() {
