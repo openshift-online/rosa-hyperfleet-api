@@ -32,8 +32,12 @@ func (c *FakeV1alpha1Public) Clusters() public.ClusterInterface {
 	return newFakeClusters(c)
 }
 
-func (c *FakeV1alpha1Public) NodePools(namespace string) public.NodePoolInterface {
-	return newFakeNodePools(c, namespace)
+func (c *FakeV1alpha1Public) DNSReservations() public.DNSReservationInterface {
+	return newFakeDNSReservations(c)
+}
+
+func (c *FakeV1alpha1Public) NodePools() public.NodePoolInterface {
+	return newFakeNodePools(c)
 }
 
 func (c *FakeV1alpha1Public) OidcConfigs() public.OidcConfigInterface {

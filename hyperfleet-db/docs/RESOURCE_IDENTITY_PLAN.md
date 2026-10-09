@@ -1,12 +1,14 @@
 # HyperFleet Resource Identity and Lifecycle Plan
 
-**Status:** Proposed target and implementation roadmap  
+**Status:** Active target and implementation roadmap
 **Scope:** `hyperfleet-db`, `platform-api`, `hyperfleet-operator`, `api`, and `clientset`
 
 This plan brings every component that writes or reconciles HyperFleet resources into
 one identity and ownership model. It records the target contract, the current
 implementation baseline, the changes needed in dependency order, and the tests that
-demonstrate the target behavior.
+demonstrate the target behavior. It is kept with hyperfleet-db because PR 1 established
+the database primitives that later identity phases rely on; PR 2 is coordinated across
+the API, operator, and clientset as well as FleetDB.
 
 ## 1. Target contract
 
@@ -17,9 +19,9 @@ demonstrate the target behavior.
    use operator-controlled namespaces; internal namespaces used for `Index` claims
    are operator-only.
 2. **Name identifies the human-facing resource.** The client chooses it and it is
-   immutable. A Cluster name is one DNS label of at most 18 characters. A child name
-   is `<cluster>.<child>`; the child part is a DNS label of at most 63 characters.
-   The API validates the full name but does not rewrite it.
+   immutable. A Cluster name is one DNS label of at most 63 characters. A child name
+   is `<cluster>.<child>`; each part is a DNS label of at most 63 characters. The API
+   validates the full name but does not rewrite it.
 3. **UID identifies the object incarnation.** FleetDB mints the UID. Clients cannot
    choose or change it. Delete and recreate at the same name produces a new UID.
 4. **References identify UIDs.** When a name is used as a lookup hint, compare the
@@ -58,6 +60,14 @@ claim, not an internal mirror that can be deleted from the product flow:
   `Index` whose `owner-uid` is the DNSReservation UID. The reservation exposes the
   resulting base domain in status. Customers can use it to prepare shared VPC or
   other DNS-dependent configuration before Cluster creation.
+- `status.phase` is `Pending` while allocation or recovery is in progress, and
+  `Ready` only after an Index owned by the reservation UID exists and
+  `status.baseDomain` is assigned. Prefix collisions are retried. If the bounded
+  candidate attempts are exhausted, the phase stays `Pending`, `baseDomain` stays
+  empty, and a `Ready=False` condition reports the allocation failure; the
+  reservation cannot be claimed. Transient database and status-write failures are
+  retried without turning into a terminal resource state. A later successful
+  allocation clears the condition and transitions the reservation to `Ready`.
 - The DNS Index holder is the DNSReservation UID, not the Cluster UID: the claim
   exists before a Cluster does, and its holder remains stable when the reservation
   is claimed. `claimed-by-cluster-uid` records which Cluster currently consumes it.
@@ -118,29 +128,33 @@ verification gates in §§6–7.
 
 ## 4. Decisions to settle before the identity switch
 
-These are implementation prerequisites, not reasons to add database constraints:
+These choices are settled for the PR 2 identity switch. They are recorded here to
+keep the cross-component implementation aligned, not as reasons to add database
+constraints:
 
-- **OidcConfig identity:** OidcConfig names are currently generated. Specify whether
-  clients choose them under the target rule. Keep any client-facing config name as an
-  API lookup value, but persist and compare the OidcConfig UID for machine references.
-- **OIDC claim ordering:** the platform currently claims an OidcConfig before creating
-  a Cluster, using an application-generated Cluster ID. In the target, the Cluster
-  UID is known only after FleetDB Create. Specify a post-create UID claim, rollback
-  on claim conflict, and a gate that prevents the operator from provisioning before
-  the claim is confirmed.
-- **Managed issuer URL:** managed issuer URLs currently include a generated config
-  ID. Decide how that path remains stable when the database UID is the machine ID
-  and is returned only after Create.
-- **Stored references:** audit `Cluster.Spec.OidcConfigID`,
-  `Cluster.Status.PlacementRef`, `Placement.Spec.ClusterName`, and
-  `OidcConfig.Spec.IndexRef`. Store/compare UIDs for machine identity; retain names
-  only as client-facing fields or lookup hints. The issuer Index can be recomputed
-  from the normalized issuer URL if retaining `IndexRef` is unnecessary.
-- **DNS pre-reservation API:** define the public DNSReservation create/get/list/delete
-  contract, its requested fields, the Ready response shape, and whether an unclaimed
-  reservation expires automatically or stays reserved until explicit deletion.
-  Cluster creation must accept a reservation lookup value, resolve it to a UID, and
-  persist that UID as the Cluster's internal reference.
+- **OidcConfig identity:** clients choose `metadata.name`; FleetDB UID is the machine
+  identity. Cluster references and claim ownership use the UID, while the name remains
+  the API lookup value.
+- **OIDC claim ordering:** create the Cluster first, then claim the OidcConfig using
+  the FleetDB-minted Cluster UID. Roll back the Cluster on claim conflict, and gate
+  operator provisioning until the claim is confirmed.
+- **Managed issuer URL:** retain a separate server-generated issuer path identifier.
+  It is independent of both the client-selected OidcConfig name and the FleetDB UID,
+  preserving the managed issuer URL path without substituting object identity.
+- **Stored references:** `Cluster.Spec.OidcConfigID` and
+  `Cluster.Spec.DNSReservationID` store UIDs. Placement names and
+  `Placement.Spec.ClusterName` remain lookup/display hints; ownerReferences and
+  `cluster-uid` labels carry machine ownership. Remove `IndexRef` from both
+  DNSReservation and OidcConfig: DNS Indexes are recovered and cleaned up by
+  `owner-uid`, while an OIDC Index name is recomputed from the normalized issuer URL
+  and ownership is checked by OidcConfig UID.
+- **DNS pre-reservation API:** customers create/get/list/delete reservations by
+  `metadata.name`; create needs no customer-selected spec fields. The operator uses
+  the regional default DNS zone and shard `0` and reports the assigned domain in
+  status. Unclaimed reservations stay reserved until explicit deletion. Cluster
+  create may bind a pre-created reservation by UID; when omitted, the Cluster
+  reconciler creates and claims a DNSReservation automatically and stores its UID on
+  the Cluster, preserving the legacy on-demand allocation flow.
 - **DNS reservation identity and claim:** Cluster references the reservation by UID;
   the reservation's Index uses `owner-uid=<DNSReservation UID>`, and the mutable
   reservation claim uses `claimed-by-cluster-uid=<Cluster UID>`. On Cluster deletion,
@@ -222,7 +236,8 @@ This phase is coordinated across `api`, `platform-api`, `hyperfleet-operator`, a
   database's duplicate-name error to 409.
 - Validate Cluster and child names. Child create parses `<cluster>.<child>`, fetches
   the Cluster by account namespace/name, rejects a deleting parent, and sets the
-  ownerReference and `cluster-uid` label from that fetched Cluster UID.
+  ownerReference and `cluster-uid` label from that fetched Cluster UID. The Cluster
+  name prefix is the parent lookup hint; NodePool has no `spec.clusterId` field.
 - Cluster create accepts a DNSReservation lookup value, resolves it to the
   reservation UID, creates the Cluster, then claims the reservation using the new
   Cluster UID. On claim conflict, roll back/mark the new Cluster and return a
@@ -275,18 +290,20 @@ This phase is coordinated across `api`, `platform-api`, `hyperfleet-operator`, a
 - Render the child part of the NodePool name on the management cluster.
 - Use `owner-uid=<OidcConfig UID>` on the issuer Index and
   `claimed-by-cluster-uid=<Cluster UID>` for the Cluster's OidcConfig claim.
-- Keep DNSReservation in the scheme and CRD output; update its type from the
-  operator-created mirror to the customer-facing claim resource. Remove obsolete
-  `IndexRef` name references if the reservation can derive its Index key from its
-  assigned prefix and shard data.
+- Keep DNSReservation in the scheme and CRD output as the customer-facing claim
+  resource. Neither DNSReservation nor OidcConfig stores `IndexRef`: DNS Indexes are
+  recovered by `owner-uid`, and the OIDC Index key is deterministic from the
+  normalized issuer URL.
 
 **Clientset**
 
 - Keep `X-Amz-Account-Id` sourced from client configuration/authentication; do not
   derive it from the namespace path. Continue stripping generated namespace URL
   segments if required by the flat platform routes.
-- Remove `adaptNodePoolScope`. NodePool scope is now the account namespace; add an
-  explicit Cluster UID list option rather than deriving `clusterId` from namespace.
+- Remove `adaptNodePoolScope`. Expose NodePool as non-namespaced in the typed SDK so
+  callers use `NodePools()` without supplying an account namespace; the platform still
+  stores the CRD in `account-<accountID>`. Add an explicit Cluster UID list option
+  rather than deriving `clusterId` from namespace.
 - Add clientset operations for customer DNSReservation create/get/list/delete and a
   waiter for the assigned base domain.
 - Change resource routes and updates to use names. Keep the Cluster UID as object

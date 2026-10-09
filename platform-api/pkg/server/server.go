@@ -45,6 +45,7 @@ func New(cfg *config.Config, dbClient *hyperfleetdb.Client, logger *slog.Logger)
 	clusterHandler := apphandlers.NewClusterHandler(dbClient, cfg.Regional.OIDCIssuerBaseURL, cfg.Regional.DefaultClusterExpiration, logger)
 	nodePoolHandler := apphandlers.NewNodePoolHandler(dbClient, logger)
 	oidcConfigHandler := apphandlers.NewOidcConfigHandler(dbClient, cfg.Regional.OIDCIssuerBaseURL, cfg.Regional.AWSRegion, logger)
+	dnsReservationHandler := apphandlers.NewDNSReservationHandler(dbClient, logger)
 
 	// Create legacy authorization middleware (for non-authz routes)
 	authMiddleware := middleware.NewAuthorization(cfg.AllowedAccounts, logger)
@@ -245,6 +246,19 @@ func New(cfg *config.Config, dbClient *hyperfleetdb.Client, logger *slog.Logger)
 	oidcConfigRouter.HandleFunc("", oidcConfigHandler.Create).Methods(http.MethodPost)
 	oidcConfigRouter.HandleFunc("/{id}", oidcConfigHandler.Get).Methods(http.MethodGet)
 	oidcConfigRouter.HandleFunc("/{id}", oidcConfigHandler.Delete).Methods(http.MethodDelete)
+
+	// DNSReservation routes (user-facing, require authz)
+	dnsReservationRouter := apiRouter.PathPrefix("/api/v0/dns_reservations").Subrouter()
+	if authzMiddleware != nil {
+		dnsReservationRouter.Use(privilegedMiddleware.CheckPrivileged)
+		dnsReservationRouter.Use(authzMiddleware.Authorize)
+	} else {
+		dnsReservationRouter.Use(authMiddleware.RequireAllowedAccount)
+	}
+	dnsReservationRouter.HandleFunc("", dnsReservationHandler.List).Methods(http.MethodGet)
+	dnsReservationRouter.HandleFunc("", dnsReservationHandler.Create).Methods(http.MethodPost)
+	dnsReservationRouter.HandleFunc("/{id}", dnsReservationHandler.Get).Methods(http.MethodGet)
+	dnsReservationRouter.HandleFunc("/{id}", dnsReservationHandler.Delete).Methods(http.MethodDelete)
 
 	// Health and info routes on API server (no auth required)
 	apiRouter.HandleFunc("/api/v0/live", healthHandler.Liveness).Methods(http.MethodGet)

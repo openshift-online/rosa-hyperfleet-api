@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -17,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func newExpiredTestCluster(name string) *hyperfleetv1alpha1.Cluster {
@@ -80,9 +82,17 @@ func clearFinalizersAndDelete() {
 			_ = c.Delete(ctx, &oidcConfigs.Items[i])
 		}
 	}
+	var placements hyperfleetv1alpha1.PlacementList
+	if err := c.List(ctx, &placements); err == nil {
+		for i := range placements.Items {
+			_ = c.Delete(ctx, &placements.Items[i])
+		}
+	}
 	var dnsReservations hyperfleetv1alpha1.DNSReservationList
 	if err := c.List(ctx, &dnsReservations); err == nil {
 		for i := range dnsReservations.Items {
+			dnsReservations.Items[i].SetFinalizers(nil)
+			_ = c.Update(ctx, &dnsReservations.Items[i])
 			_ = c.Delete(ctx, &dnsReservations.Items[i])
 		}
 	}
@@ -159,7 +169,62 @@ func waitForResourcesGone() (int, error) {
 	}
 	total += len(ml.Items)
 
+	for _, cleanup := range []func(context.Context, client.Client) (int, error){
+		cleanupTestPlacements,
+		cleanupTestDNSReservations,
+		cleanupTestIndexes,
+	} {
+		count, err := cleanup(opCtx, c)
+		if err != nil {
+			return 0, err
+		}
+		total += count
+	}
+
 	return total, nil
+}
+
+func cleanupTestPlacements(ctx context.Context, c client.Client) (int, error) {
+	var placements hyperfleetv1alpha1.PlacementList
+	if err := c.List(ctx, &placements); err != nil {
+		return 0, err
+	}
+	for i := range placements.Items {
+		if err := c.Delete(ctx, &placements.Items[i]); err != nil && !apierrors.IsNotFound(err) {
+			return 0, err
+		}
+	}
+	return len(placements.Items), nil
+}
+
+func cleanupTestDNSReservations(ctx context.Context, c client.Client) (int, error) {
+	var reservations hyperfleetv1alpha1.DNSReservationList
+	if err := c.List(ctx, &reservations); err != nil {
+		return 0, err
+	}
+	for i := range reservations.Items {
+		reservations.Items[i].SetFinalizers(nil)
+		if err := c.Update(ctx, &reservations.Items[i]); err != nil {
+			return 0, err
+		}
+		if err := c.Delete(ctx, &reservations.Items[i]); err != nil && !apierrors.IsNotFound(err) {
+			return 0, err
+		}
+	}
+	return len(reservations.Items), nil
+}
+
+func cleanupTestIndexes(ctx context.Context, c client.Client) (int, error) {
+	var indexes hyperfleetv1alpha1.IndexList
+	if err := c.List(ctx, &indexes); err != nil {
+		return 0, err
+	}
+	for i := range indexes.Items {
+		if err := c.Delete(ctx, &indexes.Items[i]); err != nil && !apierrors.IsNotFound(err) {
+			return 0, err
+		}
+	}
+	return len(indexes.Items), nil
 }
 
 func scanTable(tableName string) []map[string]dynamodbtypes.AttributeValue {
@@ -223,7 +288,11 @@ func mustParseCIDR(s string) ipnet.IPNet {
 
 func newTestCluster(name string) *hyperfleetv1alpha1.Cluster {
 	return &hyperfleetv1alpha1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "cluster-e2e-cluster-id"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "account-111222333444",
+			Labels:    map[string]string{"hyperfleet.io/account-id": "111222333444"},
+		},
 		Spec: hyperfleetv1alpha1.ClusterSpec{
 			AccountID:  "111222333444",
 			CreatorARN: "arn:aws:iam::111222333444:user/e2etester",
@@ -289,14 +358,72 @@ func newTestCluster(name string) *hyperfleetv1alpha1.Cluster {
 	}
 }
 
+// createTestClusterWithReservation simulates the customer-first DNS workflow:
+// create and await a reservation, create the Cluster with its UID, then bind the
+// ready reservation to the new Cluster UID.
+func createTestClusterWithReservation(cluster *hyperfleetv1alpha1.Cluster) error {
+	accountID := cluster.Spec.AccountID
+	if accountID == "" {
+		return fmt.Errorf("test Cluster %s has no account ID", cluster.Name)
+	}
+	cluster.Namespace = "account-" + accountID
+	if cluster.Labels == nil {
+		cluster.Labels = make(map[string]string)
+	}
+	cluster.Labels["hyperfleet.io/account-id"] = accountID
+
+	reservation := &hyperfleetv1alpha1.DNSReservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dns-" + cluster.Name,
+			Namespace: cluster.Namespace,
+			Labels:    map[string]string{"hyperfleet.io/account-id": accountID},
+		},
+	}
+	if err := k8sClient.Create(ctx, reservation); err != nil {
+		return err
+	}
+	Eventually(func(g Gomega) {
+		var latest hyperfleetv1alpha1.DNSReservation
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(reservation), &latest)).To(Succeed())
+		g.Expect(latest.Status.Phase).To(Equal(hyperfleetv1alpha1.DNSReservationPhaseReady))
+		g.Expect(latest.Status.BaseDomain).NotTo(BeEmpty())
+		*reservation = latest
+	}).Should(Succeed())
+
+	cluster.Spec.DNSReservationID = string(reservation.UID)
+	if err := k8sClient.Create(ctx, cluster); err != nil {
+		return err
+	}
+	reservation.Labels["hyperfleet.io/claimed-by-cluster-uid"] = string(cluster.UID)
+	if err := k8sClient.Update(ctx, reservation); err != nil {
+		return err
+	}
+
+	if cluster.Spec.OidcConfigID != "" {
+		var configs hyperfleetv1alpha1.OidcConfigList
+		if err := k8sClient.List(ctx, &configs, client.InNamespace(cluster.Namespace)); err != nil {
+			return err
+		}
+		for i := range configs.Items {
+			config := &configs.Items[i]
+			if string(config.UID) != cluster.Spec.OidcConfigID {
+				continue
+			}
+			if config.Labels == nil {
+				config.Labels = make(map[string]string)
+			}
+			config.Labels["hyperfleet.io/claimed-by-cluster-uid"] = string(cluster.UID)
+			return k8sClient.Update(ctx, config)
+		}
+		return fmt.Errorf("test OidcConfig UID %s not found in %s", cluster.Spec.OidcConfigID, cluster.Namespace)
+	}
+	return nil
+}
+
 // newTestClusterWithOidcConfig returns a cluster fixture using the
 // OidcConfig-backed issuer path (OidcConfigID set).
 func newTestClusterWithOidcConfig(name string) *hyperfleetv1alpha1.Cluster {
-	cluster := newTestCluster(name)
-	cluster.Spec.OidcConfigID = "e2e-oidc-config"
-	cluster.Spec.AccountID = "e2e-account"
-	cluster.Labels = map[string]string{"hyperfleet.io/account-id": "e2e-account"}
-	return cluster
+	return newTestCluster(name)
 }
 
 // newTestOidcConfig returns an unmanaged OidcConfig fixture matching the
@@ -304,23 +431,23 @@ func newTestClusterWithOidcConfig(name string) *hyperfleetv1alpha1.Cluster {
 // operator's ClusterReconciler resolves oidcSigningKeyExternal=true for it.
 func newTestOidcConfig() *hyperfleetv1alpha1.OidcConfig {
 	return &hyperfleetv1alpha1.OidcConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "e2e-oidc-config", Namespace: "account-e2e-account"},
+		ObjectMeta: metav1.ObjectMeta{Name: "e2e-oidc-config", Namespace: "account-111222333444"},
 		Spec: hyperfleetv1alpha1.OidcConfigSpec{
 			Type:             hyperfleetv1alpha1.OidcConfigTypeUnmanaged,
 			IssuerUrl:        "https://oidc.e2e.example.com/e2e-oidc-config",
 			SecretArn:        "arn:aws:secretsmanager:us-east-1:111222333444:secret:e2e-test",
 			InstallerRoleArn: "arn:aws:iam::111222333444:role/installer",
-			AccountID:        "e2e-account",
+			AccountID:        "111222333444",
 		},
 	}
 }
 
-func newTestNodePool() *hyperfleetv1alpha1.NodePool {
-	return &hyperfleetv1alpha1.NodePool{
-		ObjectMeta: metav1.ObjectMeta{Name: "e2e-nodepool", Namespace: "cluster-e2e-cluster-id"},
+func newTestNodePool(cluster *hyperfleetv1alpha1.Cluster) *hyperfleetv1alpha1.NodePool {
+	nodePool := &hyperfleetv1alpha1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: cluster.Name + ".e2e-nodepool", Namespace: cluster.Namespace},
 		Spec: hyperfleetv1alpha1.NodePoolSpec{
 			NodePool: hyperfleetv1alpha1.NodePoolSpecPassthrough{
-				ClusterName: "e2e-test-01",
+				ClusterName: cluster.Name,
 				Replicas:    ptr.To(int32(3)),
 				Management: hypershiftv1beta1.NodePoolManagement{
 					AutoRepair:  true,
@@ -344,6 +471,9 @@ func newTestNodePool() *hyperfleetv1alpha1.NodePool {
 			},
 		},
 	}
+	nodePool.Labels = map[string]string{"hyperfleet.io/cluster-uid": string(cluster.UID)}
+	nodePool.OwnerReferences = []metav1.OwnerReference{*metav1.NewControllerRef(cluster, hyperfleetv1alpha1.GroupVersion.WithKind("Cluster"))}
+	return nodePool
 }
 
 func newTestManifest(name string) *hyperfleetv1alpha1.Manifest {

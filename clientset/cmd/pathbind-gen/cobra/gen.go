@@ -85,7 +85,6 @@ func Run(draftPath, overridesPath, outputDir string) error {
 			RequiredCreateFlagFields: reqCreate,
 			RequiredUpdateFlagFields: reqUpdate,
 			HasUpdateFields:          len(updateFlagFields) > 0,
-			Namespaced:               pkg.IsNamespacedResource(resKey),
 			UnsetPtrFields:           unsetPtrFields,
 		}
 
@@ -204,24 +203,12 @@ func buildFuncMap() template.FuncMap {
 			)
 		},
 		"createSDKCall": func(td pkg.CobraTemplateData) string {
-			if td.Namespaced {
-				return fmt.Sprintf(
-					"created, err := r.HyperFleetClient.HyperfleetV1alpha1().%ss(namespace).Create(ctx, obj, platform.CreateOptions{})",
-					td.ResourceName,
-				)
-			}
 			return fmt.Sprintf(
 				"created, err := r.HyperFleetClient.HyperfleetV1alpha1().%ss().Create(ctx, obj, platform.CreateOptions{})",
 				td.ResourceName,
 			)
 		},
 		"updateSDKCall": func(td pkg.CobraTemplateData) string {
-			if td.Namespaced {
-				return fmt.Sprintf(
-					"updated, err := r.HyperFleetClient.HyperfleetV1alpha1().%ss(namespace).Update(ctx, obj, platform.UpdateOptions{})",
-					td.ResourceName,
-				)
-			}
 			return fmt.Sprintf(
 				"updated, err := r.HyperFleetClient.HyperfleetV1alpha1().%ss().Update(ctx, obj, platform.UpdateOptions{})",
 				td.ResourceName,

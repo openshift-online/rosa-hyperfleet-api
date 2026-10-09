@@ -39,8 +39,9 @@ spec:
           description: |-
             Cluster is the Schema for the clusters API.
             It represents a ROSA HCP cluster whose lifecycle is managed by the hyperfleet-operator.
-            metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
-            The owning account is the label hyperfleet.io/account-id.
+            metadata.Name is a client-chosen DNS label of at most 63 characters;
+            metadata.Namespace is account-<accountID>. The owning account is recorded in
+            the hyperfleet.io/account-id label.
           properties:
             apiVersion:
               description: |-
@@ -62,8 +63,8 @@ spec:
             spec:
               description: |-
                 ClusterSpec defines the desired state of a ROSA HCP cluster.
-                metadata.Name is the human-readable cluster name; metadata.Namespace is the cluster UUID.
-                The owning AWS account is stored as the label hyperfleet.io/account-id.
+                metadata.Name is the client-chosen account-scoped name; metadata.Namespace
+                is account-<accountID>.
               properties:
                 accountId:
                   description: AccountID is the AWS account that owns this cluster.
@@ -147,9 +148,11 @@ spec:
                 deleteProtection:
                   description: DeleteProtection prevents accidental deletion when enabled.
                   type: boolean
-                displayName:
-                  description: DisplayName is a human-readable name for the cluster.
-                  maxLength: 256
+                dnsReservationId:
+                  description: |-
+                    DNSReservationID is the UID of an account-scoped DNSReservation to bind to
+                    this Cluster. If omitted, the operator allocates and binds one automatically.
+                    Immutable after creation.
                   type: string
                 expirationTimestamp:
                   description: ExpirationTimestamp marks when this cluster should be automatically deleted.
@@ -6979,8 +6982,8 @@ spec:
                   type: string
                 oidcConfigId:
                   description: |-
-                    OidcConfigID selects the OidcConfig-backed issuer flow when set, or the
-                    legacy auto-generated issuer flow when empty. Immutable after creation.
+                    OidcConfigID is the UID of the account-scoped OidcConfig to use for cluster
+                    identity. Empty selects the legacy managed issuer flow. Immutable after creation.
                   type: string
                 properties:
                   additionalProperties:
@@ -7134,6 +7137,9 @@ spec:
           required:
             - spec
           type: object
+          x-kubernetes-validations:
+            - message: metadata.name must be a DNS label of at most 63 characters
+              rule: size(self.metadata.name) <= 63 && self.metadata.name.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
       served: true
       storage: true
       subresources:

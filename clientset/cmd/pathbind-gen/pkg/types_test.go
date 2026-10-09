@@ -145,9 +145,6 @@ func TestCategorizeAndCollectUnsetPtrFields(t *testing.T) {
 }
 
 func TestNameAndTypeHelpers(t *testing.T) {
-	if !IsNamespacedResource("NodePool") || IsNamespacedResource("cluster") {
-		t.Fatal("unexpected namespaced resource classification")
-	}
 	if got := ToSnake("AWSRolesRefIngressARN"); got != "aws_roles_ref_ingress_arn" {
 		t.Errorf("ToSnake = %q", got)
 	}

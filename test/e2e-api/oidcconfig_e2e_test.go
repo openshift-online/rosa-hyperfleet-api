@@ -40,10 +40,11 @@ func apiErrorCode(body []byte) string {
 
 var _ = Describe("OIDC Config", Ordered, Label("oidcconfig"), func() {
 	var (
-		baseURL         string
-		accountID       string
-		apiClient       *APIClient
-		createdConfigID string
+		baseURL           string
+		accountID         string
+		apiClient         *APIClient
+		createdConfigID   string
+		createdConfigName string
 	)
 
 	BeforeAll(func() {
@@ -64,6 +65,9 @@ var _ = Describe("OIDC Config", Ordered, Label("oidcconfig"), func() {
 
 	It("should create a managed OIDC config", func() {
 		createReq := map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"name": fmt.Sprintf("e2e-oidc-managed-%d", time.Now().UnixNano()),
+			},
 			"spec": map[string]interface{}{
 				"type": "managed",
 			},
@@ -85,14 +89,17 @@ var _ = Describe("OIDC Config", Ordered, Label("oidcconfig"), func() {
 		uid, _ := metadata["uid"].(string)
 		Expect(uid).NotTo(BeEmpty(), "response should include metadata.uid as the config ID")
 		createdConfigID = uid
+		createdConfigName, _ = metadata["name"].(string)
+		Expect(createdConfigName).NotTo(BeEmpty(), "response should include metadata.name")
 
 		GinkgoWriter.Printf("Created OIDC config id=%s issuerUrl=%v\n", createdConfigID, spec["issuerUrl"])
 	})
 
-	It("should get the created OIDC config by id", func() {
+	It("should get the created OIDC config by name", func() {
 		Expect(createdConfigID).NotTo(BeEmpty(), "requires a config created by a previous test")
+		Expect(createdConfigName).NotTo(BeEmpty(), "requires a config created by a previous test")
 
-		response, err := apiClient.Get("/api/v0/oidc_configs/"+createdConfigID, accountID)
+		response, err := apiClient.Get("/api/v0/oidc_configs/"+createdConfigName, accountID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(response.StatusCode).To(Equal(http.StatusOK), "code=%s", apiErrorCode(response.Body))
 
@@ -128,6 +135,9 @@ var _ = Describe("OIDC Config", Ordered, Label("oidcconfig"), func() {
 
 	It("should reject creating an OIDC config with a missing type", func() {
 		createReq := map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"name": fmt.Sprintf("e2e-oidc-missing-type-%d", time.Now().UnixNano()),
+			},
 			"spec": map[string]interface{}{},
 		}
 
@@ -139,6 +149,9 @@ var _ = Describe("OIDC Config", Ordered, Label("oidcconfig"), func() {
 
 	It("should reject creating an OIDC config with an invalid type", func() {
 		createReq := map[string]interface{}{
+			"metadata": map[string]interface{}{
+				"name": fmt.Sprintf("e2e-oidc-invalid-type-%d", time.Now().UnixNano()),
+			},
 			"spec": map[string]interface{}{
 				"type": "bogus",
 			},
@@ -158,21 +171,22 @@ var _ = Describe("OIDC Config", Ordered, Label("oidcconfig"), func() {
 
 	It("should delete the created OIDC config", func() {
 		Expect(createdConfigID).NotTo(BeEmpty(), "requires a config created by a previous test")
+		Expect(createdConfigName).NotTo(BeEmpty(), "requires a config created by a previous test")
 
-		response, err := apiClient.Delete("/api/v0/oidc_configs/"+createdConfigID, accountID)
+		response, err := apiClient.Delete("/api/v0/oidc_configs/"+createdConfigName, accountID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(response.StatusCode).To(Equal(http.StatusAccepted), "code=%s", apiErrorCode(response.Body))
 
 		var deleted map[string]interface{}
 		Expect(json.Unmarshal(response.Body, &deleted)).To(Succeed())
-		Expect(fmt.Sprintf("%v", deleted["config_id"])).To(Equal(createdConfigID))
+		Expect(fmt.Sprintf("%v", deleted["config_id"])).To(Equal(createdConfigName))
 
 		By("waiting for the config to actually disappear from Get")
 		Eventually(func(g Gomega) {
-			resp, err := apiClient.Get("/api/v0/oidc_configs/"+createdConfigID, accountID)
+			resp, err := apiClient.Get("/api/v0/oidc_configs/"+createdConfigName, accountID)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(resp.StatusCode).To(Equal(http.StatusNotFound),
-				"expected config %s to be gone after delete (status=%d)", createdConfigID, resp.StatusCode)
+				"expected config %s to be gone after delete (status=%d)", createdConfigName, resp.StatusCode)
 		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
 		By("waiting for the config to disappear from List")

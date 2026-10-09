@@ -31,9 +31,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 )
@@ -63,7 +62,7 @@ func (r *PlacementReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
-	placementName := fmt.Sprintf("%s-placement", cluster.Name)
+	placementName := fmt.Sprintf("%s.placement", cluster.Name)
 
 	var placement hyperfleetv1alpha1.Placement
 	err := r.Get(ctx, types.NamespacedName{Namespace: cluster.Namespace, Name: placementName}, &placement)
@@ -81,11 +80,17 @@ func (r *PlacementReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      placementName,
 				Namespace: cluster.Namespace,
+				Labels: map[string]string{
+					clusterUIDLabel: string(cluster.UID),
+				},
 			},
 			Spec: hyperfleetv1alpha1.PlacementSpec{
 				ClusterName:       cluster.Name,
 				ManagementCluster: mc,
 			},
+		}
+		if err := controllerutil.SetControllerReference(&cluster, &placement, r.Scheme); err != nil {
+			return ctrl.Result{}, fmt.Errorf("set Placement ownerReference: %w", err)
 		}
 		if err := r.Create(ctx, &placement); err != nil {
 			if apierrors.IsAlreadyExists(err) {
@@ -169,23 +174,7 @@ func (r *PlacementReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
 		For(&hyperfleetv1alpha1.Cluster{}).
-		Watches(&hyperfleetv1alpha1.Placement{}, handler.EnqueueRequestsFromMapFunc(
-			func(ctx context.Context, obj client.Object) []reconcile.Request {
-				placement, ok := obj.(*hyperfleetv1alpha1.Placement)
-				if !ok {
-					return nil
-				}
-				if placement.Spec.ClusterName == "" {
-					return nil
-				}
-				return []reconcile.Request{
-					{NamespacedName: types.NamespacedName{
-						Namespace: placement.Namespace,
-						Name:      placement.Spec.ClusterName,
-					}},
-				}
-			},
-		)).
+		Owns(&hyperfleetv1alpha1.Placement{}).
 		Named("placement").
 		Complete(r)
 }

@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"strings"
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,10 +15,15 @@ const defaultRootVolumeSizeGiB int64 = 300
 
 // NodePoolResource generates the HyperShift NodePool resource for the MC.
 func NodePoolResource(nodePool *hyperfleetv1alpha1.NodePool, cluster *hyperfleetv1alpha1.Cluster) (Resource, error) {
-	clusterID := ClusterIDFromNamespace(cluster.Namespace)
+	clusterID, ns, err := managementClusterIdentity(cluster)
+	if err != nil {
+		return Resource{}, err
+	}
 	clusterName := cluster.Name // human-readable
-	ns := cluster.Namespace     // already "cluster-<uuid>"
-	npName := fmt.Sprintf("%s-%s", clusterName, nodePool.Name)
+	parentName, npName, ok := strings.Cut(nodePool.Name, ".")
+	if !ok || parentName != clusterName || npName == "" || strings.Contains(npName, ".") {
+		return Resource{}, fmt.Errorf("NodePool name %q must be <cluster>.<child> for parent Cluster %q", nodePool.Name, clusterName)
+	}
 
 	npSpec, err := toNodePoolSpec(&nodePool.Spec.NodePool)
 	if err != nil {
@@ -75,9 +81,7 @@ func NodePoolResource(nodePool *hyperfleetv1alpha1.NodePool, cluster *hyperfleet
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      npName,
 				Namespace: ns,
-				Labels: map[string]string{
-					"hyperfleet.io/cluster-id": clusterID,
-				},
+				Labels:    clusterLabels(clusterID),
 			},
 			Spec: *npSpec,
 		},

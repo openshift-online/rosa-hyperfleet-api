@@ -25,8 +25,8 @@ import (
 
 // oidcSigningKeySecretPath mirrors hyperfleet-operator/internal/oidc.SecretName, which the e2e-api
 // test module can't import directly (different module, internal package).
-func oidcSigningKeySecretPath(accountID, configID string) string {
-	return fmt.Sprintf("/hyperfleet/oidc/%s/%s/signing-key", accountID, configID)
+func oidcSigningKeySecretPath(accountID, configName string) string {
+	return fmt.Sprintf("/hyperfleet/oidc/%s/%s/signing-key", accountID, configName)
 }
 
 // customerOidcFixture is a self-provisioned stand-in for a customer's unmanaged OIDC infrastructure:

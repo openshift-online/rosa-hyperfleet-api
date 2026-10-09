@@ -91,6 +91,9 @@ func runInit(registryPath, openapiPath, outputPath string) error {
 		})
 
 		for _, e := range byOwner[owner] {
+			if pathCoveredByExistingPath(e.FieldPath, covered) {
+				continue
+			}
 			ops := []string{"create", "update"}
 			if e.WriteMode == "immutable" {
 				ops = []string{"create"}
@@ -100,7 +103,7 @@ func runInit(registryPath, openapiPath, outputPath string) error {
 				// Expand the struct-level FieldRegistry path to its scalar leaves.
 				leaves := oapi.expandLeaves(rootSchema, e.FieldPath)
 				for _, leaf := range leaves {
-					if covered[leaf.path] {
+					if pathCoveredByExistingPath(leaf.path, covered) {
 						continue
 					}
 					covered[leaf.path] = true
@@ -151,4 +154,13 @@ func runInit(registryPath, openapiPath, outputPath string) error {
 	}
 
 	return nil
+}
+
+func pathCoveredByExistingPath(path string, covered map[string]bool) bool {
+	for existingPath := range covered {
+		if path == existingPath || strings.HasPrefix(path, existingPath+".") {
+			return true
+		}
+	}
+	return false
 }

@@ -257,6 +257,22 @@ resources:
 	}
 	resourceText := string(resource)
 	for _, want := range []string{
+		`HyperfleetV1alpha1().NodePools().Create`,
+		`HyperfleetV1alpha1().NodePools().Get`,
+		`HyperfleetV1alpha1().NodePools().Update`,
+		`HyperfleetV1alpha1().NodePools().Delete`,
+		`HyperfleetV1alpha1().NodePools().Get(ctx, req.ID`,
+	} {
+		if !strings.Contains(resourceText, want) {
+			t.Errorf("generated NodePool resource missing unnamespaced client call %q", want)
+		}
+	}
+	for _, stale := range []string{"Handler.Namespace", "NodePools(namespace)", "expected namespace/id"} {
+		if strings.Contains(resourceText, stale) {
+			t.Errorf("generated NodePool resource still contains namespace plumbing %q", stale)
+		}
+	}
+	for _, want := range []string{
 		`"config": schema.ListNestedAttribute`,
 		`"taints": schema.ListNestedAttribute`,
 		`"policy": schema.ListNestedAttribute`,

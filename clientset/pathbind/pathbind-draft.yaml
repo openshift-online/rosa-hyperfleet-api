@@ -22,11 +22,10 @@ resources:
               operations:
                 - create
                 - update
-            - path: spec.displayName
+            - path: spec.dnsReservationId
               goType: string
               operations:
                 - create
-                - update
             - path: spec.expirationTimestamp
               goType: string
               operations:
@@ -394,11 +393,6 @@ resources:
                 - read
             - path: spec.autoRepair
               goType: boolean
-              operations:
-                - create
-                - update
-            - path: spec.displayName
-              goType: string
               operations:
                 - create
                 - update

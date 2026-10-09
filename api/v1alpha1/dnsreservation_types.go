@@ -23,50 +23,76 @@ import (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=hfdns
-// +kubebuilder:printcolumn:name="BaseDomain",type=string,JSONPath=".spec.baseDomain"
-// +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=".metadata.labels.hyperfleet\\.io/cluster-namespace"
+// +genclient
+// +genclient:nonNamespaced
+// +resourceName=dns_reservations
+// +bridge:watch=disabled
+// +bridge:wait
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="BaseDomain",type=string,JSONPath=".status.baseDomain"
+// +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=".metadata.labels.hyperfleet\\.io/claimed-by-cluster-uid"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // DNSReservation reserves a DNS prefix within a specific zone shard.
-// Lives in the account namespace (account-<accountID>) for account isolation.
-// Global uniqueness of the DNS prefix is guaranteed by the referenced Index
-// resource in the shard's uniqueness namespace (dns-shard-<id>-reservations).
+// Customers create it in their account namespace (account-<accountID>). The
+// regional DNS zone and allocated prefix are operator-managed; the assigned base
+// domain is reported in status. metadata.name is customer-selected.
 // Labels:
 //   - hyperfleet.io/account-id: AWS account that owns this reservation (always set).
-//   - hyperfleet.io/cluster-namespace: set when a cluster claims the reservation;
-//     absent for pre-reservations (e.g. shared-VPC flows).
+//   - hyperfleet.io/claimed-by-cluster-uid: set when a Cluster claims the reservation.
 type DNSReservation struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	Spec DNSReservationSpec `json:"spec"`
-}
+	// Spec is empty; customers provide their reservation name in metadata.
+	// +optional
+	Spec DNSReservationSpec `json:"spec,omitempty"`
 
-// IndexRef is a reference to an Index resource by namespace and name.
-type IndexRef struct {
-	// Namespace of the Index (the uniqueness domain, e.g. "dns-shard-0-reservations").
-	// +kubebuilder:validation:MinLength=1
-	Namespace string `json:"namespace"`
-
-	// Name of the Index (the unique value, e.g. "f7a3").
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
+	// Status describes whether the reservation has been allocated and its base domain.
+	// +optional
+	Status DNSReservationStatus `json:"status,omitzero"`
 }
 
 // DNSReservationSpec defines the desired state of a DNS reservation.
 type DNSReservationSpec struct {
-	// IndexRef references the Index resource in the shard's uniqueness
-	// namespace that guarantees global uniqueness for this reservation's
-	// prefix within the shard.
-	IndexRef IndexRef `json:"indexRef"`
+}
 
-	// BaseDomain is the fully assembled base domain for this reservation
-	// (e.g. "f7a3.0.openshiftapps.com"). Used directly as the HostedCluster
-	// BaseDomain. Computed at creation time as {prefix}.{shard}.{baseDomain},
-	// where baseDomain is the operator's configured --base-domain.
-	BaseDomain string `json:"baseDomain"`
+// DNSReservationPhase represents the allocation lifecycle of a DNS reservation.
+// Pending means allocation or recovery is in progress; Ready means the Index is
+// reserved by this resource UID and BaseDomain is assigned. Retryable failures
+// are reported with a Ready=False condition while the phase remains Pending.
+// +kubebuilder:validation:Enum=Pending;Ready
+type DNSReservationPhase string
+
+const (
+	// DNSReservationPhasePending means allocation or recovery is in progress.
+	DNSReservationPhasePending DNSReservationPhase = "Pending"
+	// DNSReservationPhaseReady means an owned Index and base domain are assigned.
+	DNSReservationPhaseReady DNSReservationPhase = "Ready"
+)
+
+// DNSReservationStatus describes the operator-allocated DNS name.
+type DNSReservationStatus struct {
+	// Conditions represent the latest observations of the reservation's state.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Phase summarizes allocation state. BaseDomain is empty unless Phase is Ready.
+	// +optional
+	Phase DNSReservationPhase `json:"phase,omitempty"`
+
+	// BaseDomain is the assigned domain, e.g. "f7a3.0.openshiftapps.com".
+	// It is populated when Phase is Ready.
+	// +optional
+	BaseDomain string `json:"baseDomain,omitempty"`
+
+	// ObservedGeneration is the most recent generation observed by the controller.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 // +kubebuilder:object:root=true

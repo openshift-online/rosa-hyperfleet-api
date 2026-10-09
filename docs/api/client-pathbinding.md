@@ -124,8 +124,8 @@ resources:
   cluster:
     sdkType: v1alpha1.Cluster
     fields:
-      - path: spec.displayName
-        goType: string
+      - path: spec.properties
+        goType: map
         operations: [create, update]
       - path: spec.deleteProtection
         goType: boolean
@@ -165,16 +165,16 @@ resources:
       - path: metadata.name
         alias: name
         flag: cluster-name
-        description: "Unique name of the cluster. Maximum length 54 characters."
+        description: "Unique DNS-label name of the cluster. Maximum length 63 characters."
         required: true
       - path: spec.hostedCluster.release.image
         alias: version
         flag: version
         description: "OpenShift release image for the cluster."
         required: true
-      - path: spec.displayName
-        flag: display-name
-        description: "Human-readable display name."
+      - path: spec.properties
+        flag: properties
+        description: "Customer-defined Cluster properties."
       - path: spec.deleteProtection
         flag: delete-protection
         description: "Enable delete protection."
@@ -483,7 +483,7 @@ Add `+hyperfleet:write-mode` to the field in the CRD Go type:
 ```go
 // +hyperfleet:write-mode=mutable      ← appears in create and update
 // +hyperfleet:write-mode=immutable    ← create only
-DisplayName string `json:"displayName,omitempty"`
+ExampleField string `json:"exampleField,omitempty"`
 ```
 
 `service-set` and `hidden` fields are excluded from the draft automatically — do not annotate them.

@@ -8,8 +8,6 @@ import (
 )
 
 var _ = Describe("Cross-component interaction", func() {
-	const testNS = "cluster-e2e-cluster-id"
-
 	AfterEach(func() {
 		purgeResources()
 		purgeDynamoTables()
@@ -19,7 +17,8 @@ var _ = Describe("Cross-component interaction", func() {
 	It("should keep manifest and cluster desires separate", func() {
 		By("creating a Cluster CR")
 		cluster := newTestCluster("e2e-sep-test")
-		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		Expect(createTestClusterWithReservation(cluster)).To(Succeed())
+		managementNS := "cluster-" + string(cluster.UID)
 
 		By("creating a Manifest CR on the same MC")
 		hfm := newTestManifest("e2e-monitoring")
@@ -34,19 +33,19 @@ var _ = Describe("Cross-component interaction", func() {
 			for _, item := range items {
 				resource := attrString(item, "spec", "targetItem", "resource")
 				name := attrString(item, "spec", "targetItem", "name")
-				if resource == "namespaces" && name == testNS {
+				if resource == "namespaces" && name == managementNS {
 					hasClusterNS = true
 				}
 				if resource == "serviceaccounts" && name == "e2e-runner" {
 					hasManifestSA = true
 				}
 			}
-			g.Expect(hasClusterNS).To(BeTrue(), "cluster namespace desire missing")
+			g.Expect(hasClusterNS).To(BeTrue(), "management Cluster namespace desire missing")
 			g.Expect(hasManifestSA).To(BeTrue(), "manifest SA desire missing")
 		}).Should(Succeed())
 
 		By("verifying document IDs don't collide")
-		clusterDocID := dynamo.NewDocumentID("hyperfleet-operator", "", "v1", "namespaces", "", testNS)
+		clusterDocID := dynamo.NewDocumentID("hyperfleet-operator", "", "v1", "namespaces", "", managementNS)
 		manifestDocID := dynamo.NewDocumentID(
 			"hyperfleet-manifest/mc01/e2e-monitoring",
 			"", "v1", "serviceaccounts", "e2e-actions", "e2e-runner",

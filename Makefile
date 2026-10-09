@@ -1,6 +1,6 @@
 .PHONY: help build test test-unit test-integration lint clean \
 	build-hyperfleet-db build-operator build-api build-api-codegen \
-	test-hyperfleet-db test-operator test-operator-int test-api test-api-int test-api-codegen test-clientset \
+	test-hyperfleet-db test-operator test-operator-int test-api test-api-codegen test-clientset \
 	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-zoa test-e2e-authz test-e2e-sdk test-e2e-rosa-cli \
 	test-e2e test-e2e-api test-e2e-cli test-e2e-platform-monitoring test-e2e-authz test-e2e-sdk \
 	e2e-authz-infra-up e2e-authz-infra-down e2e-init-db \
@@ -110,8 +110,7 @@ help:
 	@echo "  test                 All tests (unit + integration)"
 	@echo "  test-unit            Unit tests: API + operator + codegen + clientset (no external services)"
 	@echo "  test-clientset       Clientset unit tests (transport, platform)"
-	@echo "  test-integration     Integration tests: FleetDB + operator (podman) + API handlers"
-	@echo "  test-api-int         API handler integration tests (build tag: integration)"
+	@echo "  test-integration     Integration tests: HyperFleet DB + operator"
 	@echo "  test-e2e-authz       E2E authz (starts local infra)"
 	@echo "  test-e2e-api         E2E API"
 	@echo "  test-e2e-cli         E2E CLI"
@@ -180,10 +179,7 @@ test: test-unit test-integration
 
 test-unit: test-api test-operator test-api-codegen test-clientset
 
-test-integration: test-hyperfleet-db test-operator-int test-api-int
-
-test-api-int:
-	cd platform-api && go test -v -race -count=1 -tags integration ./pkg/handlers/...
+test-integration: test-hyperfleet-db test-operator-int
 
 test-api:
 	cd platform-api && go test -v -race -count=1 $(if $(COVERAGE),-covermode=atomic -coverprofile=../coverage-platform-api.out,) $$(go list ./... | grep -v '/test/e2e')
@@ -239,6 +235,7 @@ test-e2e-sdk: $(GINKGO)
 	E2E_ACCOUNT_ID="$${E2E_ACCOUNT_ID}" \
 	E2E_CUSTOMER_ACCOUNT_ID="$${E2E_CUSTOMER_ACCOUNT_ID}" \
 	CUSTOMER_AWS_PROFILE="$${CUSTOMER_AWS_PROFILE}" \
+	RC_AWS_PROFILE="$${RC_AWS_PROFILE}" \
 	AWS_REGION="$${AWS_REGION}" \
 	ROSACTL_BIN="$${ROSACTL_BIN}" \
 	OCP_IMAGE="$${OCP_IMAGE}" \
@@ -462,7 +459,7 @@ generate-openapi: codegen-conversion
 	./bin/openapi-merge \
 		-spec $(OPENAPI_SPEC) \
 		-generated $(OPENAPI_GENERATED) \
-		-schemas Cluster,ClusterList,ClusterSpec,ClusterStatus,NodePool,NodePoolList,NodePoolSpec,NodePoolStatus,OidcConfig,OidcConfigList,OidcConfigStatus,PlacementReference,HostedClusterSpecPassthrough,NodePoolSpecPassthrough,ClusterConfiguration,KubeletConfig,MachineConfigSpec,PlatformSpec,NodePoolPlatform
+		-schemas Cluster,ClusterList,ClusterSpec,ClusterStatus,NodePool,NodePoolList,NodePoolSpec,NodePoolStatus,OidcConfig,OidcConfigList,OidcConfigStatus,DNSReservation,DNSReservationList,DNSReservationSpec,DNSReservationStatus,PlacementReference,HostedClusterSpecPassthrough,NodePoolSpecPassthrough,ClusterConfiguration,KubeletConfig,MachineConfigSpec,PlatformSpec,NodePoolPlatform
 
 verify-openapi: generate-openapi
 	git diff --exit-code $(OPENAPI_SPEC)

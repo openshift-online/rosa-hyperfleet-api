@@ -1,12 +1,10 @@
 package handlers
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
-	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 )
 
 // APIError is an alias for api.APIError so handler code uses the short form.
@@ -30,6 +28,11 @@ var (
 	ErrClusterCreateNameConflict           APIError
 	ErrClusterCreateNameTooLong            APIError
 	ErrClusterCreateInvalidSpec            APIError
+	ErrClusterCreateNamespaceMismatch      APIError
+	ErrClusterCreateDNSReservationRequired APIError
+	ErrClusterCreateDNSReservationNotFound APIError
+	ErrClusterCreateDNSReservationNotReady APIError
+	ErrClusterCreateDNSReservationInUse    APIError
 
 	ErrClusterCreateOidcConfigRequired APIError
 	ErrClusterCreateOidcConfigNotFound APIError
@@ -44,6 +47,7 @@ var (
 	ErrClusterUpdateNotFound      APIError
 	ErrClusterUpdateFailed        APIError
 	ErrClusterUpdateInvalidSpec   APIError
+	ErrClusterUpdateConflict      APIError
 
 	ErrClusterDeleteNotFound APIError
 	ErrClusterDeleteFailed   APIError
@@ -56,16 +60,20 @@ var (
 
 // NodePool error codes
 var (
-	ErrNodePoolList APIError
+	ErrNodePoolList                  APIError
+	ErrNodePoolListInvalidClusterUID APIError
 
-	ErrNodePoolCreateInvalidBody      APIError
-	ErrNodePoolCreateMissingFields    APIError
-	ErrNodePoolCreateInvalidNamespace APIError
-	ErrNodePoolCreateNameConflict     APIError
-	ErrNodePoolCreateClusterNotFound  APIError
-	ErrNodePoolCreateClusterCheck     APIError
-	ErrNodePoolCreateInvalidSpec      APIError
-	ErrNodePoolCreateFailed           APIError
+	ErrNodePoolCreateInvalidBody       APIError
+	ErrNodePoolCreateMissingFields     APIError
+	ErrNodePoolCreateInvalidNamespace  APIError
+	ErrNodePoolCreateInvalidName       APIError
+	ErrNodePoolCreateInvalidClusterUID APIError
+	ErrNodePoolCreateNameConflict      APIError
+	ErrNodePoolCreateClusterNotFound   APIError
+	ErrNodePoolCreateClusterDeleting   APIError
+	ErrNodePoolCreateClusterCheck      APIError
+	ErrNodePoolCreateInvalidSpec       APIError
+	ErrNodePoolCreateFailed            APIError
 
 	ErrNodePoolGetNotFound APIError
 	ErrNodePoolGetFailed   APIError
@@ -75,6 +83,7 @@ var (
 	ErrNodePoolUpdateNotFound      APIError
 	ErrNodePoolUpdateFailed        APIError
 	ErrNodePoolUpdateInvalidSpec   APIError
+	ErrNodePoolUpdateConflict      APIError
 
 	ErrNodePoolDeleteNotFound APIError
 	ErrNodePoolDeleteFailed   APIError
@@ -91,6 +100,9 @@ var (
 
 	ErrOidcConfigCreateInvalidBody         APIError
 	ErrOidcConfigCreateMissingFields       APIError
+	ErrOidcConfigCreateInvalidName         APIError
+	ErrOidcConfigCreateNameConflict        APIError
+	ErrOidcConfigCreateNamespaceMismatch   APIError
 	ErrOidcConfigCreateInvalidType         APIError
 	ErrOidcConfigCreateInvalidFields       APIError
 	ErrOidcConfigCreateDuplicateIssuerUrl  APIError
@@ -104,6 +116,25 @@ var (
 	ErrOidcConfigDeleteNotFound APIError
 	ErrOidcConfigDeleteFailed   APIError
 	ErrOidcConfigDeleteInUse    APIError
+)
+
+// DNSReservation error codes
+var (
+	ErrDNSReservationListFailed APIError
+
+	ErrDNSReservationCreateInvalidBody       APIError
+	ErrDNSReservationCreateMissingName       APIError
+	ErrDNSReservationCreateInvalidName       APIError
+	ErrDNSReservationCreateNamespaceMismatch APIError
+	ErrDNSReservationCreateNameConflict      APIError
+	ErrDNSReservationCreateFailed            APIError
+
+	ErrDNSReservationGetNotFound APIError
+	ErrDNSReservationGetFailed   APIError
+
+	ErrDNSReservationDeleteNotFound APIError
+	ErrDNSReservationDeleteClaimed  APIError
+	ErrDNSReservationDeleteFailed   APIError
 )
 
 // Accounts error codes
@@ -228,8 +259,13 @@ func init() {
 	ErrClusterCreateNameCheck = APIError{Code: "CLUSTERS-MGMT-CREATE-004", HTTPStatus: http.StatusInternalServerError, Message: "Failed to validate cluster name"}
 	ErrClusterCreateOidcConfigLookupFailed = APIError{Code: "CLUSTERS-MGMT-CREATE-013", HTTPStatus: http.StatusInternalServerError, Message: "Failed to look up referenced OIDC config"}
 	ErrClusterCreateNameConflict = APIError{Code: "CLUSTERS-MGMT-CREATE-005", HTTPStatus: http.StatusConflict, Message: "Cluster name already exists in this account", Reason: "a cluster named %q already exists in this account"}
-	ErrClusterCreateNameTooLong = APIError{Code: "CLUSTERS-MGMT-CREATE-006", HTTPStatus: http.StatusBadRequest, Message: fmt.Sprintf("Cluster name must be no more than %d characters", hyperfleetdb.MaxClusterNameLen)}
+	ErrClusterCreateNameTooLong = APIError{Code: "CLUSTERS-MGMT-CREATE-006", HTTPStatus: http.StatusBadRequest, Message: "Cluster metadata.name must be a valid DNS label"}
+	ErrClusterCreateNamespaceMismatch = APIError{Code: "CLUSTERS-MGMT-CREATE-007", HTTPStatus: http.StatusBadRequest, Message: "metadata.namespace must match the authenticated account namespace"}
 	ErrClusterCreateInvalidSpec = APIError{Code: "CLUSTERS-MGMT-CREATE-008", HTTPStatus: http.StatusBadRequest, Message: "Invalid cluster spec"}
+	ErrClusterCreateDNSReservationRequired = APIError{Code: "CLUSTERS-MGMT-CREATE-014", HTTPStatus: http.StatusBadRequest, Message: "spec.dnsReservationId is required"}
+	ErrClusterCreateDNSReservationNotFound = APIError{Code: "CLUSTERS-MGMT-CREATE-015", HTTPStatus: http.StatusNotFound, Message: "Referenced DNS reservation not found"}
+	ErrClusterCreateDNSReservationNotReady = APIError{Code: "CLUSTERS-MGMT-CREATE-016", HTTPStatus: http.StatusUnprocessableEntity, Message: "Referenced DNS reservation is not ready"}
+	ErrClusterCreateDNSReservationInUse = APIError{Code: "CLUSTERS-MGMT-CREATE-017", HTTPStatus: http.StatusConflict, Message: "Referenced DNS reservation is already claimed"}
 	ErrClusterCreateOidcConfigRequired = APIError{Code: "CLUSTERS-MGMT-CREATE-009", HTTPStatus: http.StatusBadRequest, Message: "spec.oidcConfigId is required"}
 	ErrClusterCreateOidcConfigNotFound = APIError{Code: "CLUSTERS-MGMT-CREATE-010", HTTPStatus: http.StatusNotFound, Message: "Referenced OIDC config not found"}
 	ErrClusterCreateOidcConfigNotReady = APIError{Code: "CLUSTERS-MGMT-CREATE-011", HTTPStatus: http.StatusUnprocessableEntity, Message: "Referenced OIDC config is not ready"}
@@ -245,6 +281,7 @@ func init() {
 	ErrClusterUpdateNotFound = APIError{Code: "CLUSTERS-MGMT-UPDATE-003", HTTPStatus: http.StatusNotFound, Message: "Cluster not found"}
 	ErrClusterUpdateFailed = APIError{Code: "CLUSTERS-MGMT-UPDATE-004", HTTPStatus: http.StatusInternalServerError, Message: "Failed to update cluster"}
 	ErrClusterUpdateInvalidSpec = APIError{Code: "CLUSTERS-MGMT-UPDATE-005", HTTPStatus: http.StatusBadRequest, Message: "Invalid cluster spec"}
+	ErrClusterUpdateConflict = APIError{Code: "CLUSTERS-MGMT-UPDATE-006", HTTPStatus: http.StatusConflict, Message: "Cluster was modified by a concurrent request"}
 
 	// Cluster — Delete
 	ErrClusterDeleteNotFound = APIError{Code: "CLUSTERS-MGMT-DELETE-001", HTTPStatus: http.StatusNotFound, Message: "Cluster not found"}
@@ -259,16 +296,19 @@ func init() {
 
 	// NodePool — List
 	ErrNodePoolList = APIError{Code: "NODEPOOLS-MGMT-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list nodepools"}
+	ErrNodePoolListInvalidClusterUID = APIError{Code: "NODEPOOLS-MGMT-LIST-002", HTTPStatus: http.StatusBadRequest, Message: "clusterUID must be a valid resource UID"}
 
 	// NodePool — Create
 	ErrNodePoolCreateInvalidBody = APIError{Code: "NODEPOOLS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrNodePoolCreateMissingFields = APIError{Code: "NODEPOOLS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "Missing required fields: metadata.name and metadata.namespace"}
+	ErrNodePoolCreateMissingFields = APIError{Code: "NODEPOOLS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "metadata.name is required"}
 	ErrNodePoolCreateNameConflict = APIError{Code: "NODEPOOLS-MGMT-CREATE-003", HTTPStatus: http.StatusConflict, Message: "NodePool already exists"}
 	ErrNodePoolCreateClusterNotFound = APIError{Code: "NODEPOOLS-MGMT-CREATE-004", HTTPStatus: http.StatusNotFound, Message: "Referenced cluster not found"}
 	ErrNodePoolCreateClusterCheck = APIError{Code: "NODEPOOLS-MGMT-CREATE-005", HTTPStatus: http.StatusInternalServerError, Message: "Failed to validate cluster reference"}
 	ErrNodePoolCreateInvalidSpec = APIError{Code: "NODEPOOLS-MGMT-CREATE-006", HTTPStatus: http.StatusBadRequest, Message: "Invalid nodepool spec"}
 	ErrNodePoolCreateFailed = APIError{Code: "NODEPOOLS-MGMT-CREATE-007", HTTPStatus: http.StatusInternalServerError, Message: "Failed to create nodepool"}
-	ErrNodePoolCreateInvalidNamespace = APIError{Code: "NODEPOOLS-MGMT-CREATE-008", HTTPStatus: http.StatusBadRequest, Message: "metadata.namespace must be a valid cluster namespace (cluster-<uuid>)"}
+	ErrNodePoolCreateInvalidNamespace = APIError{Code: "NODEPOOLS-MGMT-CREATE-008", HTTPStatus: http.StatusBadRequest, Message: "metadata.namespace must match the authenticated account namespace"}
+	ErrNodePoolCreateInvalidName = APIError{Code: "NODEPOOLS-MGMT-CREATE-009", HTTPStatus: http.StatusBadRequest, Message: "metadata.name must be <cluster>.<child> using valid DNS labels"}
+	ErrNodePoolCreateClusterDeleting = APIError{Code: "NODEPOOLS-MGMT-CREATE-011", HTTPStatus: http.StatusConflict, Message: "Cannot create a NodePool for a Cluster that is deleting"}
 
 	// NodePool — Get
 	ErrNodePoolGetNotFound = APIError{Code: "NODEPOOLS-MGMT-GET-001", HTTPStatus: http.StatusNotFound, Message: "NodePool not found"}
@@ -280,6 +320,7 @@ func init() {
 	ErrNodePoolUpdateNotFound = APIError{Code: "NODEPOOLS-MGMT-UPDATE-003", HTTPStatus: http.StatusNotFound, Message: "NodePool not found"}
 	ErrNodePoolUpdateFailed = APIError{Code: "NODEPOOLS-MGMT-UPDATE-004", HTTPStatus: http.StatusInternalServerError, Message: "Failed to update nodepool"}
 	ErrNodePoolUpdateInvalidSpec = APIError{Code: "NODEPOOLS-MGMT-UPDATE-005", HTTPStatus: http.StatusBadRequest, Message: "Invalid nodepool spec"}
+	ErrNodePoolUpdateConflict = APIError{Code: "NODEPOOLS-MGMT-UPDATE-006", HTTPStatus: http.StatusConflict, Message: "NodePool was modified by a concurrent request"}
 
 	// NodePool — Delete
 	ErrNodePoolDeleteNotFound = APIError{Code: "NODEPOOLS-MGMT-DELETE-001", HTTPStatus: http.StatusNotFound, Message: "NodePool not found"}
@@ -297,8 +338,11 @@ func init() {
 
 	// OidcConfig — Create
 	ErrOidcConfigCreateInvalidBody = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
-	ErrOidcConfigCreateMissingFields = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "Missing required fields: spec with type"}
+	ErrOidcConfigCreateMissingFields = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "metadata.name and spec.type are required"}
 	ErrOidcConfigCreateFailed = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-003", HTTPStatus: http.StatusInternalServerError, Message: "Failed to create OIDC config"}
+	ErrOidcConfigCreateInvalidName = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-009", HTTPStatus: http.StatusBadRequest, Message: "metadata.name must be a valid DNS subdomain"}
+	ErrOidcConfigCreateNameConflict = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-010", HTTPStatus: http.StatusConflict, Message: "An OIDC config with this name already exists"}
+	ErrOidcConfigCreateNamespaceMismatch = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-011", HTTPStatus: http.StatusBadRequest, Message: "metadata.namespace must match the authenticated account namespace"}
 	ErrOidcConfigCreateInvalidType = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-004", HTTPStatus: http.StatusBadRequest, Message: "spec.type must be 'managed' or 'unmanaged'"}
 	ErrOidcConfigCreateInvalidFields = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-005", HTTPStatus: http.StatusBadRequest, Message: "unmanaged type requires secretArn and installerRoleArn; managed type must not set them"}
 	ErrOidcConfigCreateDuplicateIssuerUrl = APIError{Code: "OIDCCONFIGS-MGMT-CREATE-006", HTTPStatus: http.StatusConflict, Message: "An OIDC config with this issuerUrl already exists"}
@@ -313,6 +357,26 @@ func init() {
 	ErrOidcConfigDeleteNotFound = APIError{Code: "OIDCCONFIGS-MGMT-DELETE-001", HTTPStatus: http.StatusNotFound, Message: "OIDC config not found"}
 	ErrOidcConfigDeleteFailed = APIError{Code: "OIDCCONFIGS-MGMT-DELETE-002", HTTPStatus: http.StatusInternalServerError, Message: "Failed to delete OIDC config"}
 	ErrOidcConfigDeleteInUse = APIError{Code: "OIDCCONFIGS-MGMT-DELETE-003", HTTPStatus: http.StatusConflict, Message: "Cannot delete OIDC config referenced by clusters"}
+
+	// DNSReservation — List
+	ErrDNSReservationListFailed = APIError{Code: "DNSRESERVATIONS-MGMT-LIST-001", HTTPStatus: http.StatusInternalServerError, Message: "Failed to list DNS reservations"}
+
+	// DNSReservation — Create
+	ErrDNSReservationCreateInvalidBody = APIError{Code: "DNSRESERVATIONS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}
+	ErrDNSReservationCreateMissingName = APIError{Code: "DNSRESERVATIONS-MGMT-CREATE-002", HTTPStatus: http.StatusBadRequest, Message: "metadata.name is required"}
+	ErrDNSReservationCreateInvalidName = APIError{Code: "DNSRESERVATIONS-MGMT-CREATE-003", HTTPStatus: http.StatusBadRequest, Message: "metadata.name must be a valid DNS subdomain"}
+	ErrDNSReservationCreateNamespaceMismatch = APIError{Code: "DNSRESERVATIONS-MGMT-CREATE-004", HTTPStatus: http.StatusBadRequest, Message: "metadata.namespace must match the authenticated account namespace"}
+	ErrDNSReservationCreateNameConflict = APIError{Code: "DNSRESERVATIONS-MGMT-CREATE-005", HTTPStatus: http.StatusConflict, Message: "A DNS reservation with this name already exists"}
+	ErrDNSReservationCreateFailed = APIError{Code: "DNSRESERVATIONS-MGMT-CREATE-006", HTTPStatus: http.StatusInternalServerError, Message: "Failed to create DNS reservation"}
+
+	// DNSReservation — Get
+	ErrDNSReservationGetNotFound = APIError{Code: "DNSRESERVATIONS-MGMT-GET-001", HTTPStatus: http.StatusNotFound, Message: "DNS reservation not found"}
+	ErrDNSReservationGetFailed = APIError{Code: "DNSRESERVATIONS-MGMT-GET-002", HTTPStatus: http.StatusInternalServerError, Message: "Failed to get DNS reservation"}
+
+	// DNSReservation — Delete
+	ErrDNSReservationDeleteNotFound = APIError{Code: "DNSRESERVATIONS-MGMT-DELETE-001", HTTPStatus: http.StatusNotFound, Message: "DNS reservation not found"}
+	ErrDNSReservationDeleteClaimed = APIError{Code: "DNSRESERVATIONS-MGMT-DELETE-002", HTTPStatus: http.StatusConflict, Message: "Cannot delete a claimed DNS reservation"}
+	ErrDNSReservationDeleteFailed = APIError{Code: "DNSRESERVATIONS-MGMT-DELETE-003", HTTPStatus: http.StatusInternalServerError, Message: "Failed to delete DNS reservation"}
 
 	// Accounts — Create
 	ErrAccountCreateInvalidBody = APIError{Code: "ACCOUNTS-MGMT-CREATE-001", HTTPStatus: http.StatusBadRequest, Message: "Invalid request body"}

@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -53,6 +54,27 @@ var _ = Describe("OidcConfig CEL Validation", func() {
 			},
 			Spec: spec,
 		}
+	}
+
+	newRawManagedConfig := func(name, arnField string, includeARN bool) *unstructured.Unstructured {
+		spec := map[string]interface{}{
+			"type":      hyperfleetv1alpha1.OidcConfigTypeManaged,
+			"issuerUrl": "https://oidc.example.com/" + name,
+		}
+		if includeARN {
+			spec[arnField] = ""
+		}
+		oc := &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": hyperfleetv1alpha1.GroupVersion.String(),
+			"kind":       "OidcConfig",
+			"metadata": map[string]interface{}{
+				"name":      name,
+				"namespace": testNS,
+			},
+			"spec": spec,
+		}}
+		oc.SetGroupVersionKind(hyperfleetv1alpha1.GroupVersion.WithKind("OidcConfig"))
+		return oc
 	}
 
 	Context("Create validation", func() {
@@ -150,6 +172,77 @@ var _ = Describe("OidcConfig CEL Validation", func() {
 	})
 
 	Context("Update immutability", func() {
+		It("allows updates when both optional ARN fields remain absent", func() {
+			oc := newRawManagedConfig("managed-arns-absent", "", false)
+			Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+
+			var latest unstructured.Unstructured
+			latest.SetGroupVersionKind(hyperfleetv1alpha1.GroupVersion.WithKind("OidcConfig"))
+			key := types.NamespacedName{Namespace: testNS, Name: oc.GetName()}
+			Expect(k8sClient.Get(ctx, key, &latest)).To(Succeed())
+			Expect(unstructured.SetNestedMap(latest.Object, map[string]interface{}{"updated": "true"}, "metadata", "annotations")).To(Succeed())
+			Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+		})
+
+		It("rejects adding or removing either optional ARN field", func() {
+			tests := []struct {
+				name         string
+				field        string
+				initiallySet bool
+				setOnUpdate  bool
+				wantMessage  string
+			}{
+				{
+					name:        "add-secret-arn",
+					field:       "secretArn",
+					setOnUpdate: true,
+					wantMessage: "spec.secretArn is immutable",
+				},
+				{
+					name:         "remove-secret-arn",
+					field:        "secretArn",
+					initiallySet: true,
+					wantMessage:  "spec.secretArn is immutable",
+				},
+				{
+					name:        "add-installer-role-arn",
+					field:       "installerRoleArn",
+					setOnUpdate: true,
+					wantMessage: "spec.installerRoleArn is immutable",
+				},
+				{
+					name:         "remove-installer-role-arn",
+					field:        "installerRoleArn",
+					initiallySet: true,
+					wantMessage:  "spec.installerRoleArn is immutable",
+				},
+			}
+
+			for _, tt := range tests {
+				By(tt.name)
+				oc := newRawManagedConfig(tt.name, tt.field, tt.initiallySet)
+				Expect(k8sClient.Create(ctx, oc)).To(Succeed())
+
+				var latest unstructured.Unstructured
+				latest.SetGroupVersionKind(hyperfleetv1alpha1.GroupVersion.WithKind("OidcConfig"))
+				key := types.NamespacedName{Namespace: testNS, Name: tt.name}
+				Expect(k8sClient.Get(ctx, key, &latest)).To(Succeed())
+				spec, found, err := unstructured.NestedMap(latest.Object, "spec")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(found).To(BeTrue())
+				if tt.setOnUpdate {
+					spec[tt.field] = ""
+				} else {
+					delete(spec, tt.field)
+				}
+				Expect(unstructured.SetNestedMap(latest.Object, spec, "spec")).To(Succeed())
+
+				err = k8sClient.Update(ctx, &latest)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(tt.wantMessage))
+			}
+		})
+
 		It("rejects changing type", func() {
 			oc := newOidcConfig("immut-type", hyperfleetv1alpha1.OidcConfigSpec{
 				Type:      hyperfleetv1alpha1.OidcConfigTypeManaged,

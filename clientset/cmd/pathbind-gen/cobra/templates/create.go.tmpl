@@ -17,7 +17,6 @@ import (
 {{$res := .ResourceName}}
 {{$sdk := .SDKShortType}}
 {{$rt  := .RuntimeType}}
-{{$ns  := .Namespaced}}
 
 // {{$res}}CreateInput holds directly-mappable inputs for {{$res}} create.
 // All non-service-set SDK fields appear here; derived fields (no flag) are set in PreRequest.
@@ -95,7 +94,7 @@ func normalize{{$res}}CreateInput(cmd *cobra.Command, input *{{$res}}CreateInput
 }
 
 // RunCreate{{$res}} executes the create dispatch. Generated; do not edit.
-func RunCreate{{$res}}(ctx context.Context, r {{$rt}}, cmd *cobra.Command, input *{{$res}}CreateInput, h {{$res}}CreateHandler{{if $ns}}, namespace string{{end}}) error {
+func RunCreate{{$res}}(ctx context.Context, r {{$rt}}, cmd *cobra.Command, input *{{$res}}CreateInput, h {{$res}}CreateHandler) error {
 	if interactive.Enabled() {
 		if err := h.Prompt(ctx, r, cmd, input); err != nil {
 			return err

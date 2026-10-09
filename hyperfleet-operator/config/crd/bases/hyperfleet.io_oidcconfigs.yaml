@@ -32,7 +32,7 @@ spec:
         description: |-
           OidcConfig is the Schema for the oidcconfigs API.
           It represents a reusable OIDC configuration for cluster identity.
-          metadata.Name is the config ID; metadata.Namespace is account-<accountID>.
+          metadata.Name is the client-chosen config name; metadata.Namespace is account-<accountID>.
           Not exposed to REST clients — the platform API is flat (/oidc_configs) and
           derives the account from the caller's identity, not a URL parameter.
         properties:
@@ -59,24 +59,6 @@ spec:
               accountId:
                 description: AccountID is the AWS account that owns this OIDC config.
                 type: string
-              indexRef:
-                description: |-
-                  IndexRef references the Index that reserves this config's issuer URL. Computed by
-                  platform-api; OidcConfigReconciler owns actually creating the referenced Index.
-                properties:
-                  name:
-                    description: Name of the Index (the unique value, e.g. "f7a3").
-                    minLength: 1
-                    type: string
-                  namespace:
-                    description: Namespace of the Index (the uniqueness domain, e.g.
-                      "dns-shard-0-reservations").
-                    minLength: 1
-                    type: string
-                required:
-                - name
-                - namespace
-                type: object
               installerRoleArn:
                 description: |-
                   InstallerRoleArn is the ARN of the cross-account IAM role used to read the customer's secret.
@@ -108,17 +90,20 @@ spec:
             type: object
             x-kubernetes-validations:
             - message: managed type must not set secretArn or installerRoleArn
-              rule: self.type != 'managed' || (self.secretArn == '' && self.installerRoleArn
-                == '')
+              rule: self.type != 'managed' || ((!has(self.secretArn) || size(self.secretArn)
+                == 0) && (!has(self.installerRoleArn) || size(self.installerRoleArn)
+                == 0))
             - message: unmanaged type requires secretArn and installerRoleArn
-              rule: self.type != 'unmanaged' || (self.secretArn != '' && self.installerRoleArn
-                != '')
+              rule: self.type != 'unmanaged' || (size(self.secretArn) > 0 && size(self.installerRoleArn)
+                > 0)
             - message: spec.type is immutable
               rule: self.type == oldSelf.type
             - message: spec.secretArn is immutable
-              rule: self.secretArn == oldSelf.secretArn
+              rule: has(self.secretArn) == has(oldSelf.secretArn) && (!has(self.secretArn)
+                || self.secretArn == oldSelf.secretArn)
             - message: spec.installerRoleArn is immutable
-              rule: self.installerRoleArn == oldSelf.installerRoleArn
+              rule: has(self.installerRoleArn) == has(oldSelf.installerRoleArn) &&
+                (!has(self.installerRoleArn) || self.installerRoleArn == oldSelf.installerRoleArn)
             - message: spec.issuerUrl is immutable
               rule: self.issuerUrl == oldSelf.issuerUrl
           status:

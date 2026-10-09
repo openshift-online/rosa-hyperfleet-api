@@ -65,8 +65,8 @@ func (v *FieldValidator) ValidateCreate(spec any, fs featuregate.FeatureSet) Val
 	return v.validate(fields, nil, OperationCreate, fs)
 }
 
-// ValidateUpdate checks that an update request does not set service-set fields,
-// change immutable fields, or use feature-gated fields without the gate enabled.
+// ValidateUpdate checks that an update request does not change service-set or
+// immutable fields, or use feature-gated fields without the gate enabled.
 func (v *FieldValidator) ValidateUpdate(newSpec, existingSpec any, fs featuregate.FeatureSet) ValidationErrors {
 	if newSpec == nil {
 		return nil
@@ -169,7 +169,16 @@ func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.Field
 
 	switch effectiveMode {
 	case registry.ServiceSet:
-		if isZeroValue(fields[fieldPath]) {
+		if op == OperationUpdate && existingFields != nil {
+			oldValue, oldExists := existingFields[fieldPath]
+			newValue, newExists := fields[fieldPath]
+			if !newExists || (oldExists && reflect.DeepEqual(oldValue, newValue)) {
+				return nil
+			}
+			if !oldExists && isZeroValue(newValue) {
+				return nil
+			}
+		} else if isZeroValue(fields[fieldPath]) {
 			return nil
 		}
 		return &ValidationError{

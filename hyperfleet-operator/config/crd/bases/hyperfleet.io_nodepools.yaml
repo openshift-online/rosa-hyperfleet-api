@@ -28,7 +28,10 @@ spec:
           description: |-
             NodePool is the Schema for the nodepools API.
             It represents a set of worker nodes for a Cluster.
-            The parent Cluster shares the same metadata.Namespace (cluster UUID).
+            metadata.Namespace is account-<accountID>. metadata.Name is the client-selected
+            <cluster>.<child> name.
+            The parent Cluster name is the prefix of metadata.name; the server sets its
+            ownerReference and cluster-uid label after resolving that Cluster by account namespace/name.
           properties:
             apiVersion:
               description: |-
@@ -48,9 +51,7 @@ spec:
             metadata:
               type: object
             spec:
-              description: |-
-                NodePoolSpec defines the desired state of a NodePool.
-                The parent Cluster is identified by the shared metadata.Namespace (cluster UUID).
+              description: NodePoolSpec defines the desired state of a NodePool.
               properties:
                 accountId:
                   description: AccountID is the AWS account that owns this node pool.
@@ -58,10 +59,6 @@ spec:
                 autoRepair:
                   description: AutoRepair controls whether unhealthy nodes are automatically replaced.
                   type: boolean
-                displayName:
-                  description: DisplayName is a human-readable name for the node pool.
-                  maxLength: 256
-                  type: string
                 internalPoolId:
                   description: InternalPoolID is a platform-assigned unique identifier.
                   type: string
@@ -1697,6 +1694,9 @@ spec:
           required:
             - spec
           type: object
+          x-kubernetes-validations:
+            - message: metadata.name must be <cluster>.<child> with DNS labels of at most 63 characters each
+              rule: self.metadata.name.matches("^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?[.][a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$")
       served: true
       storage: true
       subresources:

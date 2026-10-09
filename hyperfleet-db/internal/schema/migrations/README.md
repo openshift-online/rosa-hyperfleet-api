@@ -27,9 +27,12 @@ Creating an Index with a name that already exists in the same namespace returns
 `AlreadyExists` (409), which the controller or API handler uses as the
 collision signal.
 
-Higher-level resources (e.g. `DNSReservation` in `account-<id>`) carry an
-`IndexRef` (namespace + name) pointing to their backing Index. This separates
-account-scoped data from the global uniqueness guard.
+Higher-level resources remain account-scoped and keep Index ownership independent
+of their namespace. DNSReservation recovers and releases Indexes by its
+`hyperfleet.io/owner-uid` label; OidcConfig derives the Index name from its
+normalized issuer URL and verifies the same UID label before release. This
+separates account-scoped data from the global uniqueness guard without duplicating
+the Index key in either resource spec.
 
 ### When to use this pattern
 

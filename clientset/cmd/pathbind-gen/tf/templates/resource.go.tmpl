@@ -76,9 +76,6 @@ package {{.Package}}
 import (
 	"context"
 	"fmt"
-{{- if .Namespaced}}
-	"strings"
-{{- end}}
 
 {{- if $hasInt32}}
 	"math"
@@ -150,14 +147,6 @@ type {{.ResourceName}}Handler interface {
 	// Use this to populate computed fields, adjust state values, or perform post-processing
 	// that requires access to both the API response and the state being built.
 	PostFlatten(ctx context.Context, state *{{.ResourceName}}State, resp *v1alpha1.{{.SDKShortType}})
-{{- if .Namespaced}}
-
-	// Namespace derives the K8s namespace for this resource from state fields
-	// (e.g. a parent ID). Used by Read/Delete/ImportState, which only have
-	// access to Terraform state (no SDK object) before calling the API.
-	// Must be a pure, side-effect-free computation (no API calls).
-	Namespace(ctx context.Context, state *{{.ResourceName}}State) string
-{{- end}}
 }
 
 // {{.ResourceName}}Resource manages {{.ResourceName}} resources via the hyperfleet Platform API.
@@ -420,11 +409,8 @@ func (r *{{.ResourceName}}Resource) Create(
 		return
 	}
 
-	// Create via API
-	// For namespaced resources, obj.GetNamespace() reflects the value the handler's
-	// PostExpand set on the SDK object; passing it here keeps the client-scoped
-	// namespace and the object's namespace in sync.
-	created, err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}({{if .Namespaced}}obj.GetNamespace(){{end}}).Create(ctx, obj, hfwrappers.CreateOptions{})
+	// Create via API. The Platform API derives the account namespace internally.
+	created, err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}().Create(ctx, obj, hfwrappers.CreateOptions{})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create {{.ResourceName}}", err.Error())
 		return
@@ -480,12 +466,8 @@ func (r *{{.ResourceName}}Resource) Read(
 		return
 	}
 
-	// Get current resource from API
-{{- if .Namespaced}}
-  obj, err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}(r.Handler.Namespace(ctx, &state)).Get(ctx, state.{{.IdentifierField}}.ValueString(), hfwrappers.GetOptions{})
-{{- else}}
-  obj, err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}().Get(ctx, state.{{.IdentifierField}}.ValueString(), hfwrappers.GetOptions{})
-{{- end}}
+	// Get current resource from API. Account scope comes from the configured client identity.
+	obj, err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}().Get(ctx, state.{{.IdentifierField}}.ValueString(), hfwrappers.GetOptions{})
 	if err != nil {
 		if isNotFound(err) {
 			resp.State.RemoveResource(ctx)
@@ -561,11 +543,7 @@ func (r *{{.ResourceName}}Resource) Update(
 	}
 
 	// Fetch the current object so fields not represented in Terraform are preserved.
-{{- if .Namespaced}}
-  obj, err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}(r.Handler.Namespace(ctx, &plan)).Get(ctx, plan.{{.IdentifierField}}.ValueString(), hfwrappers.GetOptions{})
-{{- else}}
-  obj, err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}().Get(ctx, plan.{{.IdentifierField}}.ValueString(), hfwrappers.GetOptions{})
-{{- end}}
+	obj, err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}().Get(ctx, plan.{{.IdentifierField}}.ValueString(), hfwrappers.GetOptions{})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to read {{.ResourceName}} for update", err.Error())
 		return
@@ -584,8 +562,8 @@ func (r *{{.ResourceName}}Resource) Update(
 		return
 	}
 
-	// Update via API
-	updated, err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}({{if .Namespaced}}obj.GetNamespace(){{end}}).Update(ctx, obj, hfwrappers.UpdateOptions{})
+	// Update via API. The Platform API derives the account namespace internally.
+	updated, err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}().Update(ctx, obj, hfwrappers.UpdateOptions{})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to update {{.ResourceName}}", err.Error())
 		return
@@ -641,7 +619,7 @@ func (r *{{.ResourceName}}Resource) Delete(
 		return
 	}
 
-	err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}({{if .Namespaced}}r.Handler.Namespace(ctx, &state){{end}}).Delete(ctx, state.{{.IdentifierField}}.ValueString(), hfwrappers.DeleteOptions{})
+	err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}().Delete(ctx, state.{{.IdentifierField}}.ValueString(), hfwrappers.DeleteOptions{})
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to delete {{.ResourceName}}", err.Error())
 		return
@@ -666,21 +644,9 @@ func (r *{{.ResourceName}}Resource) ImportState(
 		return
 	}
 
-	// Use the ID passed in as the {{.ResourceName}} identifier
-{{- if .Namespaced}}
-	parts := strings.SplitN(req.ID, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		resp.Diagnostics.AddError("Invalid {{.ResourceName}} import ID", "expected namespace/id")
-		return
-	}
-	namespace := parts[0]
-	if !strings.HasPrefix(namespace, "cluster-") {
-		namespace = "cluster-" + namespace
-	}
-	obj, err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}(namespace).Get(ctx, parts[1], hfwrappers.GetOptions{})
-{{- else}}
+	// Use the ID passed in as the {{.ResourceName}} identifier. The Platform API
+	// resolves the account namespace from the configured client identity.
 	obj, err := r.Client.HyperfleetV1alpha1().{{pluralize .ResourceName}}().Get(ctx, req.ID, hfwrappers.GetOptions{})
-{{- end}}
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to import {{.ResourceName}}", err.Error())
 		return

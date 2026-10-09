@@ -1,67 +1,55 @@
 # Namespace Conventions
 
-**Last Updated Date**: 2026-08-19
+**Last Updated Date**: 2026-10-06
 
 ## Summary
 
-HyperFleet CRD resources use Kubernetes-style namespaces (mapped to pgruntime) as the primary isolation and grouping boundary. There are two namespace patterns, chosen by what the resource is scoped to.
+Customer-facing FleetDB resources use an account namespace as the tenancy boundary.
+Operator-managed resources that live on a management cluster use a separate
+UID-derived namespace; that namespace does not determine FleetDB ownership.
 
-## Resource-Scoped Namespaces
-
-**Pattern**: `cluster-<uuid>`
-
-Used for resources that belong to a specific cluster. The namespace groups all resources for that cluster together, mirroring how Kubernetes namespaces naturally scope related objects.
-
-| Resource | Namespace        | Name                | Example                         |
-| -------- | ---------------- | ------------------- | ------------------------------- |
-| Cluster  | `cluster-<uuid>` | Human-readable name | `cluster-4610b27e-…/my-cluster` |
-| NodePool | `cluster-<uuid>` | Human-readable name | `cluster-4610b27e-…/my-pool`    |
-| Manifest | `cluster-<uuid>` | Manifest name       | `cluster-4610b27e-…/kubeconfig` |
-
-Cluster-scoped resources carry a `hyperfleet.io/account-id` label for account-level filtering (e.g. listing all clusters for an account).
-
-**Name length constraint**: HyperShift creates a control plane namespace as `cluster-<uuid>-<name>`, which must fit within the 63-character Kubernetes namespace limit. This caps the human-readable cluster name at 18 characters.
-
-## Service-Scoped Namespaces
-
-**Pattern**: Fixed namespace per resource type (e.g. `managementclusters`)
-
-Used for backend/infrastructure resources that are not tied to any customer or tenant. These are control plane objects managed by the service itself.
-
-| Resource          | Namespace            | Name    | Example                              |
-| ----------------- | -------------------- | ------- | ------------------------------------ |
-| ManagementCluster | `managementclusters` | MC name | `managementclusters/mc-us-east-2-01` |
-
-## Account-Scoped Namespaces
+## Account-Scoped FleetDB Resources
 
 **Pattern**: `account-<accountID>`
 
-Used for tenant-level resources that are not tied to a specific cluster. The namespace IS the tenancy boundary: all resources for a given account live in the same namespace.
+The account ID comes from the authenticated caller. Platform-api rejects a supplied
+namespace that does not match the caller's canonical account namespace and sets the
+namespace itself when the request omits it.
 
-| Resource   | Namespace             | Name     | Example                           |
-| ---------- | --------------------- | -------- | --------------------------------- |
-| OidcConfig | `account-<accountID>` | configID | `account-123456789012/a1b2c3d4-…` |
+| Resource        | Namespace             | Name                         |
+| --------------- | --------------------- | ---------------------------- |
+| Cluster         | `account-<accountID>` | Client-selected DNS label    |
+| NodePool        | `account-<accountID>` | `<cluster>.<child>`          |
+| Placement       | `account-<accountID>` | `<cluster>.placement`        |
+| OidcConfig      | `account-<accountID>` | Client-selected name         |
+| DNSReservation  | `account-<accountID>` | Client-selected name         |
 
-### Why account-scoped?
+Names identify human-facing resources; FleetDB UIDs identify object incarnations.
+NodePool resolves its parent using the Cluster-name prefix and account namespace,
+then stores the parent UID in its ownerReference and `hyperfleet.io/cluster-uid`
+label. OidcConfig and DNSReservation claims are likewise held by Cluster UID.
 
-Resources like OidcConfig are shared across clusters within a tenant. Giving each one its own namespace (e.g. `oidc-<configID>`) would be wasteful and miss the natural grouping. Using the account as the namespace:
+## Management-Cluster Resources
 
-- **Matches Kubernetes conventions**: namespaces are the standard multi-tenancy boundary.
-- **Simplifies List**: scoping to the namespace returns exactly the tenant's resources, no label filter needed.
-- **Simplifies Get/Delete**: direct lookup by namespace + name, no list-and-filter.
-- **Scales naturally**: future tenant-scoped resources (e.g. identity providers, billing configs) use the same namespace.
+When the operator renders HyperShift resources onto a management cluster, it uses
+`cluster-<Cluster UID>` as the management-cluster namespace. The FleetDB Cluster,
+NodePool, Placement, and reservation remain in `account-<accountID>`.
 
-### Authorization
+## Operator-Controlled Resources
 
-Cedar/AVP handles authorization at the API layer. The namespace provides data isolation (you can only read what's in your namespace), but access control decisions are made by the authz middleware before the request reaches the data layer.
+`ManagementCluster` is cluster-scoped. Internal uniqueness `Index` resources use
+operator-controlled namespaces, including `dns-shard-0-reservations` for DNS
+prefixes and `oidc-issuer-reservations` for issuer URLs. Index ownership is recorded
+with `hyperfleet.io/owner-uid`.
 
-## Choosing a Pattern
+## Name Validation
 
-```
-Is this a service/infrastructure object (no customer ownership)?
-├─ Yes → fixed namespace (e.g. managementclusters)
-└─ No
-    └─ Is it specific to a single cluster?
-       ├─ Yes → cluster-<uuid>  (label the account)
-       └─ No  → account-<accountID>
-```
+Cluster `metadata.name` is a DNS label up to 63 characters. NodePool names use
+`<cluster>.<child>` with each part independently validated as a DNS label up to 63
+characters. HyperShift NodePool resources use only the child portion of that name.
+
+## Authorization
+
+Cedar/AVP performs authorization at the API layer. The account namespace provides
+storage isolation; it is derived from authenticated identity, not trusted as a
+client-provided authorization claim.

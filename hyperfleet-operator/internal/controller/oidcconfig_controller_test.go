@@ -112,7 +112,7 @@ func (f *fakeOidcInfra) ComputeThumbprint(_ context.Context, _ string) (string, 
 
 var _ = Describe("OidcConfig Controller", func() {
 	const testNS = "account-test-account"
-	const clusterNS = "cluster-test-cluster-id"
+	const clusterNS = "account-123456789012"
 	const testAccountID = "test-account"
 
 	ctx := context.Background()
@@ -157,11 +157,13 @@ var _ = Describe("OidcConfig Controller", func() {
 	}
 
 	// createReferencingCluster creates a minimal Cluster owned by testAccountID that references
-	// oidcConfigID via spec.oidcConfigId, simulating the cluster-creation flow that unblocks a
+	// the OidcConfig's database UID via spec.oidcConfigId, simulating the cluster-creation flow that unblocks a
 	// managed OidcConfig's readiness checks (see isReferencedByCluster).
-	createReferencingCluster := func(name, oidcConfigID string) {
+	createReferencingCluster := func(name, oidcConfigName string) {
+		var oc hyperfleetv1alpha1.OidcConfig
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: oidcConfigName}, &oc)).To(Succeed())
 		cluster := newTestCluster(name)
-		cluster.Spec.OidcConfigID = oidcConfigID
+		cluster.Spec.OidcConfigID = string(oc.UID)
 		cluster.Labels = map[string]string{accountIDLabel: testAccountID}
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 	}
@@ -273,7 +275,7 @@ var _ = Describe("OidcConfig Controller", func() {
 			// A cluster with the same oidcConfigId, but owned by a different account, must
 			// never count as a reference.
 			otherAccountCluster := newTestCluster("cross-account-cluster")
-			otherAccountCluster.Spec.OidcConfigID = "managed-cross-account"
+			otherAccountCluster.Spec.OidcConfigID = string(oc.UID)
 			otherAccountCluster.Labels = map[string]string{accountIDLabel: "other-account"}
 			Expect(k8sClient.Create(ctx, otherAccountCluster)).To(Succeed())
 
@@ -847,7 +849,7 @@ var _ = Describe("OidcConfig Controller", func() {
 				Namespace: hyperfleetv1alpha1.OidcIssuerReservationsNamespace,
 				Name:      hyperfleetv1alpha1.IssuerURLIndexName("https://customer-oidc.example.com/index-01"),
 			}, &idx)).To(Succeed())
-			Expect(idx.Labels[oidcconfigIDLabel]).To(Equal("index-01"))
+			Expect(idx.Labels[ownerUIDLabel]).To(Equal(string(updated.UID)))
 		})
 
 		It("should park a second config for the same issuer URL at Ready=False/IssuerURLConflict without copying its key, while the first stays Ready", func() {
@@ -892,7 +894,7 @@ var _ = Describe("OidcConfig Controller", func() {
 				Namespace: hyperfleetv1alpha1.OidcIssuerReservationsNamespace,
 				Name:      hyperfleetv1alpha1.IssuerURLIndexName(issuerURL),
 			}, &idx)).To(Succeed())
-			Expect(idx.Labels[oidcconfigIDLabel]).To(Equal("index-conflict-winner"))
+			Expect(idx.Labels[ownerUIDLabel]).To(Equal(string(updatedWinner.UID)))
 		})
 
 		It("should not delete the winner's Index when the losing config is deleted, but should free the URL when the winner is deleted", func() {
@@ -925,7 +927,7 @@ var _ = Describe("OidcConfig Controller", func() {
 
 			var idx hyperfleetv1alpha1.Index
 			Expect(k8sClient.Get(ctx, indexKey, &idx)).To(Succeed())
-			Expect(idx.Labels[oidcconfigIDLabel]).To(Equal("index-release-winner"))
+			Expect(idx.Labels[ownerUIDLabel]).To(Equal(string(winner.UID)))
 
 			// Deleting the winner must free the Index.
 			var latestWinner hyperfleetv1alpha1.OidcConfig

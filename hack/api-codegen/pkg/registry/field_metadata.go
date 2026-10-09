@@ -49,9 +49,9 @@ var FieldRegistry = TypedFieldRegistry{
 			OwnerType: "Cluster",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
 		},
-		"spec.displayName": {
-			FieldPath: "spec.displayName",
-			WriteMode: Mutable,
+		"spec.dnsReservationId": {
+			FieldPath: "spec.dnsReservationId",
+			WriteMode: Immutable,
 			OwnerType: "Cluster",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
 		},
@@ -1316,12 +1316,6 @@ var FieldRegistry = TypedFieldRegistry{
 			OwnerType: "NodePool",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.NodePool",
 		},
-		"spec.displayName": {
-			FieldPath: "spec.displayName",
-			WriteMode: Mutable,
-			OwnerType: "NodePool",
-			OwnerGVK:  "hyperfleet.io/v1alpha1.NodePool",
-		},
 		"spec.internalPoolId": {
 			FieldPath: "spec.internalPoolId",
 			WriteMode: ServiceSet,
@@ -1455,13 +1449,6 @@ var FieldRegistry = TypedFieldRegistry{
 	"OidcConfig": {
 		"spec.accountId": {
 			FieldPath: "spec.accountId",
-			WriteMode: ServiceSet,
-			Hidden:    true,
-			OwnerType: "OidcConfig",
-			OwnerGVK:  "hyperfleet.io/v1alpha1.OidcConfig",
-		},
-		"spec.indexRef": {
-			FieldPath: "spec.indexRef",
 			WriteMode: ServiceSet,
 			Hidden:    true,
 			OwnerType: "OidcConfig",

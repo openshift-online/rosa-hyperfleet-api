@@ -43,14 +43,11 @@ type IndexSpec struct{}
 //	dns-shard-<id>-reservations   — one domain per DNS shard, keyed by prefix
 //	oidc-issuer-reservations      — a single domain keyed by issuer URL
 //
-// A higher-level resource points at its Index by (namespace, name) — e.g.
-// DNSReservation records the pair in spec.indexRef so it can find and delete
-// the backing Index without recomputing it.
+// A higher-level resource can derive the key or discover Indexes by owner UID.
 //
 // Callers commonly label entries with hyperfleet.io/account-id (owning AWS
-// account) for filtering and cleanup; other labels are caller-specific (the
-// DNS flow, for instance, also stamps hyperfleet.io/cluster-namespace so a
-// cluster's entries can be swept on deletion).
+// account) for filtering and cleanup. Claims use hyperfleet.io/owner-uid to
+// associate the Index with the database UID of their owning resource.
 type Index struct {
 	metav1.TypeMeta `json:",inline"`
 

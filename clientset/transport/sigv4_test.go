@@ -162,7 +162,7 @@ func TestSigV4_NamespaceSegmentStrippedFromURL(t *testing.T) {
 	}
 }
 
-func TestSigV4_NamespaceOverridesDefaultAccountID(t *testing.T) {
+func TestSigV4_NamespaceDoesNotOverrideConfiguredAccountID(t *testing.T) {
 	cap := &captureTransport{}
 	rt := New(cap, staticConfig(), "us-east-1", "default-acct", "arn")
 
@@ -170,8 +170,8 @@ func TestSigV4_NamespaceOverridesDefaultAccountID(t *testing.T) {
 	if _, err := rt.RoundTrip(req); err != nil {
 		t.Fatalf("RoundTrip: %v", err)
 	}
-	if got := cap.got.Header.Get(headerAccountID); got != "override-acct" {
-		t.Errorf("%s = %q, want override-acct", headerAccountID, got)
+	if got := cap.got.Header.Get(headerAccountID); got != "default-acct" {
+		t.Errorf("%s = %q, want default-acct", headerAccountID, got)
 	}
 }
 

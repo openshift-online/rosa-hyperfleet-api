@@ -52,11 +52,11 @@ func IssuerURLIndexName(normalizedIssuerURL string) string {
 }
 
 // OidcConfigSpec defines the desired state of an OidcConfig.
-// +kubebuilder:validation:XValidation:rule="self.type != 'managed' || (self.secretArn == '' && self.installerRoleArn == '')",message="managed type must not set secretArn or installerRoleArn"
-// +kubebuilder:validation:XValidation:rule="self.type != 'unmanaged' || (self.secretArn != '' && self.installerRoleArn != '')",message="unmanaged type requires secretArn and installerRoleArn"
+// +kubebuilder:validation:XValidation:rule="self.type != 'managed' || ((!has(self.secretArn) || size(self.secretArn) == 0) && (!has(self.installerRoleArn) || size(self.installerRoleArn) == 0))",message="managed type must not set secretArn or installerRoleArn"
+// +kubebuilder:validation:XValidation:rule="self.type != 'unmanaged' || (size(self.secretArn) > 0 && size(self.installerRoleArn) > 0)",message="unmanaged type requires secretArn and installerRoleArn"
 // +kubebuilder:validation:XValidation:rule="self.type == oldSelf.type",message="spec.type is immutable"
-// +kubebuilder:validation:XValidation:rule="self.secretArn == oldSelf.secretArn",message="spec.secretArn is immutable"
-// +kubebuilder:validation:XValidation:rule="self.installerRoleArn == oldSelf.installerRoleArn",message="spec.installerRoleArn is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.secretArn) == has(oldSelf.secretArn) && (!has(self.secretArn) || self.secretArn == oldSelf.secretArn)",message="spec.secretArn is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.installerRoleArn) == has(oldSelf.installerRoleArn) && (!has(self.installerRoleArn) || self.installerRoleArn == oldSelf.installerRoleArn)",message="spec.installerRoleArn is immutable"
 // +kubebuilder:validation:XValidation:rule="self.issuerUrl == oldSelf.issuerUrl",message="spec.issuerUrl is immutable"
 type OidcConfigSpec struct {
 	// Type is the OIDC configuration mode.
@@ -91,13 +91,6 @@ type OidcConfigSpec struct {
 	// +hyperfleet:write-mode=service-set
 	// +optional
 	AccountID string `json:"accountId,omitempty"`
-
-	// IndexRef references the Index that reserves this config's issuer URL. Computed by
-	// platform-api; OidcConfigReconciler owns actually creating the referenced Index.
-	// +k8s:openapi-gen=false
-	// +hyperfleet:write-mode=service-set
-	// +optional
-	IndexRef IndexRef `json:"indexRef,omitzero"`
 }
 
 // OidcConfigStatus defines the observed state of an OidcConfig.
@@ -130,9 +123,6 @@ type OidcConfigStatus struct {
 // +genclient
 // +genclient:nonNamespaced
 // +resourceName=oidc_configs
-// +bridge:field=id,meta=name
-// +bridge:field=resource_version,meta=resourceVersion
-// +bridge:field=generation,meta=generation
 // +bridge:watch=disabled
 // +bridge:wait
 // +kubebuilder:object:root=true
@@ -144,7 +134,7 @@ type OidcConfigStatus struct {
 
 // OidcConfig is the Schema for the oidcconfigs API.
 // It represents a reusable OIDC configuration for cluster identity.
-// metadata.Name is the config ID; metadata.Namespace is account-<accountID>.
+// metadata.Name is the client-chosen config name; metadata.Namespace is account-<accountID>.
 // Not exposed to REST clients — the platform API is flat (/oidc_configs) and
 // derives the account from the caller's identity, not a URL parameter.
 type OidcConfig struct {

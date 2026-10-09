@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
 func TestValidateNodePoolReplicas(t *testing.T) {
@@ -51,12 +53,9 @@ func TestValidateNodePoolReplicas(t *testing.T) {
 }
 
 func TestNodePoolHandlerCreateRejectsNegativeReplicas(t *testing.T) {
-	const (
-		accountID = "123456789012"
-		clusterID = "550e8400-e29b-41d4-a716-446655440000"
-	)
+	const accountID = "123456789012"
 	handler := newNodePoolValidationTestHandler(t)
-	body := `{"metadata":{"name":"pool-a","namespace":"cluster-` + clusterID + `"},"spec":{"nodePool":{"replicas":-1}}}`
+	body := `{"metadata":{"name":"test-cluster.pool-a","namespace":"account-` + accountID + `"},"spec":{"nodePool":{"replicas":-1}}}`
 	request := httptest.NewRequest(http.MethodPost, "/api/v0/nodepools", strings.NewReader(body))
 	request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
 	response := httptest.NewRecorder()
@@ -74,19 +73,18 @@ func TestNodePoolHandlerCreateRejectsNegativeReplicas(t *testing.T) {
 func TestNodePoolHandlerUpdateRejectsNegativeReplicas(t *testing.T) {
 	const (
 		accountID = "123456789012"
-		clusterID = "550e8400-e29b-41d4-a716-446655440000"
 		poolName  = "pool-a"
 	)
 	object := &hyperfleetv1alpha1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      poolName,
-			Namespace: hyperfleetdb.ClusterNSPrefix + clusterID,
+			Namespace: "account-" + accountID,
 			Labels:    map[string]string{"hyperfleet.io/account-id": accountID},
 		},
 	}
 	handler := newNodePoolValidationTestHandler(t, object)
 	body := `{"spec":{"nodePool":{"replicas":-1}}}`
-	request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName+"?clusterId="+clusterID, strings.NewReader(body))
+	request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName, strings.NewReader(body))
 	request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
 	request = mux.SetURLVars(request, map[string]string{"id": poolName})
 	response := httptest.NewRecorder()
@@ -98,6 +96,71 @@ func TestNodePoolHandlerUpdateRejectsNegativeReplicas(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), "spec.nodePool.replicas") {
 		t.Fatalf("Update() response does not identify replicas: %s", response.Body.String())
+	}
+	if !json.Valid(response.Body.Bytes()) {
+		t.Fatalf("Update() response contains multiple JSON documents: %s", response.Body.String())
+	}
+}
+
+func TestNodePoolHandlerUpdateReturnsMultipleValidationErrors(t *testing.T) {
+	const (
+		accountID = "123456789012"
+		poolName  = "pool-a"
+	)
+	object := &hyperfleetv1alpha1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      poolName,
+			Namespace: "account-" + accountID,
+			Labels:    map[string]string{"hyperfleet.io/account-id": accountID},
+		},
+		Spec: hyperfleetv1alpha1.NodePoolSpec{
+			NodePool: hyperfleetv1alpha1.NodePoolSpecPassthrough{
+				Platform: hypershiftv1beta1.NodePoolPlatform{Type: hypershiftv1beta1.AWSPlatform},
+			},
+		},
+	}
+	handler := newNodePoolValidationTestHandler(t, object)
+	body := `{"spec":{"nodePool":{"platform":{"type":"Azure"},"replicas":-1}}}`
+	request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName, strings.NewReader(body))
+	request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+	request = mux.SetURLVars(request, map[string]string{"id": poolName})
+	response := httptest.NewRecorder()
+
+	handler.Update(response, request)
+
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("Update() status = %d, want %d; body=%s", response.Code, http.StatusUnprocessableEntity, response.Body.String())
+	}
+	var status metav1.Status
+	if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil {
+		t.Fatalf("Update() response is not valid Status JSON: %v; body=%s", err, response.Body.String())
+	}
+	if status.Details == nil {
+		t.Fatalf("Update() response has no validation causes: %s", response.Body.String())
+	}
+	gotCauses := make(map[string]metav1.StatusCause, len(status.Details.Causes))
+	for _, cause := range status.Details.Causes {
+		gotCauses[cause.Field] = cause
+	}
+	wantCauses := map[string]string{
+		"spec.nodePool.platform.type": "field is immutable and cannot be changed after creation",
+		"spec.nodePool.replicas":      "must be greater than or equal to 0",
+	}
+	for field, wantMessage := range wantCauses {
+		cause, ok := gotCauses[field]
+		if !ok {
+			t.Errorf("Update() validation causes %v do not include %q", status.Details.Causes, field)
+			continue
+		}
+		if cause.Type != metav1.CauseTypeFieldValueInvalid {
+			t.Errorf("cause %q type = %q, want %q", field, cause.Type, metav1.CauseTypeFieldValueInvalid)
+		}
+		if cause.Message != wantMessage {
+			t.Errorf("cause %q message = %q, want %q", field, cause.Message, wantMessage)
+		}
+	}
+	if len(status.Details.Causes) != 2 {
+		t.Errorf("Update() returned %d validation causes, want 2: %+v", len(status.Details.Causes), status.Details.Causes)
 	}
 }
 

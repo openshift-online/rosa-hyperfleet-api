@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -9,7 +10,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/client-go/util/retry"
 
+	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
@@ -50,7 +56,44 @@ func (h *NodePoolHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
+	clusterUID := r.URL.Query().Get("clusterUID")
 	clusterID := r.URL.Query().Get("clusterId")
+	if clusterUID != "" && clusterID != "" && clusterUID != clusterID {
+		writeAPIError(w, ErrNodePoolListInvalidClusterUID, h.logger)
+		return
+	}
+	if clusterUID == "" {
+		// The existing OpenAPI list parameter is named clusterId. Its value is
+		// now the parent Cluster UID and is applied as the cluster-uid label.
+		clusterUID = clusterID
+	}
+	if selector := r.URL.Query().Get("labelSelector"); selector != "" {
+		parsed, err := labels.Parse(selector)
+		if err != nil {
+			writeAPIError(w, ErrNodePoolListInvalidClusterUID, h.logger)
+			return
+		}
+		requirements, selectable := parsed.Requirements()
+		if !selectable || len(requirements) != 1 || requirements[0].Key() != clusterUIDLabel ||
+			(requirements[0].Operator() != selection.Equals && requirements[0].Operator() != selection.DoubleEquals) ||
+			requirements[0].Values().Len() != 1 {
+			writeAPIError(w, ErrNodePoolListInvalidClusterUID, h.logger)
+			return
+		}
+		selectedUID := requirements[0].Values().List()[0]
+		if clusterUID != "" && clusterUID != selectedUID {
+			writeAPIError(w, ErrNodePoolListInvalidClusterUID, h.logger)
+			return
+		}
+		clusterUID = selectedUID
+	}
+	if clusterUID != "" {
+		parsedUID, err := uuid.Parse(clusterUID)
+		if err != nil || parsedUID.String() != clusterUID {
+			writeAPIError(w, ErrNodePoolListInvalidClusterUID, h.logger)
+			return
+		}
+	}
 
 	limit := 50
 	offset := 0
@@ -67,9 +110,9 @@ func (h *NodePoolHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.logger.Info("listing nodepools", "account_id", accountID, "limit", limit, "offset", offset, "cluster_id", clusterID)
+	h.logger.Info("listing nodepools", "account_id", accountID, "limit", limit, "offset", offset, "cluster_uid", clusterUID)
 
-	list, err := h.db.ListNodePools(ctx, accountID, clusterID)
+	list, err := h.db.ListNodePools(ctx, accountID, clusterUID)
 	if err != nil {
 		h.logger.Error("failed to list nodepools", "error", err, "account_id", accountID)
 		writeAPIError(w, ErrNodePoolList, h.logger)
@@ -103,9 +146,8 @@ func (h *NodePoolHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create handles POST /api/v0/nodepools
-// Request body: public.NodePool (K8s-native). Name comes from metadata.name;
-// cluster association comes from metadata.namespace which must be the canonical
-// "cluster-<uuid>" form (e.g. "cluster-550e8400-e29b-41d4-a716-446655440000").
+// Request body: public.NodePool (K8s-native). Name is <cluster>.<child>; the
+// prefix resolves the parent Cluster in the authenticated account namespace.
 func (h *NodePoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
@@ -116,44 +158,51 @@ func (h *NodePoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name == "" || req.Namespace == "" {
+	if req.Name == "" {
 		writeAPIError(w, ErrNodePoolCreateMissingFields, h.logger)
 		return
 	}
-
-	// Namespace must be the exact canonical form "cluster-<uuid>" (lowercase).
-	// Parse the suffix and round-trip through uuid.String() to reject non-canonical
-	// forms (e.g. uppercase) that would pass uuid.Parse but fail GetCluster lookup.
-	clusterIDRaw := hyperfleetdb.ClusterIDFromNamespace(req.Namespace)
-	parsedUUID, err := uuid.Parse(clusterIDRaw)
-	if err != nil || req.Namespace != hyperfleetdb.ClusterNSPrefix+parsedUUID.String() {
+	if err := validation.ValidateAccountNamespace(req.Namespace, accountID); err != nil {
 		writeAPIError(w, ErrNodePoolCreateInvalidNamespace, h.logger)
 		return
 	}
-	clusterID := parsedUUID.String()
+	clusterName, _, err := validation.ParseNodePoolName(req.Name)
+	if err != nil {
+		writeAPIError(w, ErrNodePoolCreateInvalidName, h.logger)
+		return
+	}
+	// ClusterName is derived from the validated metadata.name prefix; do not
+	// trust a separately supplied passthrough value to select a parent.
+	req.Spec.NodePool.ClusterName = clusterName
 
 	if errs := append(h.validator.ValidateCreate(&req.Spec, featuregate.Default), validateNodePoolReplicas(&req.Spec)...); len(errs) > 0 {
 		writeAPIError(w, ErrNodePoolValidation.WithErrors(errs), h.logger)
 		return
 	}
 
-	if _, err := h.db.GetCluster(ctx, accountID, clusterID); err != nil {
+	cluster, err := h.db.GetCluster(ctx, accountID, clusterName)
+	if err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrNodePoolCreateClusterNotFound, h.logger)
 			return
 		}
-		h.logger.Error("failed to verify cluster exists", "error", err, "account_id", accountID, "cluster_id", clusterID)
+		h.logger.Error("failed to verify cluster exists", "error", err, "account_id", accountID, "cluster_name", clusterName)
 		writeAPIError(w, ErrNodePoolCreateClusterCheck, h.logger)
 		return
 	}
+	if !cluster.DeletionTimestamp.IsZero() {
+		writeAPIError(w, ErrNodePoolCreateClusterDeleting, h.logger)
+		return
+	}
+	h.logger.Info("creating nodepool", "account_id", accountID, "cluster_uid", cluster.UID, "nodepool_name", req.Name)
 
-	h.logger.Info("creating nodepool", "account_id", accountID, "cluster_id", clusterID, "nodepool_name", req.Name)
-
-	// internalPoolID is a platform-assigned UUID stored as a service-set field.
-	// The public-facing UID (used by SDK callers) is the NodePool name, set by
-	// InternalToPublicNodePool from cr.Name.
+	// internalPoolID is retained as a service-set implementation field; FleetDB UID
+	// is the public object identity.
 	internalPoolID := uuid.New().String()
-	cr := hyperfleetdb.PublicToInternalNodePool(&req, accountID, clusterID, internalPoolID)
+	cr := hyperfleetdb.PublicToInternalNodePool(&req, accountID, internalPoolID)
+	cr.Spec.NodePool.ClusterName = cluster.Name
+	cr.OwnerReferences = []metav1.OwnerReference{*metav1.NewControllerRef(cluster, hyperfleetv1alpha1.GroupVersion.WithKind("Cluster"))}
+	cr.Labels["hyperfleet.io/cluster-uid"] = string(cluster.UID)
 
 	if err := h.db.CreateNodePool(ctx, accountID, cr); err != nil {
 		h.logger.Error("failed to create nodepool", "error", err, "account_id", accountID)
@@ -173,19 +222,18 @@ func (h *NodePoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *NodePoolHandler) Get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
-	clusterID := r.URL.Query().Get("clusterId")
 	vars := mux.Vars(r)
-	nodepoolID := vars["id"]
+	nodepoolName := vars["id"]
 
-	h.logger.Info("getting nodepool", "account_id", accountID, "cluster_id", clusterID, "nodepool_id", nodepoolID)
+	h.logger.Info("getting nodepool", "account_id", accountID, "nodepool_name", nodepoolName)
 
-	cr, err := h.db.GetNodePool(ctx, accountID, clusterID, nodepoolID)
+	cr, err := h.db.GetNodePool(ctx, accountID, nodepoolName)
 	if err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrNodePoolGetNotFound, h.logger)
 			return
 		}
-		h.logger.Error("failed to get nodepool", "error", err, "account_id", accountID, "nodepool_id", nodepoolID)
+		h.logger.Error("failed to get nodepool", "error", err, "account_id", accountID, "nodepool_name", nodepoolName)
 		writeAPIError(w, ErrNodePoolGetFailed, h.logger)
 		return
 	}
@@ -200,9 +248,8 @@ func (h *NodePoolHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
-	clusterID := r.URL.Query().Get("clusterId")
 	vars := mux.Vars(r)
-	nodepoolID := vars["id"]
+	nodepoolName := vars["id"]
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -215,24 +262,12 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrNodePoolUpdateInvalidBody, h.logger)
 		return
 	}
-
-	h.logger.Info("updating nodepool", "account_id", accountID, "cluster_id", clusterID, "nodepool_id", nodepoolID)
-
-	cr, err := h.db.GetNodePool(ctx, accountID, clusterID, nodepoolID)
-	if err != nil {
-		if hyperfleetdb.IsNotFound(err) {
-			writeAPIError(w, ErrNodePoolUpdateNotFound, h.logger)
-			return
-		}
-		h.logger.Error("failed to get nodepool for update", "error", err, "account_id", accountID, "nodepool_id", nodepoolID)
-		writeAPIError(w, ErrNodePoolUpdateFailed, h.logger)
+	if err := validation.ValidateAccountNamespace(req.Namespace, accountID); err != nil {
+		writeAPIError(w, ErrNodePoolCreateInvalidNamespace, h.logger)
 		return
 	}
 
-	if errs := append(h.validator.ValidateUpdate(&req.Spec, &cr.Spec, featuregate.Default), validateNodePoolReplicas(&req.Spec)...); len(errs) > 0 {
-		writeAPIError(w, ErrNodePoolValidation.WithErrors(errs), h.logger)
-		return
-	}
+	h.logger.Info("updating nodepool", "account_id", accountID, "nodepool_name", nodepoolName)
 
 	var envelope struct {
 		Spec json.RawMessage `json:"spec"`
@@ -252,19 +287,53 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrNodePoolUpdateMissingFields, h.logger)
 		return
 	}
-	if err := hyperfleetdb.MergeSpecJSON(&cr.Spec, envelope.Spec); err != nil {
-		h.logger.Error("failed to merge nodepool spec", "error", err)
+
+	var updated *hyperfleetv1alpha1.NodePool
+	var validationErr validation.ValidationErrors
+	var mergeErr error
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := h.db.GetNodePool(ctx, accountID, nodepoolName)
+		if err != nil {
+			return err
+		}
+		if errs := append(h.validator.ValidateUpdate(&req.Spec, &current.Spec, featuregate.Default), validateNodePoolReplicas(&req.Spec)...); len(errs) > 0 {
+			validationErr = errs
+			return fmt.Errorf("invalid nodepool update")
+		}
+		if err := hyperfleetdb.MergeSpecJSON(&current.Spec, envelope.Spec); err != nil {
+			mergeErr = err
+			return fmt.Errorf("merge nodepool spec: %w", err)
+		}
+		if err := h.db.UpdateNodePool(ctx, current); err != nil {
+			return err
+		}
+		updated = current
+		return nil
+	})
+	if len(validationErr) != 0 {
+		writeAPIError(w, ErrNodePoolValidation.WithErrors(validationErr), h.logger)
+		return
+	}
+	if mergeErr != nil {
+		h.logger.Error("failed to merge nodepool spec", "error", mergeErr)
 		writeAPIError(w, ErrNodePoolUpdateInvalidSpec, h.logger)
 		return
 	}
-
-	if err := h.db.UpdateNodePool(ctx, cr); err != nil {
-		h.logger.Error("failed to update nodepool", "error", err, "account_id", accountID, "nodepool_id", nodepoolID)
+	if err != nil {
+		if hyperfleetdb.IsNotFound(err) {
+			writeAPIError(w, ErrNodePoolUpdateNotFound, h.logger)
+			return
+		}
+		if hyperfleetdb.IsConflict(err) {
+			writeAPIError(w, ErrNodePoolUpdateConflict, h.logger)
+			return
+		}
+		h.logger.Error("failed to update nodepool", "error", err, "account_id", accountID, "nodepool_name", nodepoolName)
 		writeAPIError(w, ErrNodePoolUpdateFailed, h.logger)
 		return
 	}
 
-	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicNodePool(cr)); err != nil {
+	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicNodePool(updated)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }
@@ -272,26 +341,25 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *NodePoolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
-	clusterID := r.URL.Query().Get("clusterId")
 	vars := mux.Vars(r)
-	nodepoolID := vars["id"]
+	nodepoolName := vars["id"]
 
-	h.logger.Info("deleting nodepool", "account_id", accountID, "cluster_id", clusterID, "nodepool_id", nodepoolID)
+	h.logger.Info("deleting nodepool", "account_id", accountID, "nodepool_name", nodepoolName)
 
-	err := h.db.DeleteNodePool(ctx, accountID, clusterID, nodepoolID)
+	err := h.db.DeleteNodePool(ctx, accountID, nodepoolName)
 	if err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrNodePoolDeleteNotFound, h.logger)
 			return
 		}
-		h.logger.Error("failed to delete nodepool", "error", err, "account_id", accountID, "nodepool_id", nodepoolID)
+		h.logger.Error("failed to delete nodepool", "error", err, "account_id", accountID, "nodepool_name", nodepoolName)
 		writeAPIError(w, ErrNodePoolDeleteFailed, h.logger)
 		return
 	}
 
 	response := map[string]any{
-		"message":     "NodePool deletion initiated",
-		"nodepool_id": nodepoolID,
+		"message":       "NodePool deletion initiated",
+		"nodepool_name": nodepoolName,
 	}
 
 	if err := api.Write(w, http.StatusAccepted, response); err != nil {

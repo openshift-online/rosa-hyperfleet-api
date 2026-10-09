@@ -16,7 +16,8 @@ func testCluster() *hyperfleetv1alpha1.Cluster {
 	return &hyperfleetv1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-cluster",
-			Namespace: "cluster-abc12345",
+			Namespace: "account-123456789012",
+			UID:       "abc12345",
 		},
 		Spec: hyperfleetv1alpha1.ClusterSpec{
 			CreatorARN: "arn:aws:iam::123456789012:user/admin",
@@ -133,6 +134,27 @@ func TestClusterResourcesTypes(t *testing.T) {
 		}
 		if resources[i].Name != e.name {
 			t.Errorf("resource[%d]: expected name %q, got %q", i, e.name, resources[i].Name)
+		}
+	}
+}
+
+func TestClusterResourcesRenderIntoUIDManagementNamespace(t *testing.T) {
+	cluster := testCluster()
+	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "")
+	if err != nil {
+		t.Fatalf("ClusterResources: %v", err)
+	}
+	wantNamespace := ManagementNamespace(string(cluster.UID))
+	for _, resource := range resources {
+		if resource.Resource == "namespaces" {
+			namespace := resource.Object.(*corev1.Namespace)
+			if namespace.Name != wantNamespace {
+				t.Errorf("rendered namespace name = %q, want %q", namespace.Name, wantNamespace)
+			}
+			continue
+		}
+		if resource.Namespace != wantNamespace {
+			t.Errorf("resource %s/%s namespace = %q, want %q", resource.Resource, resource.Name, resource.Namespace, wantNamespace)
 		}
 	}
 }

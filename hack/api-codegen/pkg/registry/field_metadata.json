@@ -26,8 +26,8 @@
     "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
   },
   {
-    "fieldPath": "spec.displayName",
-    "writeMode": "mutable",
+    "fieldPath": "spec.dnsReservationId",
+    "writeMode": "immutable",
     "ownerType": "Cluster",
     "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
   },
@@ -1277,12 +1277,6 @@
     "ownerGVK": "hyperfleet.io/v1alpha1.NodePool"
   },
   {
-    "fieldPath": "spec.displayName",
-    "writeMode": "mutable",
-    "ownerType": "NodePool",
-    "ownerGVK": "hyperfleet.io/v1alpha1.NodePool"
-  },
-  {
     "fieldPath": "spec.internalPoolId",
     "writeMode": "service-set",
     "hidden": true,
@@ -1411,13 +1405,6 @@
   },
   {
     "fieldPath": "spec.accountId",
-    "writeMode": "service-set",
-    "hidden": true,
-    "ownerType": "OidcConfig",
-    "ownerGVK": "hyperfleet.io/v1alpha1.OidcConfig"
-  },
-  {
-    "fieldPath": "spec.indexRef",
     "writeMode": "service-set",
     "hidden": true,
     "ownerType": "OidcConfig",

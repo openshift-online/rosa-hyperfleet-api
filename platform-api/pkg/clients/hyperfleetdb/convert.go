@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
@@ -63,20 +62,17 @@ func resetSuppliedNodePoolLabelMaps(dst any, specJSON []byte) error {
 // --- Cluster conversions ---
 
 // PublicToInternalCluster converts public.Cluster to internal v1alpha1.Cluster
-// for storage in FleetDB. Enriches with service-set fields (accountID, internalID).
+// for storage in FleetDB. Account identity is derived from the authenticated caller.
 // The input pub is not modified; a copy of ObjectMeta is used for the returned CRD.
-func PublicToInternalCluster(pub *public.Cluster, accountID, clusterID string) *hyperfleetv1alpha1.Cluster {
+func PublicToInternalCluster(pub *public.Cluster, accountID string) *hyperfleetv1alpha1.Cluster {
 	if pub == nil {
 		return nil
 	}
 
-	meta := pub.ObjectMeta
-	meta.Labels = maps.Clone(pub.Labels)
-	enrichMetadata(&meta, clusterID, clusterID, accountID)
+	meta := customerObjectMeta(pub.ObjectMeta, accountID)
 
 	enrichment := &conversion.ServiceSetFields{
-		AccountID:  accountID,
-		InternalID: clusterID,
+		AccountID: accountID,
 	}
 	crdSpec := v1alpha1conv.UnprojectCluster(&pub.Spec, enrichment)
 
@@ -88,17 +84,12 @@ func PublicToInternalCluster(pub *public.Cluster, accountID, clusterID string) *
 }
 
 // InternalToPublicCluster converts internal v1alpha1.Cluster to public.Cluster
-// for REST API responses. Filters service-set fields via JSON roundtrip projection.
-// metadata.uid is overridden with the cluster UUID (from namespace) because FleetDB
-// assigns its own UID on storage. SDK callers rely on string(cluster.UID) as the
-// stable identifier for Get/WaitUntil, which the handler routes by cluster UUID.
+// for REST API responses. FleetDB's UID is returned without substitution.
 func InternalToPublicCluster(cr *hyperfleetv1alpha1.Cluster) *public.Cluster {
 	if cr == nil {
 		return nil
 	}
-	pub := v1alpha1conv.ProjectCluster(cr)
-	pub.UID = types.UID(clusterIDFromNamespace(cr.Namespace))
-	return pub
+	return v1alpha1conv.ProjectCluster(cr)
 }
 
 // --- NodePool conversions ---
@@ -107,14 +98,12 @@ func InternalToPublicCluster(cr *hyperfleetv1alpha1.Cluster) *public.Cluster {
 // for storage in FleetDB. Enriches with service-set fields and syncs the top-level
 // autoRepair and labels fields into the HyperShift passthrough for internal consistency.
 // The input pub is not modified; a copy of ObjectMeta is used for the returned CRD.
-func PublicToInternalNodePool(pub *public.NodePool, accountID, clusterID, internalPoolID string) *hyperfleetv1alpha1.NodePool {
+func PublicToInternalNodePool(pub *public.NodePool, accountID, internalPoolID string) *hyperfleetv1alpha1.NodePool {
 	if pub == nil {
 		return nil
 	}
 
-	meta := pub.ObjectMeta
-	meta.Labels = maps.Clone(pub.Labels)
-	enrichMetadata(&meta, clusterID, pub.Name, accountID)
+	meta := customerObjectMeta(pub.ObjectMeta, accountID)
 
 	// Capture top-level user values before Unproject, which overlays ServiceSetFields
 	// (some of which have no omitempty and can zero out fields like Labels).
@@ -148,36 +137,26 @@ func PublicToInternalNodePool(pub *public.NodePool, accountID, clusterID, intern
 }
 
 // InternalToPublicNodePool converts internal v1alpha1.NodePool to public.NodePool
-// for REST API responses. Filters service-set fields via JSON roundtrip projection.
-// metadata.uid is overridden with cr.Name because GetNodePool looks up by name, and
-// SDK callers rely on string(np.UID) as the stable identifier for Get/WaitUntil.
+// for REST API responses. FleetDB's UID is returned without substitution.
 func InternalToPublicNodePool(cr *hyperfleetv1alpha1.NodePool) *public.NodePool {
 	if cr == nil {
 		return nil
 	}
-	pub := v1alpha1conv.ProjectNodePool(cr)
-	pub.UID = types.UID(cr.Name)
-	return pub
+	return v1alpha1conv.ProjectNodePool(cr)
 }
 
 // --- OidcConfig conversions ---
 
 // PublicToInternalOidcConfig converts public.OidcConfig to internal v1alpha1.OidcConfig
-// for storage in FleetDB. Sets namespace from accountID and name from configID.
+// for storage in FleetDB. The name and namespace are set from validated request
+// metadata and the authenticated account.
 // The input pub is not modified; a copy of ObjectMeta is used for the returned CRD.
-func PublicToInternalOidcConfig(pub *public.OidcConfig, accountID, configID string) *hyperfleetv1alpha1.OidcConfig {
+func PublicToInternalOidcConfig(pub *public.OidcConfig, accountID string) *hyperfleetv1alpha1.OidcConfig {
 	if pub == nil {
 		return nil
 	}
 
-	meta := pub.ObjectMeta
-	meta.Labels = maps.Clone(pub.Labels)
-	meta.Namespace = accountNamespace(accountID)
-	meta.Name = configID
-	if meta.Labels == nil {
-		meta.Labels = make(map[string]string)
-	}
-	meta.Labels["hyperfleet.io/account-id"] = accountID
+	meta := customerObjectMeta(pub.ObjectMeta, accountID)
 
 	enrichment := &conversion.ServiceSetFields{
 		AccountID: accountID,
@@ -192,30 +171,61 @@ func PublicToInternalOidcConfig(pub *public.OidcConfig, accountID, configID stri
 }
 
 // InternalToPublicOidcConfig converts internal v1alpha1.OidcConfig to public.OidcConfig
-// for REST API responses. Filters service-set fields via JSON roundtrip projection.
-// metadata.uid is set to cr.Name (configID) as the stable identifier for routing.
+// for REST API responses. FleetDB's UID is returned without substitution.
 func InternalToPublicOidcConfig(cr *hyperfleetv1alpha1.OidcConfig) *public.OidcConfig {
 	if cr == nil {
 		return nil
 	}
-	pub := v1alpha1conv.ProjectOidcConfig(cr)
-	pub.UID = types.UID(cr.Name)
-	return pub
+	return v1alpha1conv.ProjectOidcConfig(cr)
+}
+
+// PublicToInternalDNSReservation converts the customer-facing reservation to its
+// account-scoped FleetDB representation.
+func PublicToInternalDNSReservation(pub *public.DNSReservation, accountID string) *hyperfleetv1alpha1.DNSReservation {
+	if pub == nil {
+		return nil
+	}
+	return &hyperfleetv1alpha1.DNSReservation{
+		TypeMeta:   pub.TypeMeta,
+		ObjectMeta: customerObjectMeta(pub.ObjectMeta, accountID),
+		Spec:       *v1alpha1conv.UnprojectDNSReservation(&pub.Spec, &conversion.ServiceSetFields{AccountID: accountID}),
+	}
+}
+
+// InternalToPublicDNSReservation projects a DNSReservation. The FleetDB UID is returned unchanged.
+func InternalToPublicDNSReservation(res *hyperfleetv1alpha1.DNSReservation) *public.DNSReservation {
+	if res == nil {
+		return nil
+	}
+	return v1alpha1conv.ProjectDNSReservation(res)
 }
 
 // --- Helpers ---
 
-// enrichMetadata sets K8s namespace, UID, and account label on meta in-place.
-// clusterID drives the namespace ("cluster-<uuid>"); resourceID sets the UID
-// (the stable identifier for Get/WaitUntil). They differ for child resources
-// like NodePool where the namespace belongs to the parent cluster.
-func enrichMetadata(meta *metav1.ObjectMeta, clusterID, resourceID, accountID string) {
-	meta.Namespace = clusterNamespace(clusterID)
-	meta.UID = types.UID(resourceID)
+// customerObjectMeta sets the account namespace and trusted account label while
+// discarding client-supplied server-owned identity and ownership metadata.
+func customerObjectMeta(meta metav1.ObjectMeta, accountID string) metav1.ObjectMeta {
+	meta.Labels = maps.Clone(meta.Labels)
+	for key := range meta.Labels {
+		if strings.HasPrefix(key, "hyperfleet.io/") {
+			delete(meta.Labels, key)
+		}
+	}
+	meta.Namespace = accountNamespace(accountID)
+	meta.UID = ""
+	meta.ResourceVersion = ""
+	meta.Generation = 0
+	meta.CreationTimestamp = metav1.Time{}
+	meta.DeletionTimestamp = nil
+	meta.DeletionGracePeriodSeconds = nil
+	meta.OwnerReferences = nil
+	meta.Finalizers = nil
+	meta.ManagedFields = nil
 	if meta.Labels == nil {
 		meta.Labels = make(map[string]string)
 	}
 	meta.Labels["hyperfleet.io/account-id"] = accountID
+	return meta
 }
 
 // syncNodePoolPassthrough mirrors the top-level autoRepair and labels into the
@@ -236,32 +246,4 @@ func syncNodePoolPassthrough(spec *hyperfleetv1alpha1.NodePoolSpec, autoRepair *
 	}
 
 	spec.NodePool.NodeLabels = labels
-}
-
-// ClusterNSPrefix is the namespace prefix for cluster resources ("cluster-<uuid>").
-const ClusterNSPrefix = "cluster-"
-
-const clusterNSPrefix = ClusterNSPrefix
-
-// clusterUUIDLen is the fixed length of a RFC 4122 UUID string (e.g. "4610b27e-8f77-4f4c-9661-c11b42e04dec").
-const clusterUUIDLen = 36
-
-// MaxClusterNameLen is the maximum allowed cluster name length.
-// HyperShift creates a control plane namespace as "<hc-namespace>-<hc-name>",
-// which expands to "cluster-<uuid>-<name>" and must fit within 63 characters (k8s namespace limit).
-const MaxClusterNameLen = 63 - len(clusterNSPrefix) - clusterUUIDLen - len("-")
-
-func clusterNamespace(clusterID string) string {
-	return clusterNSPrefix + clusterID
-}
-
-func clusterIDFromNamespace(ns string) string {
-	return strings.TrimPrefix(ns, clusterNSPrefix)
-}
-
-// ClusterIDFromNamespace extracts the cluster UUID from a K8s namespace string ("cluster-<uuid>")
-// by stripping the "cluster-" prefix. It does not validate the result; callers must verify the
-// returned string is a valid UUID before using it for database lookups.
-func ClusterIDFromNamespace(ns string) string {
-	return clusterIDFromNamespace(ns)
 }

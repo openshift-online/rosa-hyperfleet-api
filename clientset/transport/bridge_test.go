@@ -211,20 +211,20 @@ func TestAdaptListQuery_NonGETNotRewritten(t *testing.T) {
 	}
 }
 
-func TestAdaptNodePoolScope(t *testing.T) {
-	clusterID := "550e8400-e29b-41d4-a716-446655440000"
-	for _, namespace := range []string{clusterID, "cluster-" + clusterID} {
-		t.Run(namespace, func(t *testing.T) {
-			a := newAdapter()
-			req := getRequest("https://example.com/api/v0/namespaces/" + namespace + "/nodepools/workers")
+func TestAdaptListQueryPreservesClusterUIDSelector(t *testing.T) {
+	a := newAdapter()
+	uid := "550e8400-e29b-41d4-a716-446655440000"
+	req := getRequest("https://example.com/api/v0/namespaces/account-123/nodepools?continue=10&labelSelector=hyperfleet.io/cluster-uid%3D" + uid)
 
-			out := a.adaptNodePoolScope(req)
-			if out.URL.Path != "/api/v0/nodepools/workers" {
-				t.Errorf("path = %q, want /api/v0/nodepools/workers", out.URL.Path)
-			}
-			if got := out.URL.Query().Get("clusterId"); got != clusterID {
-				t.Errorf("clusterId = %q, want %s", got, clusterID)
-			}
-		})
+	out := a.adaptListQuery(req)
+	query := out.URL.Query()
+	if got := query.Get("offset"); got != "10" {
+		t.Errorf("offset = %q, want 10", got)
+	}
+	if got := query.Get("labelSelector"); got != "hyperfleet.io/cluster-uid="+uid {
+		t.Errorf("labelSelector = %q, want cluster UID selector", got)
+	}
+	if query.Get("clusterId") != "" {
+		t.Fatalf("namespace must not be rewritten to clusterId: %q", query.Get("clusterId"))
 	}
 }

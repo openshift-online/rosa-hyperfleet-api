@@ -30,11 +30,11 @@ type fakeNodePools struct {
 	Fake *FakeV1alpha1Public
 }
 
-func newFakeNodePools(fake *FakeV1alpha1Public, namespace string) v1alpha1public.NodePoolInterface {
+func newFakeNodePools(fake *FakeV1alpha1Public) v1alpha1public.NodePoolInterface {
 	return &fakeNodePools{
 		gentype.NewFakeClientWithList[*public.NodePool, *public.NodePoolList](
 			fake.Fake,
-			namespace,
+			"",
 			public.SchemeGroupVersion.WithResource("nodepools"),
 			public.SchemeGroupVersion.WithKind("NodePool"),
 			func() *public.NodePool { return &public.NodePool{} },

@@ -62,7 +62,7 @@ func clusterWithPhase(name, namespace string, phase hyperfleetv1alpha1.ClusterPh
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec:   hyperfleetv1alpha1.ClusterSpec{DisplayName: name},
+		Spec:   hyperfleetv1alpha1.ClusterSpec{},
 		Status: hyperfleetv1alpha1.ClusterStatus{Phase: phase},
 	}
 }
@@ -168,7 +168,7 @@ func TestSilenceReconcilerDeleting(t *testing.T) {
 			DeletionTimestamp: &now,
 			Finalizers:        []string{clusterFinalizer},
 		},
-		Spec:   hyperfleetv1alpha1.ClusterSpec{DisplayName: clusterName},
+		Spec:   hyperfleetv1alpha1.ClusterSpec{},
 		Status: hyperfleetv1alpha1.ClusterStatus{Phase: hyperfleetv1alpha1.ClusterPhaseDeleting},
 	}
 

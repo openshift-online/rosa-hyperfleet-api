@@ -215,6 +215,13 @@ var _ = BeforeSuite(func() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr)).To(Succeed())
 
+	Expect((&controller.DNSReservationReconciler{
+		Client:         mgr.GetClient(),
+		APIReader:      mgr.GetAPIReader(),
+		Scheme:         mgr.GetScheme(),
+		RegionalConfig: render.RegionalConfig{BaseDomainSuffix: "e2e.example.com"},
+	}).SetupWithManager(mgr)).To(Succeed())
+
 	Expect((&controller.ClusterReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),

@@ -347,12 +347,12 @@ func TestNewValidator_UsesGeneratedRegistry(t *testing.T) {
 
 	// Verify it's using the real generated registry by checking a known field
 	// This tests that the integration with pkg/registry works
-	meta, exists := v.GetFieldMetadata("Cluster", "spec.displayName")
+	meta, exists := v.GetFieldMetadata("Cluster", "spec.properties")
 	if !exists {
-		t.Error("expected spec.displayName to exist in generated registry for Cluster")
+		t.Error("expected spec.properties to exist in generated registry for Cluster")
 	}
 	if meta.WriteMode != registry.Mutable {
-		t.Errorf("expected spec.displayName to be Mutable, got %v", meta.WriteMode)
+		t.Errorf("expected spec.properties to be Mutable, got %v", meta.WriteMode)
 	}
 }
 

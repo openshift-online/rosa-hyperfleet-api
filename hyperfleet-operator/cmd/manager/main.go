@@ -169,6 +169,16 @@ func main() {
 		setupLog.Error(err, "Failed to create controller", "controller", "cluster")
 		os.Exit(1)
 	}
+	if err := (&controller.DNSReservationReconciler{
+		Client:                  mgr.GetClient(),
+		APIReader:               mgr.GetAPIReader(),
+		Scheme:                  mgr.GetScheme(),
+		RegionalConfig:          rcfg,
+		MaxConcurrentReconciles: maxConcurrentReconciles,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "dnsreservation")
+		os.Exit(1)
+	}
 	if err := (&controller.NodePoolReconciler{
 		Client:                  mgr.GetClient(),
 		Scheme:                  mgr.GetScheme(),
@@ -202,6 +212,7 @@ func main() {
 	oidcClient := oidc.NewAWSClient(awsCfg)
 	if err := (&controller.OidcConfigReconciler{
 		Client:                  mgr.GetClient(),
+		APIReader:               mgr.GetAPIReader(),
 		Scheme:                  mgr.GetScheme(),
 		OIDC:                    oidcClient,
 		MaxConcurrentReconciles: maxConcurrentReconciles,

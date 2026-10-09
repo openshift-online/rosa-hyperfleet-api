@@ -43,7 +43,6 @@ rules:
 - apiGroups:
   - hyperfleet.io
   resources:
-  - dnsreservations
   - indices
   verbs:
   - create
@@ -51,6 +50,32 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - hyperfleet.io
+  resources:
+  - dnsreservations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - hyperfleet.io
+  resources:
+  - dnsreservations/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - hyperfleet.io
+  resources:
+  - dnsreservations/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - hyperfleet.io
   resources:

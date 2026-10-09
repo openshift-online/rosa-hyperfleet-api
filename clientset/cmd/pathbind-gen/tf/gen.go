@@ -131,7 +131,6 @@ func Run(draftPath, overridesPath, outputDir string) error {
 			UpdateFields:    updateFields,
 			ImmutableList:   immutableList,
 			ComputedList:    computedList,
-			Namespaced:      pkg.IsNamespacedResource(resKey),
 			IdentifierField: identifierField,
 			HandlerFactory:  "New" + resName + "HandlerImpl",
 		}

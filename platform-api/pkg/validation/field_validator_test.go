@@ -367,6 +367,30 @@ func TestValidateUpdate_RejectsServiceSetFields(t *testing.T) {
 	}
 }
 
+func TestValidateUpdate_AllowsUnchangedServiceSetFields(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.management": {FieldPath: "spec.management", WriteMode: registry.ServiceSet},
+	})
+
+	existing := map[string]any{"management": map[string]any{"autoRepair": true, "upgradeType": "Replace"}}
+	updated := map[string]any{"management": map[string]any{"autoRepair": true, "upgradeType": "Replace"}}
+	if errs := v.ValidateUpdate(updated, existing, featuregate.Default); errs != nil {
+		t.Errorf("unchanged service-set fields should be allowed on round-trip update, got %v", errs)
+	}
+}
+
+func TestValidateUpdate_RejectsClearingServiceSetFields(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.creatorARN": {FieldPath: "spec.creatorARN", WriteMode: registry.ServiceSet},
+	})
+
+	existing := map[string]any{"creatorARN": "arn:aws:iam::123456789012:user/platform"}
+	updated := map[string]any{"creatorARN": ""}
+	if errs := v.ValidateUpdate(updated, existing, featuregate.Default); errs == nil {
+		t.Fatal("expected validation error when clearing a non-zero service-set field")
+	}
+}
+
 func TestFlattenToFieldPaths(t *testing.T) {
 	spec := map[string]any{
 		"name": "test",

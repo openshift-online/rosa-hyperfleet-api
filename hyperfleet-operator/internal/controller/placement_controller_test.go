@@ -33,7 +33,7 @@ var _ = Describe("Placement Controller", func() {
 	Context("When reconciling a Cluster", func() {
 		const (
 			clusterName = "test-placement-cluster"
-			testNS      = "cluster-test-cluster-id"
+			testNS      = "account-123456789012"
 		)
 
 		ctx := context.Background()
@@ -63,7 +63,7 @@ var _ = Describe("Placement Controller", func() {
 				_ = k8sClient.Delete(ctx, cluster)
 			}
 			placement := &hyperfleetv1alpha1.Placement{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + "-placement"}, placement); err == nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, placement); err == nil {
 				_ = k8sClient.Delete(ctx, placement)
 			}
 		})
@@ -83,7 +83,7 @@ var _ = Describe("Placement Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			var placement hyperfleetv1alpha1.Placement
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + "-placement"}, &placement)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, &placement)).To(Succeed())
 			Expect(placement.Spec.ClusterName).To(Equal(clusterName))
 			Expect(placement.Spec.ManagementCluster).To(Equal(mcName))
 			Expect(placement.Status.Phase).To(Equal(hyperfleetv1alpha1.PlacementPhaseBound))

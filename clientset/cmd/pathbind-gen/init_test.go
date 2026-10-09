@@ -44,3 +44,53 @@ func TestRunInitIncludesMutableFieldsHiddenFromKubernetesOpenAPI(t *testing.T) {
 		}
 	}
 }
+
+func TestPathCoveredByExistingPath(t *testing.T) {
+	covered := map[string]bool{
+		"spec.hostedCluster.configuration.ingress.componentRoutes": true,
+	}
+	tests := []struct {
+		name    string
+		path    string
+		covered map[string]bool
+		want    bool
+	}{
+		{
+			name: "parent array binding covers item fields",
+			path: "spec.hostedCluster.configuration.ingress.componentRoutes.hostname",
+			want: true,
+		},
+		{
+			name: "exact path is covered",
+			path: "spec.hostedCluster.configuration.ingress.componentRoutes",
+			want: true,
+		},
+		{
+			name: "prefix without a path separator is not covered",
+			path: "spec.hostedCluster.configuration.ingress.componentRoutesExtra.hostname",
+		},
+		{
+			name: "unrelated path is not covered",
+			path: "spec.hostedCluster.configuration.scheduler.profile",
+		},
+		{
+			name: "child path does not cover its parent",
+			path: "spec.hostedCluster.configuration.ingress.componentRoutes",
+			covered: map[string]bool{
+				"spec.hostedCluster.configuration.ingress.componentRoutes.hostname": true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			existing := tt.covered
+			if existing == nil {
+				existing = covered
+			}
+			if got := pathCoveredByExistingPath(tt.path, existing); got != tt.want {
+				t.Errorf("pathCoveredByExistingPath(%q) = %t, want %t", tt.path, got, tt.want)
+			}
+		})
+	}
+}

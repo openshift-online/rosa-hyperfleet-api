@@ -101,7 +101,8 @@ var _ typedclient.ClusterInterface = (*stubClusterClient)(nil)
 
 // stubNodePoolClient is a minimal implementation of typedclient.NodePoolInterface.
 type stubNodePoolClient struct {
-	getFunc func(ctx context.Context, name string, opts metav1.GetOptions) (*v1alpha1.NodePool, error)
+	getFunc  func(ctx context.Context, name string, opts metav1.GetOptions) (*v1alpha1.NodePool, error)
+	listFunc func(ctx context.Context, opts metav1.ListOptions) (*v1alpha1.NodePoolList, error)
 }
 
 func (s *stubNodePoolClient) Get(ctx context.Context, name string, opts metav1.GetOptions) (*v1alpha1.NodePool, error) {
@@ -111,6 +112,9 @@ func (s *stubNodePoolClient) Get(ctx context.Context, name string, opts metav1.G
 	panic("stubNodePoolClient.Get called unexpectedly")
 }
 func (s *stubNodePoolClient) List(ctx context.Context, opts metav1.ListOptions) (*v1alpha1.NodePoolList, error) {
+	if s.listFunc != nil {
+		return s.listFunc(ctx, opts)
+	}
 	panic("stubNodePoolClient.List called unexpectedly")
 }
 func (s *stubNodePoolClient) Create(ctx context.Context, obj *v1alpha1.NodePool, opts metav1.CreateOptions) (*v1alpha1.NodePool, error) {
@@ -174,22 +178,39 @@ func TestClusterList_NegativeOffsetRejected(t *testing.T) {
 
 func TestNodePoolList_NegativeLimitRejected(t *testing.T) {
 	c := newNodePoolClient(&stubNodePoolClient{})
-	if _, err := c.List(context.Background(), ListOptions{Limit: -1}); err == nil {
+	if _, err := c.List(context.Background(), NodePoolListOptions{Limit: -1}); err == nil {
 		t.Error("expected error for negative Limit")
 	}
 }
 
 func TestNodePoolList_LimitOver100Rejected(t *testing.T) {
 	c := newNodePoolClient(&stubNodePoolClient{})
-	if _, err := c.List(context.Background(), ListOptions{Limit: 101}); err == nil {
+	if _, err := c.List(context.Background(), NodePoolListOptions{Limit: 101}); err == nil {
 		t.Error("expected error for Limit > 100")
 	}
 }
 
 func TestNodePoolList_NegativeOffsetRejected(t *testing.T) {
 	c := newNodePoolClient(&stubNodePoolClient{})
-	if _, err := c.List(context.Background(), ListOptions{Offset: -1}); err == nil {
+	if _, err := c.List(context.Background(), NodePoolListOptions{Offset: -1}); err == nil {
 		t.Error("expected error for negative Offset")
+	}
+}
+
+func TestNodePoolList_UsesParentUIDSelector(t *testing.T) {
+	uid := "550e8400-e29b-41d4-a716-446655440000"
+	var got metav1.ListOptions
+	c := newNodePoolClient(&stubNodePoolClient{
+		listFunc: func(_ context.Context, opts metav1.ListOptions) (*v1alpha1.NodePoolList, error) {
+			got = opts
+			return &v1alpha1.NodePoolList{}, nil
+		},
+	})
+	if _, err := c.List(context.Background(), NodePoolListOptions{ClusterUID: uid}); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if got.LabelSelector != "hyperfleet.io/cluster-uid="+uid {
+		t.Fatalf("LabelSelector = %q, want parent UID selector", got.LabelSelector)
 	}
 }
 
@@ -285,9 +306,9 @@ func TestNodePoolWaitUntil_TimeoutWhenConditionNeverTrue(t *testing.T) {
 	}
 }
 
-// clusterClient.Update routes by UID
+// clusterClient.Update routes by resource name.
 
-func TestClusterUpdate_RoutesByUID(t *testing.T) {
+func TestClusterUpdate_RoutesByName(t *testing.T) {
 	var gotName string
 	stub := &stubClusterClient{}
 	stub.getFunc = nil // not used by Update
@@ -301,8 +322,8 @@ func TestClusterUpdate_RoutesByUID(t *testing.T) {
 	_, _ = c.Update(context.Background(), obj, UpdateOptions{})
 	gotName = <-innerStub.nameChan
 
-	if gotName != "uid-abc" {
-		t.Errorf("Update routed to name %q, want uid-abc", gotName)
+	if gotName != "human-name" {
+		t.Errorf("Update routed to name %q, want human-name", gotName)
 	}
 }
 
@@ -317,9 +338,9 @@ func (u *updateCaptureClusterClient) Update(_ context.Context, obj *v1alpha1.Clu
 	return obj, nil
 }
 
-// nodePoolClient.Update routes by UID
+// nodePoolClient.Update routes by resource name.
 
-func TestNodePoolUpdate_RoutesByUID(t *testing.T) {
+func TestNodePoolUpdate_RoutesByName(t *testing.T) {
 	innerStub := &updateCaptureNodePoolClient{nameChan: make(chan string, 1)}
 	c := &nodePoolClient{inner: innerStub}
 
@@ -330,8 +351,8 @@ func TestNodePoolUpdate_RoutesByUID(t *testing.T) {
 	_, _ = c.Update(context.Background(), obj, UpdateOptions{})
 	gotName := <-innerStub.nameChan
 
-	if gotName != "uid-xyz" {
-		t.Errorf("Update routed to name %q, want uid-xyz", gotName)
+	if gotName != "human-name" {
+		t.Errorf("Update routed to name %q, want human-name", gotName)
 	}
 }
 

@@ -13,7 +13,7 @@ import (
 var _ = Describe("Cluster silence lifecycle", func() {
 	const (
 		clusterName = "silence-int-01"
-		testNS      = "cluster-e2e-cluster-id"
+		testNS      = "account-111222333444"
 	)
 
 	AfterEach(func() {
@@ -27,7 +27,7 @@ var _ = Describe("Cluster silence lifecycle", func() {
 
 		By("creating a Cluster CR")
 		cluster := newTestCluster(clusterName)
-		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		Expect(createTestClusterWithReservation(cluster)).To(Succeed())
 
 		By("setting cluster phase to Provisioning")
 		Expect(updateClusterPhase(clusterName, testNS, hyperfleetv1alpha1.ClusterPhaseProvisioning)).To(Succeed())
@@ -57,7 +57,7 @@ var _ = Describe("Cluster silence lifecycle", func() {
 
 		By("creating a provisioning cluster with an installing silence")
 		cluster := newTestCluster(clusterName)
-		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		Expect(createTestClusterWithReservation(cluster)).To(Succeed())
 		Expect(updateClusterPhase(clusterName, testNS, hyperfleetv1alpha1.ClusterPhaseProvisioning)).To(Succeed())
 
 		Eventually(func(g Gomega) {

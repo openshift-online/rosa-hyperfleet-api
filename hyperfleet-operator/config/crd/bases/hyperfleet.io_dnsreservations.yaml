@@ -17,10 +17,10 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.baseDomain
+    - jsonPath: .status.baseDomain
       name: BaseDomain
       type: string
-    - jsonPath: .metadata.labels.hyperfleet\.io/cluster-namespace
+    - jsonPath: .metadata.labels.hyperfleet\.io/claimed-by-cluster-uid
       name: Cluster
       type: string
     - jsonPath: .metadata.creationTimestamp
@@ -31,13 +31,12 @@ spec:
       openAPIV3Schema:
         description: |-
           DNSReservation reserves a DNS prefix within a specific zone shard.
-          Lives in the account namespace (account-<accountID>) for account isolation.
-          Global uniqueness of the DNS prefix is guaranteed by the referenced Index
-          resource in the shard's uniqueness namespace (dns-shard-<id>-reservations).
+          Customers create it in their account namespace (account-<accountID>). The
+          regional DNS zone and allocated prefix are operator-managed; the assigned base
+          domain is reported in status. metadata.name is customer-selected.
           Labels:
             - hyperfleet.io/account-id: AWS account that owns this reservation (always set).
-            - hyperfleet.io/cluster-namespace: set when a cluster claims the reservation;
-              absent for pre-reservations (e.g. shared-VPC flows).
+            - hyperfleet.io/claimed-by-cluster-uid: set when a Cluster claims the reservation.
         properties:
           apiVersion:
             description: |-
@@ -57,41 +56,94 @@ spec:
           metadata:
             type: object
           spec:
-            description: DNSReservationSpec defines the desired state of a DNS reservation.
+            description: Spec is empty; customers provide their reservation name in
+              metadata.
+            type: object
+          status:
+            description: Status describes whether the reservation has been allocated
+              and its base domain.
             properties:
               baseDomain:
                 description: |-
-                  BaseDomain is the fully assembled base domain for this reservation
-                  (e.g. "f7a3.0.openshiftapps.com"). Used directly as the HostedCluster
-                  BaseDomain. Computed at creation time as {prefix}.{shard}.{baseDomain},
-                  where baseDomain is the operator's configured --base-domain.
+                  BaseDomain is the assigned domain, e.g. "f7a3.0.openshiftapps.com".
+                  It is populated when Phase is Ready.
                 type: string
-              indexRef:
-                description: |-
-                  IndexRef references the Index resource in the shard's uniqueness
-                  namespace that guarantees global uniqueness for this reservation's
-                  prefix within the shard.
-                properties:
-                  name:
-                    description: Name of the Index (the unique value, e.g. "f7a3").
-                    minLength: 1
-                    type: string
-                  namespace:
-                    description: Namespace of the Index (the uniqueness domain, e.g.
-                      "dns-shard-0-reservations").
-                    minLength: 1
-                    type: string
-                required:
-                - name
-                - namespace
-                type: object
-            required:
-            - baseDomain
-            - indexRef
+              conditions:
+                description: Conditions represent the latest observations of the reservation's
+                  state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+              phase:
+                description: Phase summarizes allocation state. BaseDomain is empty
+                  unless Phase is Ready.
+                enum:
+                - Pending
+                - Ready
+                type: string
             type: object
-        required:
-        - spec
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}

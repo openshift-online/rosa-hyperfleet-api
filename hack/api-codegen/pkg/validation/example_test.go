@@ -17,9 +17,8 @@ func ExampleValidator_Validate_create() {
 		Operation:    validation.OperationCreate,
 		ResourceType: "Cluster",
 		Fields: map[string]any{
-			"spec.displayName":      "my-cluster",
+			"spec.properties":       map[string]string{"environment": "prod"},
 			"spec.deleteProtection": true,
-			"spec.labels":           map[string]string{"env": "prod"},
 		},
 		FeatureSet: featuregate.Default,
 	}
@@ -146,7 +145,7 @@ func ExampleValidator_ValidateFieldAccess() {
 func ExampleValidator_GetFieldMetadata() {
 	v := validation.NewValidator()
 
-	meta, exists := v.GetFieldMetadata("Cluster", "spec.displayName")
+	meta, exists := v.GetFieldMetadata("Cluster", "spec.properties")
 	if exists {
 		fmt.Printf("Field: %s\n", meta.FieldPath)
 		fmt.Printf("WriteMode: %s\n", meta.WriteMode)
@@ -154,7 +153,7 @@ func ExampleValidator_GetFieldMetadata() {
 		fmt.Printf("FeatureGate: %s\n", meta.FeatureGate)
 	}
 	// Output:
-	// Field: spec.displayName
+	// Field: spec.properties
 	// WriteMode: mutable
 	// Hidden: false
 	// FeatureGate:

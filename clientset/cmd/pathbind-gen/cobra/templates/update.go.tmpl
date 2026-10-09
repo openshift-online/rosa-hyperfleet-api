@@ -1,7 +1,6 @@
 {{$res := .ResourceName}}
 {{$sdk := .SDKShortType}}
 {{$rt  := .RuntimeType}}
-{{$ns  := .Namespaced}}
 
 // {{$res}}UpdateInput holds mutable inputs for {{$res}} update.
 type {{$res}}UpdateInput struct {
@@ -77,7 +76,7 @@ func normalize{{$res}}UpdateInput(cmd *cobra.Command, input *{{$res}}UpdateInput
 
 // RunUpdate{{$res}} executes the update dispatch. Generated; do not edit.
 // uid is the server-assigned UID of the resource to update.
-func RunUpdate{{$res}}(ctx context.Context, r {{$rt}}, cmd *cobra.Command, uid string, input *{{$res}}UpdateInput, h {{$res}}UpdateHandler{{if $ns}}, namespace string{{end}}) error {
+func RunUpdate{{$res}}(ctx context.Context, r {{$rt}}, cmd *cobra.Command, uid string, input *{{$res}}UpdateInput, h {{$res}}UpdateHandler) error {
 	if interactive.Enabled() {
 		if err := h.Prompt(ctx, r, cmd, input); err != nil {
 			return err

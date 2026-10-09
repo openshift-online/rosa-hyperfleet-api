@@ -16,6 +16,7 @@ import (
 )
 
 const accountIDLabel = "hyperfleet.io/account-id"
+const clusterUIDLabel = "hyperfleet.io/cluster-uid"
 
 // Client wraps a pgruntime client.Client for CRUD on hyperfleet resources.
 type Client struct {
@@ -55,34 +56,30 @@ func (c *Client) Close() {
 
 // --- Cluster operations ---
 
-// CreateCluster creates a Cluster resource. Namespace = clusterID (UUID),
-// Name = human-readable name. Labeled with the account ID.
+// CreateCluster creates a Cluster in the caller's account namespace.
 func (c *Client) CreateCluster(ctx context.Context, accountID string, cluster *hyperfleetv1alpha1.Cluster) error {
+	cluster.Namespace = accountNamespace(accountID)
 	setAccountLabel(cluster, accountID)
 	return c.client.Create(ctx, cluster)
 }
 
-// GetCluster retrieves a Cluster by clusterID, scoped to the given account.
-// Namespace = clusterID, filtered by account-id label.
-func (c *Client) GetCluster(ctx context.Context, accountID, clusterID string) (*hyperfleetv1alpha1.Cluster, error) {
-	var list hyperfleetv1alpha1.ClusterList
-	err := c.client.List(ctx, &list,
-		client.InNamespace(clusterNamespace(clusterID)),
-		client.MatchingLabels{accountIDLabel: accountID},
-	)
+// GetCluster retrieves a Cluster by its account-scoped metadata.name.
+func (c *Client) GetCluster(ctx context.Context, accountID, name string) (*hyperfleetv1alpha1.Cluster, error) {
+	var cluster hyperfleetv1alpha1.Cluster
+	err := c.client.Get(ctx, k8stypes.NamespacedName{
+		Namespace: accountNamespace(accountID),
+		Name:      name,
+	}, &cluster)
 	if err != nil {
 		return nil, err
 	}
-	if len(list.Items) == 0 {
-		return nil, apierrors.NewNotFound(clusterGR, clusterID)
-	}
-	return &list.Items[0], nil
+	return &cluster, nil
 }
 
-// ListClusters lists Clusters for the given account using the account-id label.
+// ListClusters lists Clusters in the caller's account namespace.
 func (c *Client) ListClusters(ctx context.Context, accountID string) (*hyperfleetv1alpha1.ClusterList, error) {
 	var list hyperfleetv1alpha1.ClusterList
-	err := c.client.List(ctx, &list, client.MatchingLabels{accountIDLabel: accountID})
+	err := c.client.List(ctx, &list, client.InNamespace(accountNamespace(accountID)))
 	if err != nil {
 		return nil, err
 	}
@@ -94,65 +91,50 @@ func (c *Client) UpdateCluster(ctx context.Context, cluster *hyperfleetv1alpha1.
 	return c.client.Update(ctx, cluster)
 }
 
-// DeleteCluster deletes a Cluster, scoped to the given account.
-func (c *Client) DeleteCluster(ctx context.Context, accountID, clusterID string) error {
-	cluster, err := c.GetCluster(ctx, accountID, clusterID)
+// DeleteCluster deletes a Cluster by account-scoped metadata.name.
+func (c *Client) DeleteCluster(ctx context.Context, accountID, name string) error {
+	cluster, err := c.GetCluster(ctx, accountID, name)
 	if err != nil {
 		return err
 	}
 	return c.client.Delete(ctx, cluster)
 }
 
+// DeleteClusterObject deletes the supplied Cluster with its UID and
+// resourceVersion preconditions. It is used to compensate failed creates.
+func (c *Client) DeleteClusterObject(ctx context.Context, cluster *hyperfleetv1alpha1.Cluster) error {
+	return c.client.Delete(ctx, cluster)
+}
+
 // --- NodePool operations ---
 
-// CreateNodePool creates a NodePool resource. Namespace = clusterID,
-// Name = human-readable name. Labeled with the account ID.
+// CreateNodePool creates a NodePool in the caller's account namespace.
 func (c *Client) CreateNodePool(ctx context.Context, accountID string, np *hyperfleetv1alpha1.NodePool) error {
+	np.Namespace = accountNamespace(accountID)
 	setAccountLabel(np, accountID)
 	return c.client.Create(ctx, np)
 }
 
-// GetNodePool retrieves a NodePool by name, scoped to the account and optionally cluster.
-func (c *Client) GetNodePool(
-	ctx context.Context, accountID, clusterID, nodepoolName string,
-) (*hyperfleetv1alpha1.NodePool, error) {
-	if clusterID != "" {
-		var np hyperfleetv1alpha1.NodePool
-		err := c.client.Get(ctx, k8stypes.NamespacedName{
-			Namespace: clusterNamespace(clusterID),
-			Name:      nodepoolName,
-		}, &np)
-		if err != nil {
-			return nil, err
-		}
-		if np.Labels[accountIDLabel] != accountID {
-			return nil, apierrors.NewNotFound(nodePoolGR, nodepoolName)
-		}
-		return &np, nil
-	}
-
-	var list hyperfleetv1alpha1.NodePoolList
-	err := c.client.List(ctx, &list, client.MatchingLabels{accountIDLabel: accountID})
+// GetNodePool retrieves a NodePool by its account-scoped metadata.name.
+func (c *Client) GetNodePool(ctx context.Context, accountID, name string) (*hyperfleetv1alpha1.NodePool, error) {
+	var nodePool hyperfleetv1alpha1.NodePool
+	err := c.client.Get(ctx, k8stypes.NamespacedName{
+		Namespace: accountNamespace(accountID),
+		Name:      name,
+	}, &nodePool)
 	if err != nil {
 		return nil, err
 	}
-	for i := range list.Items {
-		if list.Items[i].Name == nodepoolName {
-			return &list.Items[i], nil
-		}
-	}
-	return nil, apierrors.NewNotFound(nodePoolGR, nodepoolName)
+	return &nodePool, nil
 }
 
-// ListNodePools lists NodePools. If clusterID is set, lists by namespace
-// scoped to the account. Otherwise lists all nodepools for the account.
-func (c *Client) ListNodePools(ctx context.Context, accountID, clusterID string) (*hyperfleetv1alpha1.NodePoolList, error) {
+// ListNodePools lists NodePools in the account namespace, optionally filtered
+// by their parent Cluster UID label.
+func (c *Client) ListNodePools(ctx context.Context, accountID, clusterUID string) (*hyperfleetv1alpha1.NodePoolList, error) {
 	var list hyperfleetv1alpha1.NodePoolList
-	var opts []client.ListOption
-
-	opts = append(opts, client.MatchingLabels{accountIDLabel: accountID})
-	if clusterID != "" {
-		opts = append(opts, client.InNamespace(clusterNamespace(clusterID)))
+	opts := []client.ListOption{client.InNamespace(accountNamespace(accountID))}
+	if clusterUID != "" {
+		opts = append(opts, client.MatchingLabels{clusterUIDLabel: clusterUID})
 	}
 
 	if err := c.client.List(ctx, &list, opts...); err != nil {
@@ -166,13 +148,76 @@ func (c *Client) UpdateNodePool(ctx context.Context, np *hyperfleetv1alpha1.Node
 	return c.client.Update(ctx, np)
 }
 
-// DeleteNodePool deletes a NodePool by name, scoped to the account and cluster.
-func (c *Client) DeleteNodePool(ctx context.Context, accountID, clusterID, nodepoolName string) error {
-	np, err := c.GetNodePool(ctx, accountID, clusterID, nodepoolName)
+// DeleteNodePool deletes a NodePool by its account-scoped metadata.name.
+func (c *Client) DeleteNodePool(ctx context.Context, accountID, name string) error {
+	np, err := c.GetNodePool(ctx, accountID, name)
 	if err != nil {
 		return err
 	}
 	return c.client.Delete(ctx, np)
+}
+
+// --- DNSReservation operations ---
+
+func (c *Client) CreateDNSReservation(ctx context.Context, accountID string, reservation *hyperfleetv1alpha1.DNSReservation) error {
+	reservation.Namespace = accountNamespace(accountID)
+	setAccountLabel(reservation, accountID)
+	return c.client.Create(ctx, reservation)
+}
+
+func (c *Client) GetDNSReservation(ctx context.Context, accountID, name string) (*hyperfleetv1alpha1.DNSReservation, error) {
+	var reservation hyperfleetv1alpha1.DNSReservation
+	err := c.client.Get(ctx, k8stypes.NamespacedName{
+		Namespace: accountNamespace(accountID),
+		Name:      name,
+	}, &reservation)
+	if err != nil {
+		return nil, err
+	}
+	return &reservation, nil
+}
+
+// GetDNSReservationByUID resolves a reservation UID within an account namespace.
+func (c *Client) GetDNSReservationByUID(ctx context.Context, accountID, uid string) (*hyperfleetv1alpha1.DNSReservation, error) {
+	var list hyperfleetv1alpha1.DNSReservationList
+	if err := c.client.List(ctx, &list,
+		client.InNamespace(accountNamespace(accountID)),
+		client.MatchingFields{"metadata.uid": uid},
+	); err != nil {
+		return nil, err
+	}
+	if len(list.Items) == 0 {
+		return nil, apierrors.NewNotFound(dnsReservationGR, uid)
+	}
+	return &list.Items[0], nil
+}
+
+func (c *Client) ListDNSReservations(ctx context.Context, accountID string) (*hyperfleetv1alpha1.DNSReservationList, error) {
+	var list hyperfleetv1alpha1.DNSReservationList
+	if err := c.client.List(ctx, &list, client.InNamespace(accountNamespace(accountID))); err != nil {
+		return nil, err
+	}
+	return &list, nil
+}
+
+func (c *Client) UpdateDNSReservation(ctx context.Context, reservation *hyperfleetv1alpha1.DNSReservation) error {
+	return c.client.Update(ctx, reservation)
+}
+
+func (c *Client) UpdateDNSReservationStatus(ctx context.Context, reservation *hyperfleetv1alpha1.DNSReservation) error {
+	return c.client.Status().Update(ctx, reservation)
+}
+
+func (c *Client) DeleteDNSReservation(ctx context.Context, accountID, name string) error {
+	reservation, err := c.GetDNSReservation(ctx, accountID, name)
+	if err != nil {
+		return err
+	}
+	return c.client.Delete(ctx, reservation)
+}
+
+func (c *Client) DeleteDNSReservationObject(ctx context.Context, reservation *hyperfleetv1alpha1.DNSReservation) error {
+	return c.client.Delete(ctx, reservation)
 }
 
 // --- Manifest operations ---
@@ -240,23 +285,39 @@ func (c *Client) ListManagementClusters(ctx context.Context) (*hyperfleetv1alpha
 
 // --- OidcConfig operations ---
 
-// CreateOidcConfig creates an OidcConfig resource.
-// Namespace = account-<accountID>, Name = configID.
-func (c *Client) CreateOidcConfig(ctx context.Context, oc *hyperfleetv1alpha1.OidcConfig) error {
+// CreateOidcConfig creates an OidcConfig in the caller's account namespace.
+func (c *Client) CreateOidcConfig(ctx context.Context, accountID string, oc *hyperfleetv1alpha1.OidcConfig) error {
+	oc.Namespace = accountNamespace(accountID)
+	setAccountLabel(oc, accountID)
 	return c.client.Create(ctx, oc)
 }
 
-// GetOidcConfig retrieves an OidcConfig by accountID and configID.
-func (c *Client) GetOidcConfig(ctx context.Context, accountID, configID string) (*hyperfleetv1alpha1.OidcConfig, error) {
+// GetOidcConfig retrieves an OidcConfig by account-scoped metadata.name.
+func (c *Client) GetOidcConfig(ctx context.Context, accountID, name string) (*hyperfleetv1alpha1.OidcConfig, error) {
 	var oc hyperfleetv1alpha1.OidcConfig
 	err := c.client.Get(ctx, k8stypes.NamespacedName{
 		Namespace: accountNamespace(accountID),
-		Name:      configID,
+		Name:      name,
 	}, &oc)
 	if err != nil {
 		return nil, err
 	}
 	return &oc, nil
+}
+
+// GetOidcConfigByUID resolves an OidcConfig UID within an account namespace.
+func (c *Client) GetOidcConfigByUID(ctx context.Context, accountID, uid string) (*hyperfleetv1alpha1.OidcConfig, error) {
+	var list hyperfleetv1alpha1.OidcConfigList
+	if err := c.client.List(ctx, &list,
+		client.InNamespace(accountNamespace(accountID)),
+		client.MatchingFields{"metadata.uid": uid},
+	); err != nil {
+		return nil, err
+	}
+	if len(list.Items) == 0 {
+		return nil, apierrors.NewNotFound(hyperfleetv1alpha1.GroupVersion.WithResource("oidcconfigs").GroupResource(), uid)
+	}
+	return &list.Items[0], nil
 }
 
 // ListOidcConfigs lists OidcConfigs for the given account by namespace.
@@ -280,8 +341,8 @@ func (c *Client) DeleteOidcConfig(ctx context.Context, accountID, configID strin
 
 // UpdateOidcConfigLastUsedTimestamp sets status.lastUsedTimestamp on an
 // OidcConfig, scoped to the given account.
-func (c *Client) UpdateOidcConfigLastUsedTimestamp(ctx context.Context, accountID, configID string, ts metav1.Time) error {
-	oc, err := c.GetOidcConfig(ctx, accountID, configID)
+func (c *Client) UpdateOidcConfigLastUsedTimestamp(ctx context.Context, accountID, oidcConfigUID string, ts metav1.Time) error {
+	oc, err := c.GetOidcConfigByUID(ctx, accountID, oidcConfigUID)
 	if err != nil {
 		return err
 	}
@@ -341,8 +402,7 @@ func setAccountLabel(obj client.Object, accountID string) {
 }
 
 var (
-	clusterGR  = hyperfleetv1alpha1.GroupVersion.WithResource("clusters").GroupResource()
-	nodePoolGR = hyperfleetv1alpha1.GroupVersion.WithResource("nodepools").GroupResource()
+	dnsReservationGR = hyperfleetv1alpha1.GroupVersion.WithResource("dnsreservations").GroupResource()
 )
 
 const accountNSPrefix = "account-"

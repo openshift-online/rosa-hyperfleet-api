@@ -3,13 +3,7 @@
 package public
 
 // NodePoolSpec defines the desired state of a NodePool.
-// The parent Cluster is identified by the shared metadata.Namespace (cluster UUID).
 type NodePoolSpec struct {
-	// DisplayName is a human-readable name for the node pool.
-	// +hyperfleet:write-mode=mutable
-	// +kubebuilder:validation:MaxLength=256
-	// +optional
-	DisplayName string `json:"displayName,omitempty"`
 	// AutoRepair controls whether unhealthy nodes are automatically replaced.
 	// +hyperfleet:write-mode=mutable
 	// +optional

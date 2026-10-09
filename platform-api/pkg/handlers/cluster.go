@@ -3,13 +3,14 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
@@ -23,10 +24,12 @@ import (
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/validation"
 )
 
-// clusterNamespaceLabel is set on an OidcConfig when a cluster claims it via resolveAndClaimOidcConfig, enforcing the 1:1 cluster-to-OidcConfig binding (mirrors hyperfleet-operator's cluster_controller.go constant).
-const clusterNamespaceLabel = "hyperfleet.io/cluster-namespace"
+const (
+	clusterUIDLabel         = "hyperfleet.io/cluster-uid"
+	clusterCleanupFinalizer = "hyperfleet.io/cluster" // keep in sync with the operator's Cluster finalizer
+)
 
-// releaseClaimTimeout bounds releaseOidcConfigClaim's detached rollback so a canceled request can't skip it.
+// releaseClaimTimeout bounds detached claim cleanup and rollback work so a canceled request can't skip it.
 const releaseClaimTimeout = 5 * time.Second
 
 // ClusterHandler handles cluster-related HTTP requests
@@ -36,7 +39,6 @@ type ClusterHandler struct {
 	defaultClusterExpiration time.Duration
 	validator                *validation.FieldValidator
 	logger                   *slog.Logger
-	generateID               func() string
 }
 
 // NewClusterHandler creates a new cluster handler
@@ -47,7 +49,6 @@ func NewClusterHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, defaul
 		defaultClusterExpiration: defaultClusterExpiration,
 		validator:                validation.NewFieldValidator("Cluster"),
 		logger:                   logger,
-		generateID:               func() string { return uuid.New().String() },
 	}
 }
 
@@ -150,8 +151,12 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.Name) > hyperfleetdb.MaxClusterNameLen {
+	if err := validation.ValidateClusterName(req.Name); err != nil {
 		writeAPIError(w, ErrClusterCreateNameTooLong, h.logger)
+		return
+	}
+	if err := validation.ValidateAccountNamespace(req.Namespace, accountID); err != nil {
+		writeAPIError(w, ErrClusterCreateNamespaceMismatch, h.logger)
 		return
 	}
 
@@ -159,37 +164,36 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrClusterValidation.WithErrors(errs), h.logger)
 		return
 	}
-
-	existing, err := h.db.ListClusters(ctx, accountID)
-	if err != nil {
-		h.logger.Error("failed to check cluster name uniqueness", "error", err, "account_id", accountID)
-		writeAPIError(w, ErrClusterCreateNameCheck, h.logger)
-		return
-	}
-	for i := range existing.Items {
-		if existing.Items[i].Name == req.Name {
-			writeAPIError(w, ErrClusterCreateNameConflict.WithReason(req.Name), h.logger)
+	var dnsReservation *hyperfleetv1alpha1.DNSReservation
+	var apiErr *APIError
+	if req.Spec.DNSReservationID != "" {
+		dnsReservation, apiErr = h.resolveDNSReservation(ctx, accountID, req.Spec.DNSReservationID)
+		if apiErr != nil {
+			writeAPIError(w, *apiErr, h.logger)
 			return
 		}
 	}
-
-	clusterID := h.generateID()
-
-	h.logger.Info("creating cluster", "account_id", accountID, "cluster_name", req.Name, "cluster_id", clusterID)
-
-	// If oidcConfigId is set, resolve and atomically claim it for clusterID (see resolveAndClaimOidcConfig); otherwise fall back to the legacy auto-generated issuerURL.
-	oidcConfig, apiErr := h.resolveAndClaimOidcConfig(ctx, accountID, req.Spec.OidcConfigID, clusterID)
+	oidcConfig, apiErr := h.resolveOidcConfig(ctx, accountID, req.Spec.OidcConfigID)
 	if apiErr != nil {
 		writeAPIError(w, *apiErr, h.logger)
 		return
 	}
+
+	h.logger.Info("creating cluster", "account_id", accountID, "cluster_name", req.Name)
 
 	if h.defaultClusterExpiration > 0 && req.Spec.ExpirationTimestamp == nil {
 		expiry := metav1.NewTime(time.Now().Add(h.defaultClusterExpiration))
 		req.Spec.ExpirationTimestamp = &expiry
 	}
 
-	cr := hyperfleetdb.PublicToInternalCluster(&req, accountID, clusterID)
+	req.Namespace = "account-" + accountID
+	if dnsReservation != nil {
+		req.Spec.DNSReservationID = string(dnsReservation.UID)
+	}
+	if oidcConfig != nil {
+		req.Spec.OidcConfigID = string(oidcConfig.UID)
+	}
+	cr := hyperfleetdb.PublicToInternalCluster(&req, accountID)
 
 	// Set service-set fields on the internal CRD (not visible in public request/response)
 	if callerARN := middleware.GetCallerARN(ctx); callerARN != "" {
@@ -198,93 +202,125 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// issuerURL is service-set; derive it here rather than accept it from the caller.
 	if oidcConfig != nil {
 		cr.Spec.HostedCluster.IssuerURL = oidcConfig.Spec.IssuerUrl
-	} else if h.oidcIssuerBaseURL != "" {
-		cr.Spec.HostedCluster.IssuerURL = h.oidcIssuerBaseURL + "/" + clusterID
 	}
 
 	if err := h.db.CreateCluster(ctx, accountID, cr); err != nil {
-		// Release the claim taken above if it isn't left permanently bound to a cluster that was never actually created.
-		if oidcConfig != nil {
-			h.releaseOidcConfigClaim(ctx, accountID, req.Spec.OidcConfigID)
+		if hyperfleetdb.IsAlreadyExists(err) {
+			writeAPIError(w, ErrClusterCreateNameConflict.WithReason(req.Name), h.logger)
+			return
 		}
 		h.logger.Error("failed to create cluster", "error", err, "account_id", accountID)
 		writeAPIError(w, ErrClusterCreateFailed, h.logger)
 		return
 	}
-
-	if oidcConfig != nil {
-		if err := h.db.UpdateOidcConfigLastUsedTimestamp(ctx, accountID, req.Spec.OidcConfigID, metav1.Now()); err != nil {
-			h.logger.Warn("failed to update oidc config lastUsedTimestamp", "error", err, "account_id", accountID, "oidc_config_id", req.Spec.OidcConfigID)
-		}
+	cr, apiErr = h.completeClusterCreate(ctx, accountID, req.Name, cr, dnsReservation, oidcConfig)
+	if apiErr != nil {
+		writeAPIError(w, *apiErr, h.logger)
+		return
 	}
-
 	if err := api.Write(w, http.StatusCreated, hyperfleetdb.InternalToPublicCluster(cr)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }
 
-// resolveAndClaimOidcConfig validates the OidcConfig referenced by oidcConfigID and, if unclaimed, atomically claims it for clusterID via a resourceVersion-gated Update; callers must call releaseOidcConfigClaim to roll back the claim if a later step fails.
-func (h *ClusterHandler) resolveAndClaimOidcConfig(ctx context.Context, accountID, oidcConfigID, clusterID string) (*hyperfleetv1alpha1.OidcConfig, *APIError) {
-	if oidcConfigID == "" {
-		return nil, nil
-	}
-
-	oidcConfig, err := h.db.GetOidcConfig(ctx, accountID, oidcConfigID)
-	if err != nil {
-		if hyperfleetdb.IsNotFound(err) {
-			return nil, &ErrClusterCreateOidcConfigNotFound
+func (h *ClusterHandler) completeClusterCreate(ctx context.Context, accountID, clusterName string, cluster *hyperfleetv1alpha1.Cluster, reservation *hyperfleetv1alpha1.DNSReservation, oidcConfig *hyperfleetv1alpha1.OidcConfig) (*hyperfleetv1alpha1.Cluster, *APIError) {
+	clusterUID := string(cluster.UID)
+	if oidcConfig == nil && h.oidcIssuerBaseURL != "" {
+		issuerURL := strings.TrimRight(h.oidcIssuerBaseURL, "/") + "/" + clusterUID
+		if err := h.updateManagedIssuerURL(ctx, accountID, clusterName, clusterUID, issuerURL); err != nil {
+			h.rollbackCreatedCluster(ctx, accountID, clusterName, clusterUID)
+			h.logger.Error("failed to set managed issuer URL", "error", err, "cluster_uid", clusterUID)
+			return nil, &ErrClusterCreateFailed
 		}
-		h.logger.Error("failed to look up oidc config", "error", err, "account_id", accountID, "oidc_config_id", oidcConfigID)
-		return nil, &ErrClusterCreateOidcConfigLookupFailed
+		cluster.Spec.HostedCluster.IssuerURL = issuerURL
 	}
 
-	notReady := oidcConfig.Status.Phase == hyperfleetv1alpha1.OidcConfigPhaseError ||
-		(oidcConfig.Spec.Type == hyperfleetv1alpha1.OidcConfigTypeUnmanaged && oidcConfig.Status.Phase != hyperfleetv1alpha1.OidcConfigPhaseReady)
-	if notReady {
-		return nil, &ErrClusterCreateOidcConfigNotReady
-	}
-
-	if oidcConfig.Labels[clusterNamespaceLabel] != "" {
-		err := ErrClusterCreateOidcConfigInUse.WithReason(oidcConfigID)
-		return nil, &err
-	}
-
-	if oidcConfig.Labels == nil {
-		oidcConfig.Labels = map[string]string{}
-	}
-	oidcConfig.Labels[clusterNamespaceLabel] = hyperfleetdb.ClusterNSPrefix + clusterID
-	if err := h.db.UpdateOidcConfigObject(ctx, oidcConfig); err != nil {
-		if hyperfleetdb.IsConflict(err) {
-			// A concurrent request won the claim between our Get and Update.
-			err := ErrClusterCreateOidcConfigInUse.WithReason(oidcConfigID)
-			return nil, &err
+	if reservation != nil {
+		if apiErr := h.claimDNSReservation(ctx, accountID, string(reservation.UID), clusterUID); apiErr != nil {
+			h.rollbackCreatedCluster(ctx, accountID, clusterName, clusterUID)
+			return nil, apiErr
 		}
-		h.logger.Error("failed to claim oidc config", "error", err, "account_id", accountID, "oidc_config_id", oidcConfigID)
-		return nil, &ErrClusterCreateOidcConfigLookupFailed
+	}
+	if oidcConfig != nil {
+		if apiErr := h.claimOidcConfig(ctx, accountID, string(oidcConfig.UID), clusterUID); apiErr != nil {
+			if reservation != nil {
+				if cleanupErr := h.releaseDNSReservationClaim(ctx, accountID, string(reservation.UID), clusterUID); cleanupErr != nil {
+					h.logger.Error("failed to release DNS reservation after OIDC claim conflict; registering operator cleanup before rollback", "error", cleanupErr, "reservation_uid", reservation.UID, "cluster_uid", clusterUID)
+					if finalizerErr := h.ensureClusterCleanupFinalizer(ctx, accountID, clusterName, clusterUID); finalizerErr != nil {
+						h.logger.Error("failed to register Cluster cleanup finalizer; leaving the Cluster in place to preserve DNS claim ownership", "error", finalizerErr, "reservation_uid", reservation.UID, "cluster_uid", clusterUID)
+						return nil, &ErrClusterCreateFailed
+					}
+				}
+			}
+			h.rollbackCreatedCluster(ctx, accountID, clusterName, clusterUID)
+			return nil, apiErr
+		}
+		if err := h.db.UpdateOidcConfigLastUsedTimestamp(ctx, accountID, string(oidcConfig.UID), metav1.Now()); err != nil {
+			h.logger.Warn("failed to update oidc config lastUsedTimestamp", "error", err, "account_id", accountID, "oidc_config_uid", oidcConfig.UID)
+		}
 	}
 
-	return oidcConfig, nil
+	if latest, err := h.db.GetCluster(ctx, accountID, clusterName); err == nil {
+		cluster = latest
+	}
+	return cluster, nil
 }
 
-// releaseOidcConfigClaim removes the clusterNamespaceLabel claim from the given OidcConfig, best-effort
-// so a Cluster create that failed after winning the claim doesn't leave it permanently claimed
-func (h *ClusterHandler) releaseOidcConfigClaim(ctx context.Context, accountID, oidcConfigID string) {
-	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseClaimTimeout)
+// ensureClusterCleanupFinalizer durably registers the operator's delete cleanup
+// before a failed OIDC claim can roll back a Cluster that still owns a DNS claim.
+func (h *ClusterHandler) ensureClusterCleanupFinalizer(ctx context.Context, accountID, clusterName, clusterUID string) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseClaimTimeout)
 	defer cancel()
 
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		oc, err := h.db.GetOidcConfig(releaseCtx, accountID, oidcConfigID)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		cluster, err := h.db.GetCluster(cleanupCtx, accountID, clusterName)
 		if err != nil {
 			return err
 		}
-		if oc.Labels == nil {
+		if string(cluster.UID) != clusterUID {
+			return fmt.Errorf("cluster UID changed from %s to %s before registering cleanup", clusterUID, cluster.UID)
+		}
+		for _, finalizer := range cluster.Finalizers {
+			if finalizer == clusterCleanupFinalizer {
+				return nil
+			}
+		}
+		cluster.Finalizers = append(cluster.Finalizers, clusterCleanupFinalizer)
+		return h.db.UpdateCluster(cleanupCtx, cluster)
+	})
+}
+
+func (h *ClusterHandler) updateManagedIssuerURL(ctx context.Context, accountID, clusterName, clusterUID, issuerURL string) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		cluster, err := h.db.GetCluster(ctx, accountID, clusterName)
+		if err != nil {
+			return err
+		}
+		if string(cluster.UID) != clusterUID {
+			return fmt.Errorf("cluster UID changed from %s to %s during create", clusterUID, cluster.UID)
+		}
+		cluster.Spec.HostedCluster.IssuerURL = issuerURL
+		return h.db.UpdateCluster(ctx, cluster)
+	})
+}
+
+func (h *ClusterHandler) rollbackCreatedCluster(ctx context.Context, accountID, clusterName, clusterUID string) {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseClaimTimeout)
+	defer cancel()
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		cluster, err := h.db.GetCluster(cleanupCtx, accountID, clusterName)
+		if err != nil {
+			if hyperfleetdb.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		if string(cluster.UID) != clusterUID {
 			return nil
 		}
-		delete(oc.Labels, clusterNamespaceLabel)
-		return h.db.UpdateOidcConfigObject(releaseCtx, oc)
-	})
-	if err != nil {
-		h.logger.Error("failed to release oidc config claim", "error", err, "account_id", accountID, "oidc_config_id", oidcConfigID)
+		return h.db.DeleteClusterObject(cleanupCtx, cluster)
+	}); err != nil {
+		h.logger.Error("failed to roll back Cluster create", "error", err, "cluster_uid", clusterUID)
 	}
 }
 
@@ -293,17 +329,17 @@ func (h *ClusterHandler) Get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
 	vars := mux.Vars(r)
-	clusterID := vars["id"]
+	clusterName := vars["id"]
 
-	h.logger.Info("getting cluster", "account_id", accountID, "cluster_id", clusterID)
+	h.logger.Info("getting cluster", "account_id", accountID, "cluster_name", clusterName)
 
-	cr, err := h.db.GetCluster(ctx, accountID, clusterID)
+	cr, err := h.db.GetCluster(ctx, accountID, clusterName)
 	if err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrClusterGetNotFound, h.logger)
 			return
 		}
-		h.logger.Error("failed to get cluster", "error", err, "account_id", accountID, "cluster_id", clusterID)
+		h.logger.Error("failed to get cluster", "error", err, "account_id", accountID, "cluster_name", clusterName)
 		writeAPIError(w, ErrClusterGetFailed, h.logger)
 		return
 	}
@@ -319,7 +355,7 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
 	vars := mux.Vars(r)
-	clusterID := vars["id"]
+	clusterName := vars["id"]
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -332,10 +368,17 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// validation (avoids false positives from zero-valued absent fields in a
 	// decoded struct).
 	var envelope struct {
+		Metadata struct {
+			Namespace string `json:"namespace"`
+		} `json:"metadata"`
 		Spec json.RawMessage `json:"spec"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		writeAPIError(w, ErrClusterUpdateInvalidBody, h.logger)
+		return
+	}
+	if err := validation.ValidateAccountNamespace(envelope.Metadata.Namespace, accountID); err != nil {
+		writeAPIError(w, ErrClusterCreateNamespaceMismatch, h.logger)
 		return
 	}
 
@@ -346,18 +389,7 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("updating cluster", "account_id", accountID, "cluster_id", clusterID)
-
-	cr, err := h.db.GetCluster(ctx, accountID, clusterID)
-	if err != nil {
-		if hyperfleetdb.IsNotFound(err) {
-			writeAPIError(w, ErrClusterUpdateNotFound, h.logger)
-			return
-		}
-		h.logger.Error("failed to get cluster for update", "error", err, "account_id", accountID, "cluster_id", clusterID)
-		writeAPIError(w, ErrClusterUpdateFailed, h.logger)
-		return
-	}
+	h.logger.Info("updating cluster", "account_id", accountID, "cluster_name", clusterName)
 
 	// Validate using the raw spec map so only fields the client actually sent
 	// are checked — avoids false positives from zero-valued absent fields when
@@ -372,23 +404,52 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrClusterUpdateMissingFields, h.logger)
 		return
 	}
-	if errs := h.validator.ValidateUpdate(rawSpec, &cr.Spec, featuregate.Default); errs != nil {
-		writeAPIError(w, ErrClusterValidation.WithErrors(errs), h.logger)
+	var updated *hyperfleetv1alpha1.Cluster
+	var validationErr validation.ValidationErrors
+	var mergeErr error
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := h.db.GetCluster(ctx, accountID, clusterName)
+		if err != nil {
+			return err
+		}
+		if errs := h.validator.ValidateUpdate(rawSpec, &current.Spec, featuregate.Default); errs != nil {
+			validationErr = errs
+			return fmt.Errorf("invalid cluster update")
+		}
+		if err := hyperfleetdb.MergeSpecJSON(&current.Spec, envelope.Spec); err != nil {
+			mergeErr = err
+			return err
+		}
+		if err := h.db.UpdateCluster(ctx, current); err != nil {
+			return err
+		}
+		updated = current
+		return nil
+	})
+	if len(validationErr) != 0 {
+		writeAPIError(w, ErrClusterValidation.WithErrors(validationErr), h.logger)
 		return
 	}
-	if err := hyperfleetdb.MergeSpecJSON(&cr.Spec, envelope.Spec); err != nil {
-		h.logger.Error("failed to merge cluster spec", "error", err)
+	if mergeErr != nil {
+		h.logger.Error("failed to merge cluster spec", "error", mergeErr)
 		writeAPIError(w, ErrClusterUpdateInvalidSpec, h.logger)
 		return
 	}
-
-	if err := h.db.UpdateCluster(ctx, cr); err != nil {
-		h.logger.Error("failed to update cluster", "error", err, "account_id", accountID, "cluster_id", clusterID)
+	if err != nil {
+		if hyperfleetdb.IsNotFound(err) {
+			writeAPIError(w, ErrClusterUpdateNotFound, h.logger)
+			return
+		}
+		if hyperfleetdb.IsConflict(err) {
+			writeAPIError(w, ErrClusterUpdateConflict, h.logger)
+			return
+		}
+		h.logger.Error("failed to update cluster", "error", err, "account_id", accountID, "cluster_name", clusterName)
 		writeAPIError(w, ErrClusterUpdateFailed, h.logger)
 		return
 	}
 
-	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicCluster(cr)); err != nil {
+	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicCluster(updated)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }
@@ -398,24 +459,24 @@ func (h *ClusterHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
 	vars := mux.Vars(r)
-	clusterID := vars["id"]
+	clusterName := vars["id"]
 
-	h.logger.Info("deleting cluster", "account_id", accountID, "cluster_id", clusterID)
+	h.logger.Info("deleting cluster", "account_id", accountID, "cluster_name", clusterName)
 
-	err := h.db.DeleteCluster(ctx, accountID, clusterID)
+	err := h.db.DeleteCluster(ctx, accountID, clusterName)
 	if err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrClusterDeleteNotFound, h.logger)
 			return
 		}
-		h.logger.Error("failed to delete cluster", "error", err, "account_id", accountID, "cluster_id", clusterID)
+		h.logger.Error("failed to delete cluster", "error", err, "account_id", accountID, "cluster_name", clusterName)
 		writeAPIError(w, ErrClusterDeleteFailed, h.logger)
 		return
 	}
 
 	response := map[string]any{
-		"message":    "Cluster deletion initiated",
-		"cluster_id": clusterID,
+		"message":      "Cluster deletion initiated",
+		"cluster_name": clusterName,
 	}
 
 	if err := api.Write(w, http.StatusAccepted, response); err != nil {
