@@ -42,9 +42,10 @@ func New(cfg *config.Config, dbClient *hyperfleetdb.Client, logger *slog.Logger)
 	healthHandler := apphandlers.NewHealthHandler(logger)
 	infoHandler := apphandlers.NewInfoHandler(logger)
 	mgmtClusterHandler := apphandlers.NewManagementClusterHandler(dbClient, logger)
-	clusterHandler := apphandlers.NewClusterHandler(dbClient, cfg.Regional.OIDCIssuerBaseURL, cfg.Regional.DefaultClusterExpiration, logger)
+	clusterHandler := apphandlers.NewClusterHandler(dbClient, cfg.Regional.OIDCIssuerBaseURL, cfg.Regional.DefaultClusterExpiration, logger, cfg.Regional.DNSBaseDomainSuffix)
 	nodePoolHandler := apphandlers.NewNodePoolHandler(dbClient, logger)
 	oidcConfigHandler := apphandlers.NewOidcConfigHandler(dbClient, cfg.Regional.OIDCIssuerBaseURL, cfg.Regional.AWSRegion, logger)
+	dnsDomainHandler := apphandlers.NewDNSDomainHandler(dbClient, cfg.Regional.DNSBaseDomainSuffix, logger)
 
 	// Create legacy authorization middleware (for non-authz routes)
 	authMiddleware := middleware.NewAuthorization(cfg.AllowedAccounts, logger)
@@ -245,6 +246,21 @@ func New(cfg *config.Config, dbClient *hyperfleetdb.Client, logger *slog.Logger)
 	oidcConfigRouter.HandleFunc("", oidcConfigHandler.Create).Methods(http.MethodPost)
 	oidcConfigRouter.HandleFunc("/{id}", oidcConfigHandler.Get).Methods(http.MethodGet)
 	oidcConfigRouter.HandleFunc("/{id}", oidcConfigHandler.Delete).Methods(http.MethodDelete)
+
+	// DNS domain routes expose the HCP-only reservation flow through both the
+	// native Hyperfleet API and the OCM path used by existing ROSA clients.
+	for _, prefix := range []string{"/api/v0/dns_domains", "/api/clusters_mgmt/v1/dns_domains"} {
+		dnsDomainRouter := apiRouter.PathPrefix(prefix).Subrouter()
+		if authzMiddleware != nil {
+			dnsDomainRouter.Use(privilegedMiddleware.CheckPrivileged)
+			dnsDomainRouter.Use(authzMiddleware.Authorize)
+		} else {
+			dnsDomainRouter.Use(authMiddleware.RequireAllowedAccount)
+		}
+		dnsDomainRouter.HandleFunc("", dnsDomainHandler.List).Methods(http.MethodGet)
+		dnsDomainRouter.HandleFunc("", dnsDomainHandler.Create).Methods(http.MethodPost)
+		dnsDomainRouter.HandleFunc("/{id}", dnsDomainHandler.Delete).Methods(http.MethodDelete)
+	}
 
 	// Health and info routes on API server (no auth required)
 	apiRouter.HandleFunc("/api/v0/live", healthHandler.Liveness).Methods(http.MethodGet)

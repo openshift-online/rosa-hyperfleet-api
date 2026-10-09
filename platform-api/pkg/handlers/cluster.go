@@ -3,10 +3,12 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,10 +25,10 @@ import (
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/validation"
 )
 
-// clusterNamespaceLabel is set on an OidcConfig when a cluster claims it via resolveAndClaimOidcConfig, enforcing the 1:1 cluster-to-OidcConfig binding (mirrors hyperfleet-operator's cluster_controller.go constant).
-const clusterNamespaceLabel = "hyperfleet.io/cluster-namespace"
+// clusterNamespaceLabel marks an account-scoped resource claimed by a cluster.
+const clusterNamespaceLabel = hyperfleetv1alpha1.DNSReservationClusterNamespaceLabel
 
-// releaseClaimTimeout bounds releaseOidcConfigClaim's detached rollback so a canceled request can't skip it.
+// releaseClaimTimeout bounds detached rollback of cluster resource claims.
 const releaseClaimTimeout = 5 * time.Second
 
 // ClusterHandler handles cluster-related HTTP requests
@@ -34,17 +36,23 @@ type ClusterHandler struct {
 	db                       *hyperfleetdb.Client
 	oidcIssuerBaseURL        string
 	defaultClusterExpiration time.Duration
+	dnsBaseDomainSuffix      string
 	validator                *validation.FieldValidator
 	logger                   *slog.Logger
 	generateID               func() string
 }
 
 // NewClusterHandler creates a new cluster handler
-func NewClusterHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, defaultClusterExpiration time.Duration, logger *slog.Logger) *ClusterHandler {
+func NewClusterHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, defaultClusterExpiration time.Duration, logger *slog.Logger, dnsBaseDomainSuffix ...string) *ClusterHandler {
+	suffix := ""
+	if len(dnsBaseDomainSuffix) > 0 {
+		suffix = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(dnsBaseDomainSuffix[0])), ".")
+	}
 	return &ClusterHandler{
 		db:                       db,
 		oidcIssuerBaseURL:        oidcIssuerBaseURL,
 		defaultClusterExpiration: defaultClusterExpiration,
+		dnsBaseDomainSuffix:      suffix,
 		validator:                validation.NewFieldValidator("Cluster"),
 		logger:                   logger,
 		generateID:               func() string { return uuid.New().String() },
@@ -184,6 +192,15 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	dnsReservation, apiErr := h.claimManagedDNSDomain(ctx, accountID, req.Spec.HostedCluster.DNS.BaseDomain, hyperfleetdb.ClusterNSPrefix+clusterID)
+	if apiErr != nil {
+		if oidcConfig != nil {
+			h.releaseOidcConfigClaim(ctx, accountID, req.Spec.OidcConfigID)
+		}
+		writeAPIError(w, *apiErr, h.logger)
+		return
+	}
+
 	if h.defaultClusterExpiration > 0 && req.Spec.ExpirationTimestamp == nil {
 		expiry := metav1.NewTime(time.Now().Add(h.defaultClusterExpiration))
 		req.Spec.ExpirationTimestamp = &expiry
@@ -207,6 +224,11 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		if oidcConfig != nil {
 			h.releaseOidcConfigClaim(ctx, accountID, req.Spec.OidcConfigID)
 		}
+		if dnsReservation != nil {
+			if releaseErr := h.releaseDNSDomainClaim(ctx, accountID, dnsReservation.Name, hyperfleetdb.ClusterNSPrefix+clusterID); releaseErr != nil {
+				h.logger.Error("failed to release DNS domain claim after cluster create failure", "error_type", fmt.Sprintf("%T", releaseErr), "account_id", redact(accountID), "dns_domain", redact(dnsReservation.Spec.BaseDomain))
+			}
+		}
 		h.logger.Error("failed to create cluster", "error", err, "account_id", accountID)
 		writeAPIError(w, ErrClusterCreateFailed, h.logger)
 		return
@@ -221,6 +243,41 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := api.Write(w, http.StatusCreated, hyperfleetdb.InternalToPublicCluster(cr)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
+}
+
+// claimManagedDNSDomain verifies and atomically claims domains in the regional managed suffix.
+func (h *ClusterHandler) claimManagedDNSDomain(ctx context.Context, accountID, baseDomain, clusterNamespace string) (*hyperfleetv1alpha1.DNSReservation, *APIError) {
+	if baseDomain == "" || h.dnsBaseDomainSuffix == "" || !isManagedDNSDomain(baseDomain, h.dnsBaseDomainSuffix) {
+		return nil, nil
+	}
+	reservation, err := h.db.ClaimDNSDomainReservation(ctx, accountID, baseDomain, clusterNamespace)
+	if err == nil {
+		return reservation, nil
+	}
+	if hyperfleetdb.IsNotFound(err) {
+		return nil, &ErrClusterCreateDNSDomainNotFound
+	}
+	if hyperfleetdb.IsConflict(err) {
+		return nil, &ErrClusterCreateDNSDomainInUse
+	}
+	h.logger.Error("failed to claim managed DNS domain", "error_type", fmt.Sprintf("%T", err), "account_id", redact(accountID), "base_domain", redact(baseDomain))
+	return nil, &ErrClusterCreateDNSDomainLookupFailed
+}
+
+// releaseDNSDomainClaim rolls back a DNS claim if Cluster creation fails.
+func (h *ClusterHandler) releaseDNSDomainClaim(ctx context.Context, accountID, reservationName, clusterNamespace string) error {
+	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseClaimTimeout)
+	defer cancel()
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		return h.db.ReleaseDNSDomainReservationClaim(releaseCtx, accountID, reservationName, clusterNamespace)
+	})
+}
+
+// isManagedDNSDomain reports whether domain belongs to the configured regional suffix.
+func isManagedDNSDomain(domain, suffix string) bool {
+	domain = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
+	suffix = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(suffix)), ".")
+	return suffix != "" && (domain == suffix || strings.HasSuffix(domain, "."+suffix))
 }
 
 // resolveAndClaimOidcConfig validates the OidcConfig referenced by oidcConfigID and, if unclaimed, atomically claims it for clusterID via a resourceVersion-gated Update; callers must call releaseOidcConfigClaim to roll back the claim if a later step fails.

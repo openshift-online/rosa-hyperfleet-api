@@ -34,6 +34,7 @@ type RegionalConfig struct {
 	OIDCIssuerBaseURL        string
 	DefaultClusterExpiration time.Duration
 	AWSRegion                string
+	DNSBaseDomainSuffix      string
 }
 
 type ServerConfig struct {

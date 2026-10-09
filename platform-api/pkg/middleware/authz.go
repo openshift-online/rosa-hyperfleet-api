@@ -113,6 +113,16 @@ func (a *Authz) deriveAction(r *http.Request) string {
 	// Map HTTP method + path to ROSA action
 	path := r.URL.Path
 	method := r.Method
+	if strings.Contains(path, "/dns_domains") {
+		switch method {
+		case http.MethodPost:
+			return "CreateCluster"
+		case http.MethodGet:
+			return "ListClusters"
+		case http.MethodDelete:
+			return "DeleteCluster"
+		}
+	}
 
 	// Extract resource type from path
 	// e.g., /api/v0/clusters -> Cluster
@@ -171,6 +181,11 @@ func (a *Authz) deriveAction(r *http.Request) string {
 
 // deriveResource derives the ROSA resource ARN from the HTTP request
 func (a *Authz) deriveResource(r *http.Request) string {
+	// DNS-domain reservations are account-level resources. Reuse the cluster
+	// lifecycle actions above and authorize them against the account wildcard.
+	if strings.Contains(r.URL.Path, "/dns_domains") {
+		return "*"
+	}
 	vars := mux.Vars(r)
 
 	// Check for resource ID in path

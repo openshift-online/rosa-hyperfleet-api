@@ -21,6 +21,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+const (
+	// DNSReservationClusterNamespaceLabel records the cluster that claimed a
+	// customer-created DNS reservation.
+	DNSReservationClusterNamespaceLabel = "hyperfleet.io/cluster-namespace"
+	// DNSReservationDeletingLabel fences new claims while DNS reservation
+	// cleanup is in progress.
+	DNSReservationDeletingLabel = "hyperfleet.io/dns-domain-deleting"
+)
+
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=hfdns
 // +kubebuilder:printcolumn:name="BaseDomain",type=string,JSONPath=".spec.baseDomain"
@@ -67,6 +76,21 @@ type DNSReservationSpec struct {
 	// BaseDomain. Computed at creation time as {prefix}.{shard}.{baseDomain},
 	// where baseDomain is the operator's configured --base-domain.
 	BaseDomain string `json:"baseDomain"`
+
+	// ClusterArch identifies the cluster architecture that can use this domain.
+	// +k8s:openapi-gen=false
+	// +hyperfleet:write-mode=service-set
+	ClusterArch string `json:"clusterArch,omitempty"`
+
+	// UserDefined is true when the reservation was created by a customer.
+	// +k8s:openapi-gen=false
+	// +hyperfleet:write-mode=service-set
+	UserDefined bool `json:"userDefined,omitempty"`
+
+	// ReservedAt is the time when the domain was reserved.
+	// +k8s:openapi-gen=false
+	// +hyperfleet:write-mode=service-set
+	ReservedAt metav1.Time `json:"reservedAt,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -20,8 +20,8 @@ import (
 )
 
 // ClusterResources generates the Kubernetes resources for a cluster on the MC.
-// baseDomain is the fully assembled DNS base domain from the DNSReservation
-// (e.g. "f7a3.0.openshiftapps.com").
+// baseDomain is either the customer's configured DNS base domain or the fully
+// assembled DNS base domain from a DNSReservation.
 func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal bool, baseDomain, controlPlaneOperatorImage string) ([]Resource, error) {
 	clusterID := ClusterIDFromNamespace(cluster.Namespace)
 	clusterName := cluster.Name // human-readable
@@ -261,9 +261,9 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 	if uuid := extractUUIDFromIssuerURL(hcSpec.IssuerURL); uuid != "" {
 		hcSpec.InfraID = uuid
 	}
-	hcSpec.DNS = hypershiftv1beta1.DNSSpec{
-		BaseDomain: baseDomain,
-	}
+	// Keep customer-provided zone IDs and base-domain prefix while setting the
+	// selected domain used for cluster ingress.
+	hcSpec.DNS.BaseDomain = baseDomain
 	hcSpec.PullSecret = corev1.LocalObjectReference{Name: "pull-secret"}
 	hcSpec.SSHKey = corev1.LocalObjectReference{Name: "ssh-key"}
 	hcSpec.KubeAPIServerDNSName = apiHost

@@ -15,6 +15,7 @@ type PlatformSpec struct {
 	// type specifies the underlying infrastructure provider for the cluster.
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=immutable
+	// +kubebuilder:validation:Enum=AWS
 	// +required
 	Type hypershiftv1beta1.PlatformType `json:"type"`
 	// aws specifies AWS-specific configuration for the cluster.

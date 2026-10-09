@@ -66,6 +66,10 @@ spec:
                   BaseDomain. Computed at creation time as {prefix}.{shard}.{baseDomain},
                   where baseDomain is the operator's configured --base-domain.
                 type: string
+              clusterArch:
+                description: ClusterArch identifies the cluster architecture that
+                  can use this domain.
+                type: string
               indexRef:
                 description: |-
                   IndexRef references the Index resource in the shard's uniqueness
@@ -85,6 +89,14 @@ spec:
                 - name
                 - namespace
                 type: object
+              reservedAt:
+                description: ReservedAt is the time when the domain was reserved.
+                format: date-time
+                type: string
+              userDefined:
+                description: UserDefined is true when the reservation was created
+                  by a customer.
+                type: boolean
             required:
             - baseDomain
             - indexRef

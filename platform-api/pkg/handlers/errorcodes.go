@@ -31,10 +31,13 @@ var (
 	ErrClusterCreateNameTooLong            APIError
 	ErrClusterCreateInvalidSpec            APIError
 
-	ErrClusterCreateOidcConfigRequired APIError
-	ErrClusterCreateOidcConfigNotFound APIError
-	ErrClusterCreateOidcConfigNotReady APIError
-	ErrClusterCreateOidcConfigInUse    APIError
+	ErrClusterCreateOidcConfigRequired    APIError
+	ErrClusterCreateOidcConfigNotFound    APIError
+	ErrClusterCreateOidcConfigNotReady    APIError
+	ErrClusterCreateOidcConfigInUse       APIError
+	ErrClusterCreateDNSDomainLookupFailed APIError
+	ErrClusterCreateDNSDomainNotFound     APIError
+	ErrClusterCreateDNSDomainInUse        APIError
 
 	ErrClusterGetNotFound APIError
 	ErrClusterGetFailed   APIError
@@ -234,6 +237,9 @@ func init() {
 	ErrClusterCreateOidcConfigNotFound = APIError{Code: "CLUSTERS-MGMT-CREATE-010", HTTPStatus: http.StatusNotFound, Message: "Referenced OIDC config not found"}
 	ErrClusterCreateOidcConfigNotReady = APIError{Code: "CLUSTERS-MGMT-CREATE-011", HTTPStatus: http.StatusUnprocessableEntity, Message: "Referenced OIDC config is not ready"}
 	ErrClusterCreateOidcConfigInUse = APIError{Code: "CLUSTERS-MGMT-CREATE-012", HTTPStatus: http.StatusConflict, Message: "Referenced OIDC config is already associated with another cluster", Reason: "an OidcConfig backs at most one cluster; %q is already in use"}
+	ErrClusterCreateDNSDomainLookupFailed = APIError{Code: "CLUSTERS-MGMT-CREATE-014", HTTPStatus: http.StatusInternalServerError, Message: "Failed to validate managed DNS domain"}
+	ErrClusterCreateDNSDomainNotFound = APIError{Code: "CLUSTERS-MGMT-CREATE-015", HTTPStatus: http.StatusNotFound, Message: "Managed DNS domain is not reserved by this account"}
+	ErrClusterCreateDNSDomainInUse = APIError{Code: "CLUSTERS-MGMT-CREATE-016", HTTPStatus: http.StatusConflict, Message: "Managed DNS domain is already in use or being deleted"}
 
 	// Cluster — Get
 	ErrClusterGetNotFound = APIError{Code: "CLUSTERS-MGMT-GET-001", HTTPStatus: http.StatusNotFound, Message: "Cluster not found"}

@@ -10,18 +10,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ServiceSetFieldsDNS contains DNS-related fields for hostedCluster.dns
-type ServiceSetFieldsDNS struct {
-	// BaseDomain is service-set (platform-managed, hidden from API)
-	BaseDomain string `json:"baseDomain,omitempty"`
-	// BaseDomainPrefix is service-set (platform-managed, hidden from API)
-	BaseDomainPrefix *string `json:"baseDomainPrefix,omitempty"`
-	// PrivateZoneID is service-set (platform-managed, hidden from API)
-	PrivateZoneID string `json:"privateZoneID,omitempty"`
-	// PublicZoneID is service-set (platform-managed, hidden from API)
-	PublicZoneID string `json:"publicZoneID,omitempty"`
-}
-
 // ServiceSetFieldsHostedCluster contains hostedCluster-level service-set fields
 type ServiceSetFieldsHostedCluster struct {
 	// AdditionalTrustBundle is service-set (platform-managed, hidden from API)
@@ -46,8 +34,6 @@ type ServiceSetFieldsHostedCluster struct {
 	CpuManagerPolicyOptions string `json:"cpuManagerPolicyOptions,omitempty"`
 	// CpuManagerReconcilePeriod is service-set (platform-managed, hidden from API)
 	CpuManagerReconcilePeriod string `json:"cpuManagerReconcilePeriod,omitempty"`
-	// DNS is service-set (platform-managed, hidden from API)
-	DNS *ServiceSetFieldsDNS `json:"dns,omitempty"`
 	// Etcd is service-set (platform-managed, hidden from API)
 	Etcd hypershiftv1beta1.EtcdSpec `json:"etcd,omitempty"`
 	// EvictionHard is service-set (platform-managed, hidden from API)
@@ -130,10 +116,8 @@ type ServiceSetFields struct {
 	Arch string `json:"arch,omitempty"`
 	// Authentication is service-set (platform-managed, hidden from API)
 	Authentication *v1alpha1.ClusterAuthentication `json:"authentication,omitempty"`
-	// BaseDomain is service-set (platform-managed, hidden from API)
-	BaseDomain string `json:"baseDomain,omitempty"`
-	// BaseDomainPrefix is service-set (platform-managed, hidden from API)
-	BaseDomainPrefix *string `json:"baseDomainPrefix,omitempty"`
+	// ClusterArch is service-set (platform-managed, hidden from API)
+	ClusterArch string `json:"clusterArch,omitempty"`
 	// CpuManagerPolicy is service-set (platform-managed, hidden from API)
 	CpuManagerPolicy *string `json:"cpuManagerPolicy,omitempty"`
 	// CpuManagerPolicyOptions is service-set (platform-managed, hidden from API)
@@ -182,12 +166,10 @@ type ServiceSetFields struct {
 	OsImageStream hypershiftv1beta1.OSImageStreamReference `json:"osImageStream,omitempty"`
 	// PausedUntil is service-set (platform-managed, hidden from API)
 	PausedUntil *string `json:"pausedUntil,omitempty"`
-	// PrivateZoneID is service-set (platform-managed, hidden from API)
-	PrivateZoneID string `json:"privateZoneID,omitempty"`
-	// PublicZoneID is service-set (platform-managed, hidden from API)
-	PublicZoneID string `json:"publicZoneID,omitempty"`
 	// ReadinessEndpoints is service-set (platform-managed, hidden from API)
 	ReadinessEndpoints []string `json:"readinessEndpoints,omitempty"`
+	// ReservedAt is service-set (platform-managed, hidden from API)
+	ReservedAt metav1.Time `json:"reservedAt,omitempty"`
 	// SystemdUnits is service-set (platform-managed, hidden from API)
 	SystemdUnits []v1alpha1.SystemdUnit `json:"systemdUnits,omitempty"`
 	// TopologyManagerPolicy is service-set (platform-managed, hidden from API)
@@ -196,4 +178,6 @@ type ServiceSetFields struct {
 	TopologyManagerScope *string `json:"topologyManagerScope,omitempty"`
 	// TrustedCA is service-set (platform-managed, hidden from API)
 	TrustedCA string `json:"trustedCA,omitempty"`
+	// UserDefined is service-set (platform-managed, hidden from API)
+	UserDefined bool `json:"userDefined,omitempty"`
 }
