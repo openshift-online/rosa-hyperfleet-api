@@ -5,7 +5,6 @@ import (
 	"maps"
 	"path"
 	"slices"
-	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -223,25 +222,6 @@ func apiServingCert(clusterID, clusterName, baseDomain, ns string) Resource {
 	}
 }
 
-// extractUUIDFromIssuerURL extracts the UUID from a pre-created OIDC issuer URL.
-// For example, "https://example.com/21305398-14aa-4003-96a3-f3b860e04a1c" returns "21305398-14aa-4003-96a3-f3b860e04a1c".
-// Returns empty string if the URL doesn't contain a UUID-like path segment.
-func extractUUIDFromIssuerURL(issuerURL string) string {
-	if issuerURL == "" {
-		return ""
-	}
-	// Remove scheme and host, get the path
-	// path.Base gets the last segment of the path
-	lastSegment := path.Base(issuerURL)
-
-	// Basic UUID validation: contains hyphens and looks like a UUID
-	// UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-	if strings.Count(lastSegment, "-") >= 4 && len(lastSegment) >= 36 {
-		return lastSegment
-	}
-	return ""
-}
-
 func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal bool, baseDomain, controlPlaneOperatorImage string) (Resource, error) {
 	clusterID := ClusterIDFromNamespace(cluster.Namespace)
 	clusterName := cluster.Name // human-readable
@@ -254,12 +234,10 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 	}
 
 	// --- Platform-managed overrides (always set by the operator) ---
-	// Default InfraID to cluster ID, but if using a pre-created OIDC config,
-	// extract the UUID from the issuerURL and use it as InfraID instead.
-	// This ensures HyperShift uploads OIDC discovery documents to the correct S3 path.
 	hcSpec.InfraID = clusterID
-	if uuid := extractUUIDFromIssuerURL(hcSpec.IssuerURL); uuid != "" {
-		hcSpec.InfraID = uuid
+	if cluster.Spec.OidcConfigID != "" && !oidcSigningKeyExternal {
+		// Managed OIDC: InfraID must equal issuerURL's trailing path segment, since that's the S3 key HyperShift uploads discovery docs to.
+		hcSpec.InfraID = path.Base(hcSpec.IssuerURL)
 	}
 	hcSpec.DNS = hypershiftv1beta1.DNSSpec{
 		BaseDomain: baseDomain,

@@ -60,20 +60,17 @@ func normalizeIssuerURL(raw string) (string, error) {
 type OidcConfigHandler struct {
 	db                *hyperfleetdb.Client
 	oidcIssuerBaseURL string
-	// region is embedded in auto-generated managed issuerUrls so two regions never mint the same one.
-	region     string
-	logger     *slog.Logger
-	generateID func() string
+	logger            *slog.Logger
+	generateID        func() string
 }
 
 // NewOidcConfigHandler creates a new OIDC config handler.
-func NewOidcConfigHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, region string, logger *slog.Logger) *OidcConfigHandler {
+func NewOidcConfigHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, logger *slog.Logger) *OidcConfigHandler {
 	return &OidcConfigHandler{
 		db:                db,
 		oidcIssuerBaseURL: oidcIssuerBaseURL,
-		region:            region,
 		logger:            logger,
-		generateID:        func() string { return uuid.New().String() },
+		generateID:        func() string { return strings.ReplaceAll(uuid.New().String(), "-", "") },
 	}
 }
 
@@ -204,14 +201,8 @@ func (h *OidcConfigHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		base := strings.TrimRight(h.oidcIssuerBaseURL, "/")
-		// Region is fused into configID's own path segment, not a separate one: HyperShift's InfraID
-		// (and thus its S3 upload key) is derived from this URL's trailing segment alone.
-		segment := configID
-		if h.region != "" {
-			segment = h.region + "-" + configID
-		}
 		// Server-generated from a UUID; normalization below is a defensive no-op, not a real gate.
-		req.Spec.IssuerUrl = base + "/" + segment
+		req.Spec.IssuerUrl = base + "/" + configID
 	}
 
 	normalizedIssuerURL, err := normalizeIssuerURL(req.Spec.IssuerUrl)

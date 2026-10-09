@@ -24,7 +24,6 @@ import (
 )
 
 const testOidcIssuerBaseURL = "https://oidc.example.com"
-const testRegion = "us-east-1"
 
 // testOidcConfigCR creates an OidcConfig CR with Namespace=account-<accountID>, Name=configID,
 // mirroring the namespace/name scheme used by hyperfleetdb.Client for OidcConfig operations.
@@ -75,7 +74,7 @@ func TestOidcConfigHandler_List_Success(t *testing.T) {
 		testOidcConfigCR("oidc-2", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v0/oidc_configs", nil)
 	req = req.WithContext(testContext(testAccountID))
@@ -103,7 +102,7 @@ func TestOidcConfigHandler_List_Empty(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v0/oidc_configs", nil)
 	req = req.WithContext(testContext(testAccountID))
@@ -135,7 +134,7 @@ func TestOidcConfigHandler_List_Pagination(t *testing.T) {
 		testOidcConfigCR("oidc-3", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v0/oidc_configs?limit=2&offset=1", nil)
 	req = req.WithContext(testContext(testAccountID))
@@ -171,7 +170,7 @@ func TestOidcConfigHandler_List_OffsetBeyondTotal(t *testing.T) {
 		testOidcConfigCR("oidc-1", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v0/oidc_configs?offset=10", nil)
 	req = req.WithContext(testContext(testAccountID))
@@ -199,7 +198,7 @@ func TestOidcConfigHandler_Create_Success(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 	handler.generateID = func() string { return "generated-config-id" }
 
 	body, _ := json.Marshal(map[string]any{
@@ -228,7 +227,7 @@ func TestOidcConfigHandler_Create_Success(t *testing.T) {
 	if spec["type"] != "managed" {
 		t.Errorf("expected spec.type=managed, got %v", spec["type"])
 	}
-	wantIssuerURL := testOidcIssuerBaseURL + "/" + testRegion + "-generated-config-id"
+	wantIssuerURL := testOidcIssuerBaseURL + "/generated-config-id"
 	if spec["issuerUrl"] != wantIssuerURL {
 		t.Errorf("expected spec.issuerUrl=%s, got %v", wantIssuerURL, spec["issuerUrl"])
 	}
@@ -241,7 +240,7 @@ func TestOidcConfigHandler_Create_ManagedRejectsWhenIssuerBaseURLNotConfigured(t
 	// A blank base URL must never be silently turned into a path-only
 	// issuerUrl (e.g. "/generated-config-id"); the server should refuse to
 	// create the config instead.
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), "", testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), "", logger)
 	handler.generateID = func() string { return "generated-config-id" }
 
 	body, _ := json.Marshal(map[string]any{
@@ -275,7 +274,7 @@ func TestOidcConfigHandler_Create_ManagedIgnoresClientIssuerUrl(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 	handler.generateID = func() string { return "generated-config-id" }
 
 	body, _ := json.Marshal(map[string]any{
@@ -298,7 +297,7 @@ func TestOidcConfigHandler_Create_ManagedIgnoresClientIssuerUrl(t *testing.T) {
 	var result map[string]any
 	_ = json.NewDecoder(w.Body).Decode(&result)
 
-	wantIssuerURL := testOidcIssuerBaseURL + "/" + testRegion + "-generated-config-id"
+	wantIssuerURL := testOidcIssuerBaseURL + "/generated-config-id"
 	spec := result["spec"].(map[string]any)
 	if issuerURL, _ := spec["issuerUrl"].(string); issuerURL != wantIssuerURL {
 		t.Errorf("expected client-supplied issuerUrl to be overridden with %q, got %q", wantIssuerURL, issuerURL)
@@ -317,7 +316,7 @@ func TestOidcConfigHandler_Create_InvalidJSON(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v0/oidc_configs", bytes.NewReader([]byte("not json")))
 	req = req.WithContext(testContext(testAccountID))
@@ -354,7 +353,7 @@ func TestOidcConfigHandler_Create_MissingFields(t *testing.T) {
 			scheme := newTestScheme()
 			fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v0/oidc_configs", bytes.NewReader(tt.body))
 			req = req.WithContext(testContext(testAccountID))
@@ -379,7 +378,7 @@ func TestOidcConfigHandler_Create_InvalidType(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	body, _ := json.Marshal(map[string]any{
 		"spec": map[string]any{
@@ -454,7 +453,7 @@ func TestOidcConfigHandler_Create_InvalidFieldsForType(t *testing.T) {
 			scheme := newTestScheme()
 			fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 			body, _ := json.Marshal(map[string]any{"spec": tt.spec})
 			req := httptest.NewRequest(http.MethodPost, "/api/v0/oidc_configs", bytes.NewReader(body))
@@ -480,7 +479,7 @@ func TestOidcConfigHandler_Create_UnmanagedSuccess(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 	handler.generateID = func() string { return "generated-config-id" }
 
 	body, _ := json.Marshal(map[string]any{
@@ -516,7 +515,7 @@ func TestOidcConfigHandler_Create_UnmanagedNormalizesIssuerUrl(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 	handler.generateID = func() string { return "generated-config-id" }
 
 	body, _ := json.Marshal(map[string]any{
@@ -575,7 +574,7 @@ func TestOidcConfigHandler_Create_UnmanagedInvalidIssuerUrl(t *testing.T) {
 			scheme := newTestScheme()
 			fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+			handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 			body, _ := json.Marshal(map[string]any{
 				"spec": map[string]any{
@@ -621,7 +620,7 @@ func TestOidcConfigHandler_Create_UnmanagedDuplicateIssuerUrlSameAccount(t *test
 	).Build()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	body, _ := json.Marshal(map[string]any{
 		"spec": map[string]any{
@@ -666,7 +665,7 @@ func TestOidcConfigHandler_Create_UnmanagedDuplicateIssuerUrlDifferentAccountRej
 		testIssuerIndex("https://example.com/oidc", "oidc-existing", otherAccount),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 	handler.generateID = func() string { return "generated-config-id" }
 
 	body, _ := json.Marshal(map[string]any{
@@ -695,7 +694,7 @@ func TestOidcConfigHandler_Create_UnmanagedSameIssuerUrlBothSucceedWithoutIndexY
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	n := 0
 	handler.generateID = func() string {
@@ -729,7 +728,7 @@ func TestOidcConfigHandler_Get_Success(t *testing.T) {
 		testOidcConfigCR("oidc-123", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v0/oidc_configs/oidc-123", nil)
 	req = req.WithContext(testContext(testAccountID))
@@ -754,7 +753,7 @@ func TestOidcConfigHandler_Get_NotFound(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v0/oidc_configs/no-such-config", nil)
 	req = req.WithContext(testContext(testAccountID))
@@ -781,7 +780,7 @@ func TestOidcConfigHandler_Get_WrongAccount(t *testing.T) {
 		testOidcConfigCR("oidc-123", otherAccount, testManagedOidcConfigSpec(otherAccount)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v0/oidc_configs/oidc-123", nil)
 	req = req.WithContext(testContext(testAccountID))
@@ -801,7 +800,7 @@ func TestOidcConfigHandler_Delete_Success(t *testing.T) {
 		testOidcConfigCR("oidc-123", testAccountID, testManagedOidcConfigSpec(testAccountID)),
 	).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v0/oidc_configs/oidc-123", nil)
 	req = req.WithContext(testContext(testAccountID))
@@ -830,7 +829,7 @@ func TestOidcConfigHandler_Delete_InUse(t *testing.T) {
 	referencingCluster.Spec.OidcConfigID = "oidc-123"
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(oidcConfig, referencingCluster).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v0/oidc_configs/oidc-123", nil)
 	req = req.WithContext(testContext(testAccountID))
@@ -862,7 +861,7 @@ func TestOidcConfigHandler_Delete_AfterClusterDeletedSucceeds(t *testing.T) {
 	referencingCluster.Spec.OidcConfigID = "oidc-123"
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(oidcConfig, referencingCluster).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v0/oidc_configs/oidc-123", nil)
 	req = req.WithContext(testContext(testAccountID))
@@ -900,7 +899,7 @@ func TestOidcConfigHandler_Delete_NotFound(t *testing.T) {
 	scheme := newTestScheme()
 	fc := fake.NewClientBuilder().WithScheme(scheme).Build()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, testRegion, logger)
+	handler := NewOidcConfigHandler(hyperfleetdb.NewClientFrom(fc, logger), testOidcIssuerBaseURL, logger)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v0/oidc_configs/no-such-config", nil)
 	req = req.WithContext(testContext(testAccountID))

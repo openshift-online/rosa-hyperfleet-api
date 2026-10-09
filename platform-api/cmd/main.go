@@ -102,7 +102,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	cfg.Regional.OIDCIssuerBaseURL = oidcIssuerBaseURL
 	cfg.Regional.DefaultClusterExpiration = defaultClusterExpiration
-	cfg.Regional.AWSRegion = awsCfg.Region
 	cfg.AllowedAccounts = parseAllowedAccounts(allowedAccounts)
 	cfg.Server.APIPort = apiPort
 	cfg.Server.HealthPort = healthPort
