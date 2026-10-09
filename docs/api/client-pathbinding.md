@@ -235,15 +235,15 @@ consumer structs are supported by the shared pathbind engine.
 
 #### `goType` → consumer type defaults
 
-| Draft `goType`   | Consumer default                                                 |
-| ---------------- | ---------------------------------------------------------------- |
-| `string`         | `string`                                                         |
-| `boolean`        | `*bool`                                                          |
-| `integer(int32)` | `*int32`                                                         |
-| `integer(int64)` | `*int64`                                                         |
+| Draft `goType`   | Consumer default                                                   |
+| ---------------- | ------------------------------------------------------------------ |
+| `string`         | `string`                                                           |
+| `boolean`        | `*bool`                                                            |
+| `integer(int32)` | `*int32`                                                           |
+| `integer(int64)` | `*int64`                                                           |
 | `array(string)`  | `string[]` for supported consumers; Cobra rejects collection flags |
 | `array(object)`  | Unsupported automatically; add an explicit consumer representation |
-| `map`            | `map` for Terraform; Cobra rejects map fields                  |
+| `map`            | `map` for Terraform; Cobra rejects map fields                      |
 
 **Consumer-only entries** (no `path`): generator emits the field with `hfsdk:"-"` — Expand skips it; consumer sets it in `PostExpand` or `PreRequest`.
 
@@ -441,7 +441,7 @@ The SDK's typed `Update()` (PUT) is used rather than JSON merge patch, so the co
 | `writeMode: mutable`     | `operations: [create, update]`              |
 | `writeMode: immutable`   | `operations: [create]`                      |
 | `writeMode: service-set` | excluded                                    |
-| `hidden: true`           | excluded                                    |
+| `hidden: true`           | excluded (unless `writeMode` is `mutable`)  |
 | `ownerType`              | resource grouping (Cluster, NodePool, etc.) |
 
 ### Workflow when a new CRD field is added
@@ -486,7 +486,7 @@ Add `+hyperfleet:write-mode` to the field in the CRD Go type:
 DisplayName string `json:"displayName,omitempty"`
 ```
 
-`service-set` and `hidden` fields are excluded from the draft automatically — do not annotate them.
+`service-set` fields are excluded from the draft automatically. `hidden` fields are also excluded unless they have `write-mode=mutable` — mutable hidden fields appear in the draft so consumers can set them even though they are not surfaced in the Kubernetes OpenAPI spec (e.g. `nodeLabels`).
 
 If the field belongs to an embedded passthrough type (e.g. `HostedClusterSpecPassthrough`), annotate the field there; the marker-scanner associates it with the correct owner CRD.
 

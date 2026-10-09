@@ -102,11 +102,11 @@ func Install(scheme *runtime.Scheme) {
 
 The platform API differs from a standard Kubernetes API in three ways that require hand-written code:
 
-| Difference                                               | Solution                                                                                                                                  |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Requests are signed with AWS SigV4                       | `transport/sigv4.go` — custom RoundTripper                                                                                                |
+| Difference                                                                | Solution                                                                                                                               |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Requests are signed with AWS SigV4                                        | `transport/sigv4.go` — custom RoundTripper                                                                                             |
 | The API is account-scoped while generated clients may use namespace paths | SigV4 transport extracts the generated namespace path value, maps it to `X-Amz-Account-Id`, and strips the `/namespaces/{ns}/` segment |
-| Pagination uses `offset` rather than Kubernetes `continue` | `transport/bridge.go` — query adapter                                                                                                      |
+| Pagination uses `offset` rather than Kubernetes `continue`                | `transport/bridge.go` — query adapter                                                                                                  |
 
 ### `rest/config.go` — SDK configuration
 
