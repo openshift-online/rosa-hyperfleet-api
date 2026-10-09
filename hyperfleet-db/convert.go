@@ -125,6 +125,22 @@ func extractMetadata(obj client.Object) (json.RawMessage, error) {
 	return json.Marshal(sm)
 }
 
+// ValidateObjectResourceVersion requires a usable positive CAS version without
+// changing the optional-version behavior of general controller-runtime writes.
+func ValidateObjectResourceVersion(obj client.Object) error {
+	if obj == nil || (reflect.ValueOf(obj).Kind() == reflect.Pointer && reflect.ValueOf(obj).IsNil()) {
+		return fmt.Errorf("object is required")
+	}
+	version, err := parseResourceVersion(obj)
+	if err != nil {
+		return err
+	}
+	if version <= 0 {
+		return fmt.Errorf("a positive object resource version is required")
+	}
+	return nil
+}
+
 func parseResourceVersion(obj client.Object) (int64, error) {
 	rv := obj.GetResourceVersion()
 	if rv == "" {

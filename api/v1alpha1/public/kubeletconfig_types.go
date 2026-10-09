@@ -10,8 +10,10 @@ import (
 // +hyperfleet:upstream-reduced-object=hypershiftv1beta1.KubeletConfig
 type KubeletConfig struct {
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	MaxPods *int32 `json:"maxPods,omitempty"`
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	PodPidsLimit *int64 `json:"podPidsLimit,omitempty"`
 	// +hyperfleet:write-mode=immutable
 	// +kubebuilder:validation:MaxProperties=32
@@ -20,24 +22,33 @@ type KubeletConfig struct {
 	// +kubebuilder:validation:MaxProperties=32
 	KubeReserved map[string]string `json:"kubeReserved,omitempty"`
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	ImageGCHighThresholdPercent *int32 `json:"imageGCHighThresholdPercent,omitempty"`
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	ImageGCLowThresholdPercent *int32 `json:"imageGCLowThresholdPercent,omitempty"`
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	ImageMinimumGCAge *metav1.Duration `json:"imageMinimumGCAge,omitempty"`
 	// +openshift:enable:FeatureGate=HyperFleetKubeletAdvanced
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	SerializeImagePulls *bool `json:"serializeImagePulls,omitempty"`
 	// +openshift:enable:FeatureGate=HyperFleetKubeletAdvanced
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	RegistryPullQPS *int32 `json:"registryPullQPS,omitempty"`
 	// +openshift:enable:FeatureGate=HyperFleetKubeletAdvanced
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	RegistryBurst *int32 `json:"registryBurst,omitempty"`
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	StreamingConnectionIdleTimeout *metav1.Duration `json:"streamingConnectionIdleTimeout,omitempty"`
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	ContainerLogMaxSize *string `json:"containerLogMaxSize,omitempty"`
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	ContainerLogMaxFiles *int32 `json:"containerLogMaxFiles,omitempty"`
 }

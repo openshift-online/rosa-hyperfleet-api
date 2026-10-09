@@ -1,3 +1,0 @@
-# Privileged accounts for e2e testing
-# One account ID per line
-000000000000

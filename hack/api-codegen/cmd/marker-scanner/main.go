@@ -84,6 +84,11 @@ func main() {
 		log.Println("Validation passed")
 	}
 
+	scanner.UpdateActions, err = markers.DefaultUpdateActions()
+	if err != nil {
+		log.Fatalf("Error loading update actions: %v", err)
+	}
+
 	// Generate registry file
 	log.Printf("Generating registry: %s", outputFile)
 	if err := scanner.Generate(outputFile); err != nil {

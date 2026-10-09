@@ -11,11 +11,13 @@ type HostedClusterSpecPassthrough struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterVersion
 	// +required
 	Release hypershiftv1beta1.Release `json:"release"`
 	// channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateCluster
 	// +optional
 	Channel string `json:"channel,omitempty"`
 	// platform specifies the underlying infrastructure provider for the cluster
@@ -41,6 +43,7 @@ type HostedClusterSpecPassthrough struct {
 	// autoNode specifies the configuration for automatic node provisioning and lifecycle management.
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateCluster
 	// +optional
 	AutoNode hypershiftv1beta1.AutoNode `json:"autoNode,omitzero"`
 	// issuerURL is an OIDC issuer URL which will be used as the issuer in all
@@ -51,6 +54,7 @@ type HostedClusterSpecPassthrough struct {
 	// configuration specifies configuration for individual OCP components in the
 	// +k8s:openapi-gen=false
 	// +hyperfleet:write-mode=service-set
+	// +hyperfleet:update-action=UpdateClusterConfig
 	// +optional
 	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
 	// operatorConfiguration specifies configuration for individual OCP operators in the cluster.
@@ -61,6 +65,7 @@ type HostedClusterSpecPassthrough struct {
 	// imageContentSources specifies image mirrors that can be used by cluster
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateCluster
 	// +optional
 	ImageContentSources []hypershiftv1beta1.ImageContentSource `json:"imageContentSources,omitempty"`
 	// fips indicates whether this cluster's nodes will be running in FIPS mode.

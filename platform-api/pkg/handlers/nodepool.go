@@ -13,22 +13,28 @@ import (
 	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/authz"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/validation"
 )
 
 type NodePoolHandler struct {
-	db        *hyperfleetdb.Client
-	validator *validation.FieldValidator
-	logger    *slog.Logger
+	db         *hyperfleetdb.Client
+	validator  *validation.FieldValidator
+	logger     *slog.Logger
+	authorizer *authz.Authorizer
 }
 
-func NewNodePoolHandler(db *hyperfleetdb.Client, logger *slog.Logger) *NodePoolHandler {
+func NewNodePoolHandler(db *hyperfleetdb.Client, authorizer *authz.Authorizer, logger *slog.Logger) *NodePoolHandler {
+	if authorizer == nil {
+		panic("node pool authorizer is required")
+	}
 	return &NodePoolHandler{
-		db:        db,
-		validator: validation.NewFieldValidator("NodePool"),
-		logger:    logger,
+		authorizer: authorizer,
+		db:         db,
+		validator:  validation.NewFieldValidator("NodePool"),
+		logger:     logger,
 	}
 }
 
@@ -47,6 +53,10 @@ func validateNodePoolReplicas(spec *public.NodePoolSpec) validation.ValidationEr
 func (h *NodePoolHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
+	prepared, attempt := authorizeCollection(w, r, h.authorizer, authz.DefaultMetrics, h.logger, authz.ListNodePools, authz.Resource{Kind: authz.Collection, CollectionKind: authz.NodePool, AccountID: accountID})
+	if prepared == nil {
+		return
+	}
 
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
@@ -69,24 +79,38 @@ func (h *NodePoolHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("listing nodepools", "account_id", accountID, "limit", limit, "offset", offset, "cluster_id", clusterID)
 
-	list, err := h.db.ListNodePools(ctx, accountID, clusterID)
+	list, err := h.db.ListNodePools(ctx, clusterID)
 	if err != nil {
 		h.logger.Error("failed to list nodepools", "error", err, "account_id", accountID)
+		_ = attempt.Finish(authz.OutcomeError, authz.StageResourceLoading)
 		writeAPIError(w, ErrNodePoolList, h.logger)
 		return
 	}
 
 	nodepools := make([]*public.NodePool, 0, len(list.Items))
 	for i := range list.Items {
-		nodepools = append(nodepools, hyperfleetdb.InternalToPublicNodePool(&list.Items[i]))
+		resource, err := h.nodePoolResource(ctx, &list.Items[i])
+		if err != nil {
+			writeResourceAuthzError(w, r, attempt, authz.ListNodePools, err, h.logger)
+			return
+		}
+		decision, err := prepared.Check(ctx, authz.DescribeNodePool, resource)
+		if err != nil {
+			writeResourceAuthzError(w, r, attempt, authz.ListNodePools, err, h.logger)
+			return
+		}
+		if decision.Allowed {
+			nodepools = append(nodepools, hyperfleetdb.InternalToPublicNodePool(&list.Items[i]))
+		}
 	}
+	_ = attempt.Finish(authz.OutcomeAllow, authz.StageNone)
 
 	total := len(nodepools)
 
 	if offset >= len(nodepools) {
 		nodepools = nil
 	} else {
-		end := min(offset+limit, len(nodepools))
+		end := offset + min(limit, len(nodepools)-offset)
 		nodepools = nodepools[offset:end]
 	}
 
@@ -137,7 +161,7 @@ func (h *NodePoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.db.GetCluster(ctx, accountID, clusterID); err != nil {
+	if _, err := h.db.GetCluster(ctx, clusterID); err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrNodePoolCreateClusterNotFound, h.logger)
 			return
@@ -155,7 +179,10 @@ func (h *NodePoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 	internalPoolID := uuid.New().String()
 	cr := hyperfleetdb.PublicToInternalNodePool(&req, accountID, clusterID, internalPoolID)
 
-	if err := h.db.CreateNodePool(ctx, accountID, cr); err != nil {
+	if !h.authorizeNodePool(w, r, authz.CreateNodePool, cr) {
+		return
+	}
+	if err := h.db.CreateNodePool(ctx, cr); err != nil {
 		h.logger.Error("failed to create nodepool", "error", err, "account_id", accountID)
 		if hyperfleetdb.IsAlreadyExists(err) {
 			writeAPIError(w, ErrNodePoolCreateNameConflict, h.logger)
@@ -179,7 +206,7 @@ func (h *NodePoolHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("getting nodepool", "account_id", accountID, "cluster_id", clusterID, "nodepool_id", nodepoolID)
 
-	cr, err := h.db.GetNodePool(ctx, accountID, clusterID, nodepoolID)
+	cr, err := h.db.GetNodePool(ctx, clusterID, nodepoolID)
 	if err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrNodePoolGetNotFound, h.logger)
@@ -190,6 +217,9 @@ func (h *NodePoolHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.authorizeNodePool(w, r, authz.DescribeNodePool, cr) {
+		return
+	}
 	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicNodePool(cr)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
@@ -210,15 +240,17 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req public.NodePool
-	if err := json.Unmarshal(body, &req); err != nil {
+	var envelope struct {
+		Spec json.RawMessage `json:"spec"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
 		writeAPIError(w, ErrNodePoolUpdateInvalidBody, h.logger)
 		return
 	}
 
 	h.logger.Info("updating nodepool", "account_id", accountID, "cluster_id", clusterID, "nodepool_id", nodepoolID)
 
-	cr, err := h.db.GetNodePool(ctx, accountID, clusterID, nodepoolID)
+	cr, err := h.db.GetNodePool(ctx, clusterID, nodepoolID)
 	if err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrNodePoolUpdateNotFound, h.logger)
@@ -229,20 +261,6 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if errs := append(h.validator.ValidateUpdate(&req.Spec, &cr.Spec, featuregate.Default), validateNodePoolReplicas(&req.Spec)...); len(errs) > 0 {
-		writeAPIError(w, ErrNodePoolValidation.WithErrors(errs), h.logger)
-		return
-	}
-
-	var envelope struct {
-		Spec json.RawMessage `json:"spec"`
-	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		writeAPIError(w, ErrNodePoolUpdateInvalidBody, h.logger)
-		return
-	}
-
-	// Reject semantically empty specs (nil, empty decoded maps, whitespace variants).
 	var rawSpec map[string]any
 	if err := json.Unmarshal(envelope.Spec, &rawSpec); err != nil {
 		writeAPIError(w, ErrNodePoolUpdateInvalidBody, h.logger)
@@ -252,19 +270,38 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrNodePoolUpdateMissingFields, h.logger)
 		return
 	}
-	if err := hyperfleetdb.MergeSpecJSON(&cr.Spec, envelope.Spec); err != nil {
+	candidate := cr.DeepCopy()
+	if err := hyperfleetdb.MergeSpecJSON(&candidate.Spec, envelope.Spec); err != nil {
 		h.logger.Error("failed to merge nodepool spec", "error", err)
 		writeAPIError(w, ErrNodePoolUpdateInvalidSpec, h.logger)
 		return
 	}
 
-	if err := h.db.UpdateNodePool(ctx, cr); err != nil {
+	publicCandidate := hyperfleetdb.InternalToPublicNodePool(candidate)
+	if errs := validateNodePoolReplicas(&publicCandidate.Spec); len(errs) > 0 {
+		writeAPIError(w, ErrNodePoolValidation.WithErrors(errs), h.logger)
+		return
+	}
+
+	actions, errs := h.validator.AnalyzeUpdate(envelope.Spec, &cr.Spec, &candidate.Spec, featuregate.Default)
+	if errs != nil {
+		writeAPIError(w, ErrNodePoolValidation.WithErrors(errs), h.logger)
+		return
+	}
+	if !h.authorizeNodePool(w, r, authz.UpdateNodePool, cr, actions...) {
+		return
+	}
+	if err := h.db.UpdateNodePool(ctx, candidate); err != nil {
+		if hyperfleetdb.IsConflict(err) {
+			writeAPIError(w, ErrResourceConflict, h.logger)
+			return
+		}
 		h.logger.Error("failed to update nodepool", "error", err, "account_id", accountID, "nodepool_id", nodepoolID)
 		writeAPIError(w, ErrNodePoolUpdateFailed, h.logger)
 		return
 	}
 
-	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicNodePool(cr)); err != nil {
+	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicNodePool(candidate)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
 }
@@ -278,8 +315,24 @@ func (h *NodePoolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("deleting nodepool", "account_id", accountID, "cluster_id", clusterID, "nodepool_id", nodepoolID)
 
-	err := h.db.DeleteNodePool(ctx, accountID, clusterID, nodepoolID)
+	cr, err := h.db.GetNodePool(ctx, clusterID, nodepoolID)
 	if err != nil {
+		if hyperfleetdb.IsNotFound(err) {
+			writeAPIError(w, ErrNodePoolDeleteNotFound, h.logger)
+			return
+		}
+		writeAPIError(w, ErrNodePoolDeleteFailed, h.logger)
+		return
+	}
+	if !h.authorizeNodePool(w, r, authz.DeleteNodePool, cr) {
+		return
+	}
+	err = h.db.DeleteNodePoolObject(ctx, cr)
+	if err != nil {
+		if hyperfleetdb.IsConflict(err) {
+			writeAPIError(w, ErrResourceConflict, h.logger)
+			return
+		}
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrNodePoolDeleteNotFound, h.logger)
 			return

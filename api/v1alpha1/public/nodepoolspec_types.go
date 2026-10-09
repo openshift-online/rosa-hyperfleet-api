@@ -7,15 +7,18 @@ package public
 type NodePoolSpec struct {
 	// DisplayName is a human-readable name for the node pool.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateNodePool
 	// +kubebuilder:validation:MaxLength=256
 	// +optional
 	DisplayName string `json:"displayName,omitempty"`
 	// AutoRepair controls whether unhealthy nodes are automatically replaced.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateNodePool
 	// +optional
 	AutoRepair *bool `json:"autoRepair,omitempty"`
 	// Labels are customer-defined labels applied to nodes in this pool.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateNodePool
 	// +kubebuilder:validation:MaxProperties=100
 	// +optional
 	Labels map[string]string `json:"labels,omitempty"`

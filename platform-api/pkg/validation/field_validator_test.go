@@ -367,6 +367,63 @@ func TestValidateUpdate_RejectsServiceSetFields(t *testing.T) {
 	}
 }
 
+func TestValidateUpdate_AllowsMatchingServiceSetFields(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.accountId": {FieldPath: "spec.accountId", WriteMode: registry.ServiceSet},
+	})
+
+	errs := v.ValidateUpdate(
+		map[string]any{"accountId": "acct-1", "displayName": "x"},
+		map[string]any{"accountId": "acct-1"},
+		featuregate.Default,
+	)
+	if errs != nil {
+		t.Fatalf("echo of server accountId should pass, got %v", errs)
+	}
+}
+
+func TestValidateUpdate_AllowsBothUnsetServiceSetFields(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.accountId": {FieldPath: "spec.accountId", WriteMode: registry.ServiceSet},
+	})
+
+	// Client sends empty; server has no value. Treat as both unset.
+	errs := v.ValidateUpdate(map[string]any{"accountId": ""}, map[string]any{}, featuregate.Default)
+	if errs != nil {
+		t.Fatalf("both-unset service-set should pass, got %v", errs)
+	}
+}
+
+func TestValidateUpdate_RejectsEmptyServiceSetString(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.accountId": {FieldPath: "spec.accountId", WriteMode: registry.ServiceSet},
+	})
+
+	errs := v.ValidateUpdate(map[string]any{"accountId": ""}, map[string]any{"accountId": "acct-1"}, featuregate.Default)
+	if errs == nil {
+		t.Fatal("expected rejection of empty accountId on update")
+	}
+	if errs[0].Field != "spec.accountId" {
+		t.Errorf("field = %q, want spec.accountId", errs[0].Field)
+	}
+}
+
+func TestValidateUpdate_RejectsServiceSetCaseVariant(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.accountId": {FieldPath: "spec.accountId", WriteMode: registry.ServiceSet},
+	})
+
+	for _, key := range []string{"AccountId", "ACCOUNTID"} {
+		errs := v.ValidateUpdate(map[string]any{key: "999"}, map[string]any{"accountId": "acct-1"}, featuregate.Default)
+		if errs == nil {
+			t.Fatalf("key %q: expected rejection", key)
+		}
+		if errs[0].Field != "spec.accountId" {
+			t.Errorf("key %q: field = %q, want spec.accountId", key, errs[0].Field)
+		}
+	}
+}
+
 func TestFlattenToFieldPaths(t *testing.T) {
 	spec := map[string]any{
 		"name": "test",

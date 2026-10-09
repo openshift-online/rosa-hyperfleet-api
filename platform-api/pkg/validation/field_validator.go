@@ -65,8 +65,9 @@ func (v *FieldValidator) ValidateCreate(spec any, fs featuregate.FeatureSet) Val
 	return v.validate(fields, nil, OperationCreate, fs)
 }
 
-// ValidateUpdate checks that an update request does not set service-set fields,
-// change immutable fields, or use feature-gated fields without the gate enabled.
+// ValidateUpdate checks that an update request does not change service-set
+// fields (echo of the server value, or both unset, is allowed), change
+// immutable fields, or use feature-gated fields without the gate enabled.
 func (v *FieldValidator) ValidateUpdate(newSpec, existingSpec any, fs featuregate.FeatureSet) ValidationErrors {
 	if newSpec == nil {
 		return nil
@@ -85,9 +86,9 @@ func (v *FieldValidator) validate(fields, existingFields map[string]any, op Oper
 	// Get the field metadata map for this resource type
 	fieldMetaMap := v.typedRegistry[v.resourceType]
 
-	for fieldPath := range fields {
-		meta, exists := fieldMetaMap[fieldPath]
-		if !exists {
+	for fieldPath, value := range fields {
+		meta, canonical, ok := lookupFieldMeta(fieldMetaMap, fieldPath)
+		if !ok {
 			continue
 		}
 
@@ -104,14 +105,14 @@ func (v *FieldValidator) validate(fields, existingFields map[string]any, op Oper
 		if meta.FeatureGate != "" && !isEmptyObject(fields[fieldPath]) {
 			if !featuregate.IsGateEnabled(meta.FeatureGate, fs) {
 				errs = append(errs, &ValidationError{
-					Field:  fieldPath,
+					Field:  canonical,
 					Reason: fmt.Sprintf("requires feature gate %s which is not enabled in %s feature set", meta.FeatureGate, fs),
 				})
 				continue
 			}
 		}
 
-		if err := v.validateWriteMode(fieldPath, meta, op, fields, existingFields, fs); err != nil {
+		if err := v.validateWriteMode(canonical, meta, op, value, existingFields, fs); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -145,7 +146,20 @@ func isStructuralContainer(fieldPath string, fieldMetaMap map[string]registry.Fi
 	return false
 }
 
-func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.FieldMeta, op Operation, fields, existingFields map[string]any, fs featuregate.FeatureSet) *ValidationError {
+// lookupFieldMeta finds registry metadata for a flattened path, matching keys case-insensitively.
+func lookupFieldMeta(fieldMetaMap map[string]registry.FieldMeta, fieldPath string) (registry.FieldMeta, string, bool) {
+	if meta, ok := fieldMetaMap[fieldPath]; ok {
+		return meta, fieldPath, true
+	}
+	for canonical, meta := range fieldMetaMap {
+		if strings.EqualFold(canonical, fieldPath) {
+			return meta, canonical, true
+		}
+	}
+	return registry.FieldMeta{}, "", false
+}
+
+func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.FieldMeta, op Operation, value any, existingFields map[string]any, fs featuregate.FeatureSet) *ValidationError {
 	effectiveMode := meta.WriteMode
 
 	if len(meta.FeatureGateAwareWriteModes) > 0 {
@@ -169,8 +183,20 @@ func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.Field
 
 	switch effectiveMode {
 	case registry.ServiceSet:
-		if isZeroValue(fields[fieldPath]) {
-			return nil
+		// Create: skip JSON zero values so typed create specs do not false-fail.
+		// Update: allow echo of the server value (or both unset); reject changes.
+		if op == OperationCreate {
+			if isZeroValue(value) {
+				return nil
+			}
+		} else {
+			var oldVal any
+			if existingFields != nil {
+				oldVal = existingFields[fieldPath]
+			}
+			if serviceSetValuesMatch(oldVal, value) {
+				return nil
+			}
 		}
 		return &ValidationError{
 			Field:  fieldPath,
@@ -180,7 +206,7 @@ func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.Field
 		if op == OperationUpdate && existingFields != nil {
 			// A field absent from a flattened spec (e.g. an omitempty zero value) is
 			// treated as nil so that "unset" and "explicitly zero" compare as equal.
-			if oldVal, newVal := existingFields[fieldPath], fields[fieldPath]; !reflect.DeepEqual(oldVal, newVal) {
+			if oldVal := existingFields[fieldPath]; !reflect.DeepEqual(oldVal, value) {
 				return &ValidationError{
 					Field:  fieldPath,
 					Reason: "field is immutable and cannot be changed after creation",
@@ -193,6 +219,15 @@ func (v *FieldValidator) validateWriteMode(fieldPath string, meta registry.Field
 	default:
 		return nil
 	}
+}
+
+// serviceSetValuesMatch reports whether a client value is an allowed echo of
+// the server value, including both unset (nil vs "").
+func serviceSetValuesMatch(oldVal, newVal any) bool {
+	if reflect.DeepEqual(oldVal, newVal) {
+		return true
+	}
+	return isZeroValue(oldVal) && isZeroValue(newVal)
 }
 
 func flattenToFieldPaths(v any) map[string]any {
@@ -236,7 +271,46 @@ func isZeroValue(v any) bool {
 	case []any:
 		return len(val) == 0
 	}
-	return false
+	// Raw JSON validation uses exact typed values rather than float64-flattened
+	// values. Preserve the same both-unset behavior for typed zero echoes.
+	return isTypedZeroValue(reflect.ValueOf(v))
+}
+
+func isTypedZeroValue(value reflect.Value) bool {
+	if !value.IsValid() {
+		return true
+	}
+	switch value.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		return value.IsNil() || isTypedZeroValue(value.Elem())
+	case reflect.Slice:
+		return value.Len() == 0
+	case reflect.Map:
+		iter := value.MapRange()
+		for iter.Next() {
+			if !isTypedZeroValue(iter.Value()) {
+				return false
+			}
+		}
+		return true
+	case reflect.Struct, reflect.Array:
+		if value.Kind() == reflect.Struct {
+			for i := 0; i < value.NumField(); i++ {
+				if !isTypedZeroValue(value.Field(i)) {
+					return false
+				}
+			}
+		} else {
+			for i := 0; i < value.Len(); i++ {
+				if !isTypedZeroValue(value.Index(i)) {
+					return false
+				}
+			}
+		}
+		return true
+	default:
+		return value.IsZero()
+	}
 }
 
 func flattenMap(prefix string, m map[string]any, result map[string]any) {

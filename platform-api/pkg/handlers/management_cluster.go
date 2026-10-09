@@ -11,21 +11,27 @@ import (
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/authz"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
 )
 
 // ManagementClusterHandler handles management cluster endpoints.
 type ManagementClusterHandler struct {
-	db     *hyperfleetdb.Client
-	logger *slog.Logger
+	db         *hyperfleetdb.Client
+	logger     *slog.Logger
+	authorizer *authz.Authorizer
 }
 
 // NewManagementClusterHandler creates a new ManagementClusterHandler.
-func NewManagementClusterHandler(db *hyperfleetdb.Client, logger *slog.Logger) *ManagementClusterHandler {
+func NewManagementClusterHandler(db *hyperfleetdb.Client, authorizer *authz.Authorizer, logger *slog.Logger) *ManagementClusterHandler {
+	if authorizer == nil {
+		panic("management cluster authorizer is required")
+	}
 	return &ManagementClusterHandler{
-		db:     db,
-		logger: logger,
+		authorizer: authorizer,
+		db:         db,
+		logger:     logger,
 	}
 }
 
@@ -81,6 +87,9 @@ func (h *ManagementClusterHandler) Create(w http.ResponseWriter, r *http.Request
 		},
 	}
 
+	if !authorizeResource(w, r, h.authorizer, h.logger, authz.CreateManagementCluster, h.managementClusterResource(mc)) {
+		return
+	}
 	if err := h.db.CreateManagementCluster(ctx, mc); err != nil {
 		if hyperfleetdb.IsAlreadyExists(err) {
 			writeAPIError(w, ErrMCCreateExists.WithReason(req.ID), h.logger)
@@ -104,18 +113,31 @@ func (h *ManagementClusterHandler) List(w http.ResponseWriter, r *http.Request) 
 	accountID := middleware.GetAccountID(ctx)
 
 	h.logger.Debug("listing management clusters", "account_id", accountID)
+	prepared, attempt := authorizeCollection(w, r, h.authorizer, authz.DefaultMetrics, h.logger, authz.ListManagementClusters, authz.Resource{Kind: authz.ServiceCollection})
+	if prepared == nil {
+		return
+	}
 
 	list, err := h.db.ListManagementClusters(ctx)
 	if err != nil {
 		h.logger.Error("failed to list management clusters", "error", err)
+		_ = attempt.Finish(authz.OutcomeError, authz.StageResourceLoading)
 		writeAPIError(w, ErrMCListFailed, h.logger)
 		return
 	}
 
 	clusters := make([]ManagementClusterResponse, 0, len(list.Items))
 	for i := range list.Items {
-		clusters = append(clusters, mcToResponse(&list.Items[i]))
+		decision, err := prepared.Check(ctx, authz.DescribeManagementCluster, h.managementClusterResource(&list.Items[i]))
+		if err != nil {
+			writeResourceAuthzError(w, r, attempt, authz.ListManagementClusters, err, h.logger)
+			return
+		}
+		if decision.Allowed {
+			clusters = append(clusters, mcToResponse(&list.Items[i]))
+		}
 	}
+	_ = attempt.Finish(authz.OutcomeAllow, authz.StageNone)
 
 	h.logger.Debug("management clusters listed", "total", len(clusters), "account_id", accountID)
 
@@ -148,6 +170,9 @@ func (h *ManagementClusterHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !authorizeResource(w, r, h.authorizer, h.logger, authz.DescribeManagementCluster, h.managementClusterResource(mc)) {
+		return
+	}
 	h.logger.Debug("management cluster retrieved", "id", mc.Name, "account_id", accountID)
 
 	if err := api.Write(w, http.StatusOK, mcToResponse(mc)); err != nil {

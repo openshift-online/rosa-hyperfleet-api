@@ -63,9 +63,11 @@ type ClusterConfiguration struct {
 // +hyperfleet:upstream-reduced-object=hypershiftv1beta1.KubeletConfig
 type KubeletConfig struct {
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	MaxPods *int32 `json:"maxPods,omitempty"`
 
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	PodPidsLimit *int64 `json:"podPidsLimit,omitempty"`
 
 	// +hyperfleet:write-mode=immutable
@@ -92,24 +94,30 @@ type KubeletConfig struct {
 	EvictionSoftGracePeriod map[string]string `json:"evictionSoftGracePeriod,omitempty"`
 
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	ImageGCHighThresholdPercent *int32 `json:"imageGCHighThresholdPercent,omitempty"`
 
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	ImageGCLowThresholdPercent *int32 `json:"imageGCLowThresholdPercent,omitempty"`
 
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	ImageMinimumGCAge *metav1.Duration `json:"imageMinimumGCAge,omitempty"`
 
 	// +openshift:enable:FeatureGate=HyperFleetKubeletAdvanced
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	SerializeImagePulls *bool `json:"serializeImagePulls,omitempty"`
 
 	// +openshift:enable:FeatureGate=HyperFleetKubeletAdvanced
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	RegistryPullQPS *int32 `json:"registryPullQPS,omitempty"`
 
 	// +openshift:enable:FeatureGate=HyperFleetKubeletAdvanced
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	RegistryBurst *int32 `json:"registryBurst,omitempty"`
 
 	// +k8s:openapi-gen=false
@@ -139,12 +147,15 @@ type KubeletConfig struct {
 	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
 
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	StreamingConnectionIdleTimeout *metav1.Duration `json:"streamingConnectionIdleTimeout,omitempty"`
 
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	ContainerLogMaxSize *string `json:"containerLogMaxSize,omitempty"`
 
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	ContainerLogMaxFiles *int32 `json:"containerLogMaxFiles,omitempty"`
 
 	// +k8s:openapi-gen=false
@@ -217,12 +228,14 @@ type SchedulerConfiguration struct {
 type ProxyConfiguration struct {
 	// httpProxy is the URL of the proxy for HTTP requests.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	// +kubebuilder:validation:MaxLength=2048
 	// +optional
 	HTTPProxy string `json:"httpProxy,omitempty"`
 
 	// httpsProxy is the URL of the proxy for HTTPS requests.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	// +kubebuilder:validation:MaxLength=2048
 	// +optional
 	HTTPSProxy string `json:"httpsProxy,omitempty"`
@@ -230,6 +243,7 @@ type ProxyConfiguration struct {
 	// noProxy is a comma-separated list of hostnames, domains, IP addresses, or CIDRs
 	// to exclude from proxying.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	// +kubebuilder:validation:MaxLength=8192
 	// +optional
 	NoProxy string `json:"noProxy,omitempty"`

@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,6 +19,7 @@ import (
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/authz"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
 )
@@ -109,5 +112,13 @@ func newNodePoolValidationTestHandler(t *testing.T, objects ...client.Object) *N
 	}
 	dbClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewNodePoolHandler(hyperfleetdb.NewClientFrom(dbClient, logger), logger)
+	path := filepath.Join(t.TempDir(), "authz.json")
+	if err := os.WriteFile(path, []byte(`{"formatVersion":1,"registeredAccounts":[],"policies":[],"attachments":[]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	authorizer, err := authz.LoadConfig(path, "us-east-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewNodePoolHandler(hyperfleetdb.NewClientFrom(dbClient, logger), authorizer, logger)
 }

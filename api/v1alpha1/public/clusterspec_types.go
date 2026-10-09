@@ -12,25 +12,30 @@ import (
 type ClusterSpec struct {
 	// DisplayName is a human-readable name for the cluster.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateCluster
 	// +kubebuilder:validation:MaxLength=256
 	// +optional
 	DisplayName string `json:"displayName,omitempty"`
 	// DeleteProtection prevents accidental deletion when enabled.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateCluster
 	// +optional
 	DeleteProtection *bool `json:"deleteProtection,omitempty"`
 	// ExpirationTimestamp marks when this cluster should be automatically deleted.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateCluster
 	// +optional
 	ExpirationTimestamp *metav1.Time `json:"expirationTimestamp,omitempty"`
 	// Properties are arbitrary key-value pairs for customer metadata.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateCluster
 	// +kubebuilder:validation:MaxProperties=100
 	// +optional
 	Properties map[string]string `json:"properties,omitempty"`
 	// AdditionalTrustBundle is a PEM-encoded CA bundle used by the cluster.
 	// The Platform API accepts this value on writes and redacts it in its responses.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateCluster
 	// +hyperfleet:response-redact
 	// +kubebuilder:validation:MaxLength=1048576
 	// +optional
@@ -57,6 +62,7 @@ type ClusterSpec struct {
 	// +kubebuilder:validation:Required
 	HostedCluster HostedClusterSpecPassthrough `json:"hostedCluster"`
 	// ControlPlaneUpgradePolicy is the control plane upgrade policy defined by the user.
+	// +hyperfleet:update-action=UpdateClusterVersion
 	// +optional
 	ControlPlaneUpgradePolicy *ControlPlaneUpgradePolicySpec `json:"controlPlaneUpgradePolicy,omitempty"`
 }

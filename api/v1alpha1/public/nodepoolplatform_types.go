@@ -19,6 +19,7 @@ type NodePoolPlatform struct {
 	// aws specifies the platform-specific AWS configuration for this NodePool.
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateNodePool
 	// +optional
 	AWS *hypershiftv1beta1.AWSNodePoolPlatform `json:"aws,omitempty"`
 }

@@ -1,0 +1,15 @@
+[
+  {"kind":"Cluster","fieldPath":"spec.hostedCluster.release","updateAction":"UpdateClusterVersion"},
+  {"kind":"Cluster","fieldPath":"spec.hostedCluster.configuration","updateAction":"UpdateClusterConfig"},
+  {"kind":"Cluster","fieldPath":"spec.hostedCluster.channel","updateAction":"UpdateCluster"},
+  {"kind":"Cluster","fieldPath":"spec.hostedCluster.autoNode","updateAction":"UpdateCluster"},
+  {"kind":"Cluster","fieldPath":"spec.hostedCluster.imageContentSources","updateAction":"UpdateCluster"},
+  {"kind":"NodePool","fieldPath":"spec.nodePool.clusterName","updateAction":"UpdateNodePool"},
+  {"kind":"NodePool","fieldPath":"spec.nodePool.release","updateAction":"UpdateNodePoolVersion"},
+  {"kind":"NodePool","fieldPath":"spec.nodePool.replicas","updateAction":"ScaleNodePool"},
+  {"kind":"NodePool","fieldPath":"spec.nodePool.autoScaling","updateAction":"ScaleNodePool"},
+  {"kind":"NodePool","fieldPath":"spec.nodePool.config","updateAction":"UpdateNodePool"},
+  {"kind":"NodePool","fieldPath":"spec.nodePool.nodeDrainTimeout","updateAction":"UpdateNodePool"},
+  {"kind":"NodePool","fieldPath":"spec.nodePool.taints","updateAction":"UpdateNodePool"},
+  {"kind":"NodePool","fieldPath":"spec.nodePool.tuningConfig","updateAction":"UpdateNodePool"}
+]

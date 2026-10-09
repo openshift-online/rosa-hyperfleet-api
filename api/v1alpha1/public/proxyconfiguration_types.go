@@ -7,17 +7,20 @@ package public
 type ProxyConfiguration struct {
 	// httpProxy is the URL of the proxy for HTTP requests.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	// +kubebuilder:validation:MaxLength=2048
 	// +optional
 	HTTPProxy string `json:"httpProxy,omitempty"`
 	// httpsProxy is the URL of the proxy for HTTPS requests.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	// +kubebuilder:validation:MaxLength=2048
 	// +optional
 	HTTPSProxy string `json:"httpsProxy,omitempty"`
 	// noProxy is a comma-separated list of hostnames, domains, IP addresses, or CIDRs
 	// to exclude from proxying.
 	// +hyperfleet:write-mode=mutable
+	// +hyperfleet:update-action=UpdateClusterConfig
 	// +kubebuilder:validation:MaxLength=8192
 	// +optional
 	NoProxy string `json:"noProxy,omitempty"`

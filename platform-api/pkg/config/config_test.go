@@ -12,6 +12,10 @@ func TestNewConfig(t *testing.T) {
 		t.Fatal("expected non-nil config")
 	}
 
+	if cfg.Authz.ConfigFile != "" {
+		t.Fatalf("expected no implicit authorization bundle, got %+v", cfg.Authz)
+	}
+
 	// Test Server config defaults
 	if cfg.Server.APIBindAddress != "0.0.0.0" {
 		t.Errorf("expected APIBindAddress=0.0.0.0, got %s", cfg.Server.APIBindAddress)
@@ -50,10 +54,6 @@ func TestNewConfig(t *testing.T) {
 		t.Errorf("expected Logging.Format=json, got %s", cfg.Logging.Format)
 	}
 
-	// Test that AllowedAccounts defaults to empty/nil
-	if len(cfg.AllowedAccounts) != 0 {
-		t.Errorf("expected empty AllowedAccounts, got %d items", len(cfg.AllowedAccounts))
-	}
 }
 
 func TestServerConfig(t *testing.T) {
@@ -152,7 +152,6 @@ func TestConfig_CustomValues(t *testing.T) {
 			Level:  "debug",
 			Format: "text",
 		},
-		AllowedAccounts: []string{"123456789012", "987654321098"},
 	}
 
 	// Verify Server config
@@ -173,16 +172,4 @@ func TestConfig_CustomValues(t *testing.T) {
 		t.Errorf("expected Logging.Format=text, got %s", cfg.Logging.Format)
 	}
 
-	// Verify AllowedAccounts
-	if len(cfg.AllowedAccounts) != 2 {
-		t.Errorf("expected 2 allowed accounts, got %d", len(cfg.AllowedAccounts))
-	}
-
-	if cfg.AllowedAccounts[0] != "123456789012" {
-		t.Errorf("expected first account=123456789012, got %s", cfg.AllowedAccounts[0])
-	}
-
-	if cfg.AllowedAccounts[1] != "987654321098" {
-		t.Errorf("expected second account=987654321098, got %s", cfg.AllowedAccounts[1])
-	}
 }

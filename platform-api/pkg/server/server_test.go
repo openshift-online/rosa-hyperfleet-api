@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -9,15 +8,19 @@ import (
 	"testing"
 	"time"
 
+	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/config"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestNew(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.NewConfig()
 
-	server, err := New(cfg, nil, logger)
+	server, err := newConfiguredServer(t, cfg, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error creating server: %v", err)
 	}
@@ -67,10 +70,9 @@ func TestNew_WithCustomConfig(t *testing.T) {
 			Level:  "debug",
 			Format: "text",
 		},
-		AllowedAccounts: []string{"123456789012"},
 	}
 
-	server, err := New(cfg, nil, logger)
+	server, err := newConfiguredServer(t, cfg, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error creating server: %v", err)
 	}
@@ -89,10 +91,12 @@ func TestNew_WithCustomConfig(t *testing.T) {
 }
 
 func TestServer_HealthRoutes(t *testing.T) {
+	// Operational endpoints remain accessible without identity.
+	t.Setenv("TARGET_GROUP_ARN", "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test/id")
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.NewConfig()
 
-	server, err := New(cfg, nil, logger)
+	server, err := newConfiguredServer(t, cfg, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error creating server: %v", err)
 	}
@@ -112,6 +116,11 @@ func TestServer_HealthRoutes(t *testing.T) {
 			path:           "/api/v0/ready",
 			expectedStatus: http.StatusOK,
 		},
+		{
+			name:           "info on API server",
+			path:           "/api/v0/info",
+			expectedStatus: http.StatusOK,
+		},
 	}
 
 	for _, tt := range tests {
@@ -128,77 +137,11 @@ func TestServer_HealthRoutes(t *testing.T) {
 	}
 }
 
-func TestServer_ManagementClusterRoutes_Unauthorized(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	cfg := config.NewConfig()
-	cfg.AllowedAccounts = []string{"123456789012"}
-
-	server, err := New(cfg, nil, logger)
-	if err != nil {
-		t.Fatalf("unexpected error creating server: %v", err)
-	}
-
-	tests := []struct {
-		name           string
-		method         string
-		path           string
-		accountID      string
-		expectedStatus int
-	}{
-		{
-			name:           "POST without account ID",
-			method:         http.MethodPost,
-			path:           "/api/v0/management_clusters",
-			accountID:      "",
-			expectedStatus: http.StatusForbidden,
-		},
-		{
-			name:           "GET without account ID",
-			method:         http.MethodGet,
-			path:           "/api/v0/management_clusters",
-			accountID:      "",
-			expectedStatus: http.StatusForbidden,
-		},
-		{
-			name:           "GET by ID without account ID",
-			method:         http.MethodGet,
-			path:           "/api/v0/management_clusters/test-id",
-			accountID:      "",
-			expectedStatus: http.StatusForbidden,
-		},
-		{
-			name:           "POST with unauthorized account",
-			method:         http.MethodPost,
-			path:           "/api/v0/management_clusters",
-			accountID:      "999999999999",
-			expectedStatus: http.StatusForbidden,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, nil)
-			if tt.accountID != "" {
-				ctx := context.WithValue(req.Context(), middleware.ContextKeyAccountID, tt.accountID)
-				req = req.WithContext(ctx)
-			}
-			w := httptest.NewRecorder()
-
-			server.apiServer.Handler.ServeHTTP(w, req)
-
-			if w.Code != tt.expectedStatus {
-				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
-			}
-		})
-	}
-}
-
 func TestServer_IdentityMiddleware(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.NewConfig()
-	cfg.AllowedAccounts = []string{"123456789012"}
 
-	server, err := New(cfg, nil, logger)
+	server, err := newConfiguredServer(t, cfg, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error creating server: %v", err)
 	}
@@ -218,11 +161,48 @@ func TestServer_IdentityMiddleware(t *testing.T) {
 	}
 }
 
+func TestServer_RequiresIdentity(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := hyperfleetv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	db := hyperfleetdb.NewClientFrom(fake.NewClientBuilder().WithScheme(scheme).Build(), logger)
+	srv, err := newConfiguredServer(t, config.NewConfig(), db, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		"/api/v0/clusters", "/api/v0/nodepools", "/api/v0/oidc_configs", "/api/v0/management_clusters",
+	} {
+		for _, tc := range []struct {
+			name, accountID, callerARN string
+			wantStatus                 int
+		}{
+			{"no identity", "", "", http.StatusForbidden},
+			{"missing ARN", "123456789012", "", http.StatusForbidden},
+			{"missing account", "", "arn:aws:iam::123456789012:user/test", http.StatusForbidden},
+		} {
+			t.Run(path+"/"+tc.name, func(t *testing.T) {
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req.Header.Set(middleware.HeaderAccountID, tc.accountID)
+				req.Header.Set(middleware.HeaderCallerARN, tc.callerARN)
+				w := httptest.NewRecorder()
+				srv.apiServer.Handler.ServeHTTP(w, req)
+				if w.Code != tc.wantStatus {
+					t.Errorf("want %d, got %d: %s", tc.wantStatus, w.Code, w.Body.String())
+				}
+			})
+		}
+	}
+}
+
 func TestServer_MetricsRoute(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.NewConfig()
 
-	server, err := New(cfg, nil, logger)
+	server, err := newConfiguredServer(t, cfg, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error creating server: %v", err)
 	}
@@ -247,7 +227,7 @@ func TestServer_HealthServerRoutes(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.NewConfig()
 
-	server, err := New(cfg, nil, logger)
+	server, err := newConfiguredServer(t, cfg, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error creating server: %v", err)
 	}
@@ -287,7 +267,7 @@ func TestServer_InvalidRoutes(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.NewConfig()
 
-	server, err := New(cfg, nil, logger)
+	server, err := newConfiguredServer(t, cfg, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error creating server: %v", err)
 	}
@@ -332,7 +312,7 @@ func TestServer_ReadinessToggle(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := config.NewConfig()
 
-	server, err := New(cfg, nil, logger)
+	server, err := newConfiguredServer(t, cfg, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error creating server: %v", err)
 	}
@@ -385,10 +365,9 @@ func TestServer_ServerAddresses(t *testing.T) {
 			Level:  "info",
 			Format: "json",
 		},
-		AllowedAccounts: []string{},
 	}
 
-	server, err := New(cfg, nil, logger)
+	server, err := newConfiguredServer(t, cfg, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error creating server: %v", err)
 	}

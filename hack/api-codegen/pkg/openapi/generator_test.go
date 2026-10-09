@@ -35,6 +35,33 @@ func TestFilterHiddenFieldsRetainsMutableNodePoolLabelsAndTaints(t *testing.T) {
 	}
 }
 
+func TestRetainsReducedContainers(t *testing.T) {
+	definitions := map[string]apiextensionsv1.JSONSchemaProps{
+		"HostedClusterSpecPassthrough": {
+			Type: "object",
+			Properties: map[string]apiextensionsv1.JSONSchemaProps{
+				"configuration": {Type: "object"},
+				"dns":           {Type: "object"},
+				"networking":    {Type: "object"},
+				"platform":      {Type: "object"},
+			},
+			Required: []string{"networking", "platform"},
+		},
+	}
+	if err := filterHiddenFields(definitions); err != nil {
+		t.Fatal(err)
+	}
+	schema := definitions["HostedClusterSpecPassthrough"]
+	for _, name := range []string{"configuration", "dns", "networking", "platform"} {
+		if _, ok := schema.Properties[name]; !ok {
+			t.Errorf("reduced container %q missing from public schema", name)
+		}
+	}
+	if !reflect.DeepEqual(schema.Required, []string{"networking", "platform"}) {
+		t.Errorf("required = %v, want [networking platform]", schema.Required)
+	}
+}
+
 func TestConfigurationUsesLocalType(t *testing.T) {
 	output := generateConfigurationSchema(t)
 

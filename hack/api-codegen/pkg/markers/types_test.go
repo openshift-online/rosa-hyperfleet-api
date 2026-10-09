@@ -11,6 +11,7 @@ func TestHiddenFromPublicAPI(t *testing.T) {
 		{name: "visible", meta: FieldMeta{WriteMode: Mutable}, want: false},
 		{name: "hidden service-set", meta: FieldMeta{Hidden: true, WriteMode: ServiceSet}, want: true},
 		{name: "hidden mutable remains public", meta: FieldMeta{Hidden: true, WriteMode: Mutable}, want: false},
+		{name: "reduced container remains public", meta: FieldMeta{Hidden: true, WriteMode: ServiceSet, IsReducedContainer: true}, want: false},
 	}
 
 	for _, tt := range tests {

@@ -2,20 +2,20 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/spf13/cobra"
 
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/authz"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
-	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/config"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/server"
 )
 
@@ -23,10 +23,8 @@ var (
 	// Config flags
 	logLevel                 string
 	logFormat                string
-	allowedAccounts          string
+	legacyDynamoDBRegion     string
 	postgresDSN              string
-	dynamodbRegion           string
-	dynamodbPrefix           string
 	oidcIssuerBaseURL        string
 	defaultClusterExpiration time.Duration
 	apiPort                  int
@@ -56,10 +54,11 @@ var serveCmd = &cobra.Command{
 func init() {
 	serveCmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
 	serveCmd.Flags().StringVar(&logFormat, "log-format", "json", "Log format (json, text)")
-	serveCmd.Flags().StringVar(&allowedAccounts, "allowed-accounts", "", "Comma-separated list of allowed AWS account IDs")
+	serveCmd.Flags().String("allowed-accounts", "", "Deprecated compatibility flag; ignored")
+	serveCmd.Flags().String("authz-config-file", "", "Authorization configuration bundle (required)")
+	serveCmd.Flags().StringVar(&legacyDynamoDBRegion, "dynamodb-region", "", "Deprecated compatibility flag; used only as a region fallback")
+	serveCmd.Flags().String("dynamodb-prefix", "", "Deprecated compatibility flag; ignored")
 	serveCmd.Flags().StringVar(&postgresDSN, "postgres-dsn", "", "PostgreSQL connection string (required)")
-	serveCmd.Flags().StringVar(&dynamodbRegion, "dynamodb-region", "", "AWS region for DynamoDB (defaults to auto-detected region)")
-	serveCmd.Flags().StringVar(&dynamodbPrefix, "dynamodb-prefix", "rosa", "Prefix for DynamoDB table names")
 	serveCmd.Flags().StringVar(&oidcIssuerBaseURL, "oidc-issuer-base-url", "", "Base URL for OIDC issuer (e.g. https://<cloudfront-domain>)")
 	serveCmd.Flags().DurationVar(&defaultClusterExpiration, "default-cluster-expiration", 0, "Default cluster lifetime (e.g. 24h). Clusters created without an explicit expirationTimestamp get one stamped at creation. Zero means no default.")
 	serveCmd.Flags().IntVar(&apiPort, "api-port", 8000, "API server port")
@@ -73,7 +72,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Create logger
 	logger := createLogger(logLevel, logFormat)
 
-	logger.Info("starting rosa-hyperfleet-api",
+	logger.Info(
+		"starting rosa-hyperfleet-api",
 		"log_level", logLevel,
 		"log_format", logFormat,
 	)
@@ -83,13 +83,25 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to detect AWS region: %w", err)
 	}
+	if awsCfg.Region == "" && legacyDynamoDBRegion != "" {
+		awsCfg.Region = legacyDynamoDBRegion
+	}
 	if awsCfg.Region == "" {
 		return fmt.Errorf("AWS region could not be detected from environment; set AWS_REGION")
 	}
 	logger.Info("detected AWS region", "region", awsCfg.Region)
 
-	// Create config
-	cfg := config.NewConfig()
+	// Validate authorization before database connections or serving listeners.
+	cfg, authorizer, err := loadStartupConfig(cmd, awsCfg.Region)
+	if err != nil {
+		if failure, ok := errors.AsType[*authz.Failure](err); ok {
+			logger.Error("authorization startup failed", "stage", failure.Stage, "cause", failure.Err, "provenance", failure.Provenance, "diagnostics", failure.Diagnostics)
+		} else {
+			logger.Error("authorization startup failed", "error", err)
+		}
+		return err
+	}
+
 	cfg.Logging.Level = logLevel
 	cfg.Logging.Format = logFormat
 	if postgresDSN == "" {
@@ -102,36 +114,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	cfg.Regional.OIDCIssuerBaseURL = oidcIssuerBaseURL
 	cfg.Regional.DefaultClusterExpiration = defaultClusterExpiration
-	cfg.Regional.AWSRegion = awsCfg.Region
-	cfg.AllowedAccounts = parseAllowedAccounts(allowedAccounts)
 	cfg.Server.APIPort = apiPort
 	cfg.Server.HealthPort = healthPort
 	cfg.Server.MetricsPort = metricsPort
-
-	// Authz DynamoDB config
-	if dynamodbRegion != "" {
-		cfg.Authz.AWSRegion = dynamodbRegion
-	} else {
-		cfg.Authz.AWSRegion = awsCfg.Region
-	}
-	if dynamodbPrefix != "" {
-		cfg.Authz.AccountsTableName = dynamodbPrefix + "-authz-accounts"
-		cfg.Authz.AdminsTableName = dynamodbPrefix + "-authz-admins"
-		cfg.Authz.GroupsTableName = dynamodbPrefix + "-authz-groups"
-		cfg.Authz.MembersTableName = dynamodbPrefix + "-authz-group-members"
-	}
-	if endpoint := os.Getenv("DYNAMODB_ENDPOINT"); endpoint != "" {
-		cfg.Authz.DynamoDBEndpoint = endpoint
-		logger.Info("using custom DynamoDB endpoint for authz", "endpoint", endpoint)
-	}
-	if endpoint := os.Getenv("CEDAR_AGENT_ENDPOINT"); endpoint != "" {
-		cfg.Authz.CedarAgentEndpoint = endpoint
-		logger.Info("using cedar-agent for local AVP", "endpoint", endpoint)
-	}
-	if os.Getenv("AUTHZ_DISABLED") == "true" {
-		cfg.Authz.Enabled = false
-		logger.Info("authz disabled via environment variable")
-	}
 
 	// Rate limiting configuration from environment variables
 	if os.Getenv("RATE_LIMIT_ENABLED") == "true" {
@@ -170,7 +155,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 			cfg.RateLimit.InMemory = true
 			logger.Info("rate limiting in TEST MODE (rate=3, burst=6, window=1s, in-memory)")
 		} else {
-			logger.Info("rate limiting enabled",
+			logger.Info(
+				"rate limiting enabled",
 				"in_memory", cfg.RateLimit.InMemory,
 				"config_file", cfg.RateLimit.ConfigFile,
 			)
@@ -185,7 +171,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	defer dbClient.Close()
 
 	// Create server
-	srv, err := server.New(cfg, dbClient, logger)
+	srv, err := server.New(cfg, dbClient, authorizer, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}
@@ -195,12 +181,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	// Run server
-	logger.Info("server configuration",
+	logger.Info(
+		"server configuration",
 		"api_port", cfg.Server.APIPort,
 		"health_port", cfg.Server.HealthPort,
 		"metrics_port", cfg.Server.MetricsPort,
 		"aws_region", awsCfg.Region,
-		"allowed_accounts_count", len(cfg.AllowedAccounts),
 	)
 
 	if err := srv.Run(ctx); err != nil {
@@ -237,18 +223,4 @@ func createLogger(level, format string) *slog.Logger {
 	}
 
 	return slog.New(handler)
-}
-
-func parseAllowedAccounts(accounts string) []string {
-	if accounts == "" {
-		return nil
-	}
-	var result []string
-	for acc := range strings.SplitSeq(accounts, ",") {
-		acc = strings.TrimSpace(acc)
-		if acc != "" {
-			result = append(result, acc)
-		}
-	}
-	return result
 }

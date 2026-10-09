@@ -33,9 +33,10 @@ func TestE2E(t *testing.T) {
 // Ordered for now, as our test size is small
 var _ = Describe("Platform API", Ordered, func() {
 	var (
-		baseURL   string
-		accountID string
-		apiClient *APIClient
+		baseURL        string
+		accountID      string
+		apiClient      *APIClient
+		operatorClient *APIClient
 	)
 
 	BeforeAll(func() {
@@ -51,6 +52,9 @@ var _ = Describe("Platform API", Ordered, func() {
 			accountID = strings.TrimSpace(string(output))
 		}
 		apiClient = NewAPIClient(baseURL)
+		var err error
+		operatorClient, err = newOperatorClient(baseURL)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	It("should basic passing test", func() {
@@ -94,7 +98,7 @@ var _ = Describe("Platform API", Ordered, func() {
 	})
 
 	It("should be able to list all the registered management clusters", func() {
-		response := getAndExpectOK(apiClient, "/api/v0/management_clusters", accountID, "")
+		response := getAndExpectOK(operatorClient, "/api/v0/management_clusters", accountID, "")
 		Expect(response.StatusCode).To(Equal(http.StatusOK))
 		var list struct {
 			Kind  string                   `json:"kind"`
@@ -121,7 +125,7 @@ var _ = Describe("Platform API", Ordered, func() {
 			"accountId": accountID,
 		}
 
-		response, err := apiClient.Post("/api/v0/management_clusters", createReq, accountID)
+		response, err := operatorClient.Post("/api/v0/management_clusters", createReq, accountID)
 		Expect(err).To(BeNil())
 		Expect(response.StatusCode).To(Equal(http.StatusCreated))
 		Expect(response.Headers).To(HaveKey("Content-Type"))
@@ -135,7 +139,7 @@ var _ = Describe("Platform API", Ordered, func() {
 		Expect(created["accountId"]).To(Equal(accountID))
 
 		// it should be able to get the management cluster by ID
-		response, err = apiClient.Get("/api/v0/management_clusters/"+mcID, accountID)
+		response, err = operatorClient.Get("/api/v0/management_clusters/"+mcID, accountID)
 		Expect(err).To(BeNil())
 		Expect(response.StatusCode).To(Equal(http.StatusOK))
 		Expect(response.Headers).To(HaveKey("Content-Type"))

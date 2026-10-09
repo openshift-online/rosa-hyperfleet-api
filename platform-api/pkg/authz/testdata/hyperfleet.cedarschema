@@ -1,0 +1,53 @@
+namespace HyperFleet {
+    type AccountID = String;
+    type Region = String;
+    type RequestContext = {
+        region: Region, accountId: AccountID, principalArn: String,
+        sourceIp: String, userAgent: String,
+        requestTime: { unixSeconds: Long, dayOfWeek: Long, hour: Long }
+    };
+
+    entity Role { account: AccountID };
+    entity Principal in [Role] { account: AccountID };
+    entity Collection { account: AccountID, region: Region };
+    entity Cluster in [Collection] { account: AccountID, region: Region } tags String;
+    entity NodePool in [Cluster, Collection] { account: AccountID, region: Region } tags String;
+    entity OIDCConfig in [Collection] { account: AccountID, region: Region } tags String;
+    entity ServiceCollection { region: Region };
+    entity ManagementCluster in [ServiceCollection] {
+        account: AccountID, region: Region, registrationRegion: String
+    } tags String;
+
+    action AllActions;
+    action ReadOnly in [AllActions];
+    action ClusterAdmin in [AllActions];
+    action NodePoolAdmin in [AllActions];
+    action OIDCConfigAdmin in [AllActions];
+    action ServiceOperator;
+
+    // cedar-go v1.8.0 validates action entities against the complete parent closure.
+    action ListClusters in [ReadOnly, AllActions] appliesTo { principal: [Principal, Role], resource: Collection, context: RequestContext };
+    action DescribeCluster in [ReadOnly, AllActions] appliesTo { principal: [Principal, Role], resource: Cluster, context: RequestContext };
+    action CreateCluster in [ClusterAdmin, AllActions] appliesTo { principal: [Principal, Role], resource: Cluster, context: RequestContext };
+    action UpdateCluster in [ClusterAdmin, AllActions] appliesTo { principal: [Principal, Role], resource: Cluster, context: RequestContext };
+    action UpdateClusterConfig in [ClusterAdmin, AllActions] appliesTo { principal: [Principal, Role], resource: Cluster, context: RequestContext };
+    action UpdateClusterVersion in [ClusterAdmin, AllActions] appliesTo { principal: [Principal, Role], resource: Cluster, context: RequestContext };
+    action DeleteCluster in [ClusterAdmin, AllActions] appliesTo { principal: [Principal, Role], resource: Cluster, context: RequestContext };
+
+    action ListNodePools in [ReadOnly, AllActions] appliesTo { principal: [Principal, Role], resource: Collection, context: RequestContext };
+    action DescribeNodePool in [ReadOnly, AllActions] appliesTo { principal: [Principal, Role], resource: NodePool, context: RequestContext };
+    action CreateNodePool in [NodePoolAdmin, AllActions] appliesTo { principal: [Principal, Role], resource: NodePool, context: RequestContext };
+    action UpdateNodePool in [NodePoolAdmin, AllActions] appliesTo { principal: [Principal, Role], resource: NodePool, context: RequestContext };
+    action ScaleNodePool in [NodePoolAdmin, AllActions] appliesTo { principal: [Principal, Role], resource: NodePool, context: RequestContext };
+    action UpdateNodePoolVersion in [NodePoolAdmin, AllActions] appliesTo { principal: [Principal, Role], resource: NodePool, context: RequestContext };
+    action DeleteNodePool in [NodePoolAdmin, AllActions] appliesTo { principal: [Principal, Role], resource: NodePool, context: RequestContext };
+
+    action ListOIDCConfigs in [ReadOnly, AllActions] appliesTo { principal: [Principal, Role], resource: Collection, context: RequestContext };
+    action DescribeOIDCConfig in [ReadOnly, AllActions] appliesTo { principal: [Principal, Role], resource: OIDCConfig, context: RequestContext };
+    action CreateOIDCConfig in [OIDCConfigAdmin, AllActions] appliesTo { principal: [Principal, Role], resource: OIDCConfig, context: RequestContext };
+    action DeleteOIDCConfig in [OIDCConfigAdmin, AllActions] appliesTo { principal: [Principal, Role], resource: OIDCConfig, context: RequestContext };
+
+    action ListManagementClusters in [ServiceOperator] appliesTo { principal: [Principal, Role], resource: ServiceCollection, context: RequestContext };
+    action DescribeManagementCluster in [ServiceOperator] appliesTo { principal: [Principal, Role], resource: ManagementCluster, context: RequestContext };
+    action CreateManagementCluster in [ServiceOperator] appliesTo { principal: [Principal, Role], resource: ManagementCluster, context: RequestContext };
+}
