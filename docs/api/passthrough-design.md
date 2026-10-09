@@ -84,12 +84,12 @@ If HyperShift removes a field from `HostedClusterSpec` or `NodePoolSpec`, `make 
 
 The registry captures the following marker categories from the passthrough file:
 
-| Marker                                                   | Registry field               | Purpose                                           |
-| -------------------------------------------------------- | ---------------------------- | ------------------------------------------------- |
+| Marker                                                   | Registry field               | Purpose                                                                                                        |
+| -------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `+k8s:openapi-gen=false`                                 | `hidden: true`               | Suppresses automatic Kubernetes OpenAPI generation; mutable fields remain in HyperFleet's custom public schema |
-| `+hyperfleet:write-mode=mutable\|immutable\|service-set` | `writeMode`                  | Controls customer mutability                      |
-| `+openshift:enable:FeatureGate=X`                        | `featureGate`                | Field gated behind a feature flag                 |
-| `+hyperfleet:validation:FeatureGateAwareWriteMode:...`   | `featureGateAwareWriteModes` | Write-mode varies by active feature gates         |
+| `+hyperfleet:write-mode=mutable\|immutable\|service-set` | `writeMode`                  | Controls customer mutability                                                                                   |
+| `+openshift:enable:FeatureGate=X`                        | `featureGate`                | Field gated behind a feature flag                                                                              |
+| `+hyperfleet:validation:FeatureGateAwareWriteMode:...`   | `featureGateAwareWriteModes` | Write-mode varies by active feature gates                                                                      |
 
 Upstream markers like `+optional` and `+required` are propagated directly from HyperShift source by `passthrough-gen` via `isForwardedMarker()` — they do not go through the registry.
 
