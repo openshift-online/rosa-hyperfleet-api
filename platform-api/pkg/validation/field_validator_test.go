@@ -430,6 +430,33 @@ func TestValidateUpdate_RejectsServiceSetFieldsWithoutExistingSpec(t *testing.T)
 	}
 }
 
+func TestValidateUpdate_AllowsMatchingServiceSetFields(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.accountId": {FieldPath: "spec.accountId", WriteMode: registry.ServiceSet},
+	})
+
+	errs := v.ValidateUpdate(
+		map[string]any{"accountId": "acct-1", "properties": map[string]any{"changed": "true"}},
+		map[string]any{"accountId": "acct-1"},
+		featuregate.Default,
+	)
+	if errs != nil {
+		t.Fatalf("echo of server accountId should pass, got %v", errs)
+	}
+}
+
+func TestValidateUpdate_AllowsBothUnsetServiceSetFields(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.accountId": {FieldPath: "spec.accountId", WriteMode: registry.ServiceSet},
+	})
+
+	// Client sends empty; server has no value. Treat as both unset.
+	errs := v.ValidateUpdate(map[string]any{"accountId": ""}, map[string]any{}, featuregate.Default)
+	if errs != nil {
+		t.Fatalf("both-unset service-set should pass, got %v", errs)
+	}
+}
+
 func TestValidateUpdate_RejectsClearingServiceSetFields(t *testing.T) {
 	v := newTestValidator(map[string]registry.FieldMeta{
 		"spec.creatorARN": {FieldPath: "spec.creatorARN", WriteMode: registry.ServiceSet},
@@ -439,6 +466,22 @@ func TestValidateUpdate_RejectsClearingServiceSetFields(t *testing.T) {
 	updated := map[string]any{"creatorARN": ""}
 	if errs := v.ValidateUpdate(updated, existing, featuregate.Default); errs == nil {
 		t.Fatal("expected validation error when clearing a non-zero service-set field")
+	}
+}
+
+func TestValidateUpdate_RejectsServiceSetCaseVariant(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.accountId": {FieldPath: "spec.accountId", WriteMode: registry.ServiceSet},
+	})
+
+	for _, key := range []string{"AccountId", "ACCOUNTID"} {
+		errs := v.ValidateUpdate(map[string]any{key: "999"}, map[string]any{"accountId": "acct-1"}, featuregate.Default)
+		if errs == nil {
+			t.Fatalf("key %q: expected rejection", key)
+		}
+		if errs[0].Field != "spec.accountId" {
+			t.Errorf("key %q: field = %q, want spec.accountId", key, errs[0].Field)
+		}
 	}
 }
 
@@ -620,5 +663,20 @@ func TestValidateCreate_FeatureGateAwareWriteMode(t *testing.T) {
 	errs = v.ValidateCreate(spec, featuregate.TechPreviewNoUpgrade)
 	if errs != nil {
 		t.Errorf("expected no errors with gate enabled, got %v", errs)
+	}
+}
+
+func TestValidateUpdate_RejectsHiddenServiceSetChange(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.hostedCluster.pullSecret": {FieldPath: "spec.hostedCluster.pullSecret", WriteMode: registry.ServiceSet, Hidden: true},
+	})
+
+	existing := map[string]any{"hostedCluster": map[string]any{"pullSecret": map[string]any{"name": "platform"}}}
+	updated := map[string]any{"hostedCluster": map[string]any{"pullSecret": map[string]any{"name": "attacker"}}}
+	if errs := v.ValidateUpdate(updated, existing, featuregate.Default); errs == nil {
+		t.Fatal("expected rejection of hidden service-set field change")
+	}
+	if errs := v.ValidateUpdate(existing, existing, featuregate.Default); errs != nil {
+		t.Fatalf("echo of hidden service-set field should pass, got %v", errs)
 	}
 }

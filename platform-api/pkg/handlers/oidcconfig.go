@@ -16,6 +16,7 @@ import (
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/api"
+	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/authz"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/validation"
@@ -63,11 +64,16 @@ type OidcConfigHandler struct {
 	oidcIssuerBaseURL string
 	logger            *slog.Logger
 	generateID        func() string
+	authorizer        *authz.Authorizer
 }
 
 // NewOidcConfigHandler creates a new OIDC config handler.
-func NewOidcConfigHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, logger *slog.Logger) *OidcConfigHandler {
+func NewOidcConfigHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, authorizer *authz.Authorizer, logger *slog.Logger) *OidcConfigHandler {
+	if authorizer == nil {
+		panic("OIDC config authorizer is required")
+	}
 	return &OidcConfigHandler{
+		authorizer:        authorizer,
 		db:                db,
 		oidcIssuerBaseURL: oidcIssuerBaseURL,
 		logger:            logger,
@@ -79,6 +85,10 @@ func NewOidcConfigHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, log
 func (h *OidcConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
+	prepared, attempt := authorizeCollection(w, r, h.authorizer, h.logger, authz.ListOIDCConfigs, authz.Resource{Kind: authz.Collection, CollectionKind: authz.OIDCConfig, AccountID: accountID})
+	if prepared == nil {
+		return
+	}
 
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
@@ -100,24 +110,35 @@ func (h *OidcConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("listing oidc configs", "account_id", accountID, "limit", limit, "offset", offset)
 
-	list, err := h.db.ListOidcConfigs(ctx, accountID)
+	list, err := h.db.ListOidcConfigs(ctx)
 	if err != nil {
 		h.logger.Error("failed to list oidc configs", "error", err, "account_id", accountID)
+		attempt.Finish(authz.OutcomeError, authz.StageResourceLoading)
 		writeAPIError(w, ErrOidcConfigList, h.logger)
 		return
 	}
 
 	configs := make([]*public.OidcConfig, 0, len(list.Items))
 	for i := range list.Items {
-		configs = append(configs, hyperfleetdb.InternalToPublicOidcConfig(&list.Items[i]))
+		decision, err := prepared.Check(ctx, authz.DescribeOIDCConfig, h.oidcConfigResource(&list.Items[i]))
+		if err != nil {
+			writeResourceAuthzError(w, r, attempt, authz.ListOIDCConfigs, err, h.logger)
+			return
+		}
+		oc := hyperfleetdb.InternalToPublicOidcConfig(&list.Items[i])
+		if !decision.Allowed {
+			oc = &public.OidcConfig{ObjectMeta: listMeta(oc.ObjectMeta), Status: public.OidcConfigStatus{Phase: oc.Status.Phase}}
+		}
+		configs = append(configs, oc)
 	}
+	attempt.Finish(authz.OutcomeAllow, authz.StageNone)
 
 	total := len(configs)
 
 	if offset >= len(configs) {
 		configs = []*public.OidcConfig{}
 	} else {
-		end := min(offset+limit, len(configs))
+		end := offset + min(limit, len(configs)-offset)
 		configs = configs[offset:end]
 	}
 
@@ -239,6 +260,9 @@ func (h *OidcConfigHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	cr := hyperfleetdb.PublicToInternalOidcConfig(&req, accountID)
 
+	if !authorizeResource(w, r, h.authorizer, h.logger, authz.CreateOIDCConfig, candidateResource(h.oidcConfigResource(cr), cr.Name)) {
+		return
+	}
 	if err := h.db.CreateOidcConfig(ctx, accountID, cr); err != nil {
 		if hyperfleetdb.IsAlreadyExists(err) {
 			writeAPIError(w, ErrOidcConfigCreateNameConflict, h.logger)
@@ -262,7 +286,7 @@ func (h *OidcConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("getting oidc config", "account_id", accountID, "config_id", configID)
 
-	cr, err := h.db.GetOidcConfig(ctx, accountID, configID)
+	cr, err := h.db.GetOidcConfig(ctx, configID)
 	if err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrOidcConfigGetNotFound, h.logger)
@@ -273,6 +297,9 @@ func (h *OidcConfigHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !authorizeResource(w, r, h.authorizer, h.logger, authz.DescribeOIDCConfig, h.oidcConfigResource(cr)) {
+		return
+	}
 	if err := api.Write(w, http.StatusOK, hyperfleetdb.InternalToPublicOidcConfig(cr)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
@@ -287,7 +314,7 @@ func (h *OidcConfigHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("deleting oidc config", "account_id", accountID, "config_id", configID)
 
 	// Fetch first (capturing ResourceVersion) so the in-use check and delete are CAS'd against the same object.
-	oc, err := h.db.GetOidcConfig(ctx, accountID, configID)
+	oc, err := h.db.GetOidcConfig(ctx, configID)
 	if err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			writeAPIError(w, ErrOidcConfigDeleteNotFound, h.logger)
@@ -298,6 +325,9 @@ func (h *OidcConfigHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !authorizeResource(w, r, h.authorizer, h.logger, authz.DeleteOIDCConfig, h.oidcConfigResource(oc)) {
+		return
+	}
 	if oc.Labels[claimedByClusterUIDLabel] != "" {
 		writeAPIError(w, ErrOidcConfigDeleteInUse, h.logger)
 		return

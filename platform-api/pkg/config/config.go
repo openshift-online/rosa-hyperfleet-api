@@ -1,19 +1,18 @@
 package config
 
-import (
-	"time"
-
-	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/authz"
-)
+import "time"
 
 type Config struct {
-	Server          ServerConfig
-	DB              DBConfig
-	Regional        RegionalConfig
-	Logging         LoggingConfig
-	Authz           *authz.Config
-	RateLimit       RateLimitConfig
-	AllowedAccounts []string
+	Server    ServerConfig
+	DB        DBConfig
+	Regional  RegionalConfig
+	Logging   LoggingConfig
+	RateLimit RateLimitConfig
+	Authz     AuthzConfig
+}
+
+type AuthzConfig struct {
+	ConfigFile string
 }
 
 type RateLimitConfig struct {
@@ -33,6 +32,8 @@ type DBConfig struct {
 type RegionalConfig struct {
 	OIDCIssuerBaseURL        string
 	DefaultClusterExpiration time.Duration
+	// AWSRegion is the fixed service region used for authorization and logs.
+	AWSRegion string
 }
 
 type ServerConfig struct {
@@ -69,6 +70,5 @@ func NewConfig() *Config {
 			Level:  "info",
 			Format: "json",
 		},
-		Authz: authz.DefaultConfig(),
 	}
 }

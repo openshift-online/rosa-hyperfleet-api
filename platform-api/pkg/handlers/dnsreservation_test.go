@@ -20,7 +20,6 @@ import (
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	public "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/clients/hyperfleetdb"
-	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/pkg/middleware"
 )
 
 const dnsReservationTestAccountID = "123456789012"
@@ -35,7 +34,7 @@ func newDNSReservationTestHandler(t *testing.T, objects ...*hyperfleetv1alpha1.D
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(toRuntimeObjects(objects)...).Build()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	db := hyperfleetdb.NewClientFrom(fc, logger)
-	return NewDNSReservationHandler(db, logger), db
+	return NewDNSReservationHandler(db, clusterAuthorizer(t, lifecyclePermit), logger), db
 }
 
 func toRuntimeObjects(objects []*hyperfleetv1alpha1.DNSReservation) []client.Object {
@@ -46,14 +45,10 @@ func toRuntimeObjects(objects []*hyperfleetv1alpha1.DNSReservation) []client.Obj
 	return result
 }
 
-func dnsReservationTestContext(accountID string) context.Context {
-	return context.WithValue(context.Background(), middleware.ContextKeyAccountID, accountID)
-}
-
 func TestDNSReservationHandlerCreateNameOnly(t *testing.T) {
 	handler, db := newDNSReservationTestHandler(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/v0/dns_reservations", bytes.NewBufferString(`{"metadata":{"name":"zone-a"}}`))
-	req = req.WithContext(dnsReservationTestContext(dnsReservationTestAccountID))
+	req = req.WithContext(testContext(dnsReservationTestAccountID))
 	w := httptest.NewRecorder()
 
 	handler.Create(w, req)
@@ -99,7 +94,7 @@ func TestDNSReservationHandlerGetAndListAreAccountScoped(t *testing.T) {
 	handler, _ := newDNSReservationTestHandler(t, reservation, other)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v0/dns_reservations/zone-a", nil)
-	getReq = getReq.WithContext(dnsReservationTestContext(dnsReservationTestAccountID))
+	getReq = getReq.WithContext(testContext(dnsReservationTestAccountID))
 	getReq = mux.SetURLVars(getReq, map[string]string{"id": "zone-a"})
 	getResponse := httptest.NewRecorder()
 	handler.Get(getResponse, getReq)
@@ -115,7 +110,7 @@ func TestDNSReservationHandlerGetAndListAreAccountScoped(t *testing.T) {
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v0/dns_reservations", nil)
-	listReq = listReq.WithContext(dnsReservationTestContext(dnsReservationTestAccountID))
+	listReq = listReq.WithContext(testContext(dnsReservationTestAccountID))
 	listResponse := httptest.NewRecorder()
 	handler.List(listResponse, listReq)
 	if listResponse.Code != http.StatusOK {
@@ -152,7 +147,7 @@ func TestDNSReservationHandlerDeleteClaimedConflictAndUnclaimedSuccess(t *testin
 	handler, db := newDNSReservationTestHandler(t, claimed, unclaimed)
 
 	claimedReq := httptest.NewRequest(http.MethodDelete, "/api/v0/dns_reservations/claimed-zone", nil)
-	claimedReq = claimedReq.WithContext(dnsReservationTestContext(dnsReservationTestAccountID))
+	claimedReq = claimedReq.WithContext(testContext(dnsReservationTestAccountID))
 	claimedReq = mux.SetURLVars(claimedReq, map[string]string{"id": claimed.Name})
 	claimedResponse := httptest.NewRecorder()
 	handler.Delete(claimedResponse, claimedReq)
@@ -161,7 +156,7 @@ func TestDNSReservationHandlerDeleteClaimedConflictAndUnclaimedSuccess(t *testin
 	}
 
 	freeReq := httptest.NewRequest(http.MethodDelete, "/api/v0/dns_reservations/free-zone", nil)
-	freeReq = freeReq.WithContext(dnsReservationTestContext(dnsReservationTestAccountID))
+	freeReq = freeReq.WithContext(testContext(dnsReservationTestAccountID))
 	freeReq = mux.SetURLVars(freeReq, map[string]string{"id": unclaimed.Name})
 	freeResponse := httptest.NewRecorder()
 	handler.Delete(freeResponse, freeReq)

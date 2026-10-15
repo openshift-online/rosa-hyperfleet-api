@@ -466,5 +466,5 @@ func newDNSReservationResolverHandler(t *testing.T, reservation *hyperfleetv1alp
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	db := hyperfleetdb.NewClientFrom(builder.Build(), logger)
-	return NewClusterHandler(db, "", 0, logger)
+	return NewClusterHandler(db, "", 0, clusterAuthorizer(t, clusterReadPermit), logger)
 }

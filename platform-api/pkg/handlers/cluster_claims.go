@@ -75,15 +75,14 @@ func (r *dnsReservationClaimableResource) InUseAPIError() *APIError {
 }
 
 type oidcConfigClaimableResource struct {
-	db        *hyperfleetdb.Client
-	accountID string
-	uid       string
-	resource  *hyperfleetv1alpha1.OidcConfig
+	db       *hyperfleetdb.Client
+	uid      string
+	resource *hyperfleetv1alpha1.OidcConfig
 }
 
 func (r *oidcConfigClaimableResource) LoadByUID(ctx context.Context) error {
 	r.resource = nil
-	config, err := r.db.GetOidcConfigByUID(ctx, r.accountID, r.uid)
+	config, err := r.db.GetOidcConfigByUID(ctx, r.uid)
 	if err != nil {
 		return err
 	}
@@ -149,7 +148,7 @@ func (h *ClusterHandler) resolveOidcConfig(ctx context.Context, accountID, oidcC
 	if oidcConfigUID == "" {
 		return nil, nil
 	}
-	oidcConfig, err := h.db.GetOidcConfigByUID(ctx, accountID, oidcConfigUID)
+	oidcConfig, err := h.db.GetOidcConfigByUID(ctx, oidcConfigUID)
 	if err != nil {
 		if hyperfleetdb.IsNotFound(err) {
 			return nil, &ErrClusterCreateOidcConfigNotFound
@@ -188,9 +187,8 @@ func (h *ClusterHandler) claimDNSReservation(ctx context.Context, accountID, res
 
 func (h *ClusterHandler) claimOidcConfig(ctx context.Context, accountID, oidcConfigUID, clusterUID string) *APIError {
 	claimAPIError, err := claimResource(ctx, clusterUID, &oidcConfigClaimableResource{
-		db:        h.db,
-		accountID: accountID,
-		uid:       oidcConfigUID,
+		db:  h.db,
+		uid: oidcConfigUID,
 	})
 	if claimAPIError != nil {
 		return claimAPIError
