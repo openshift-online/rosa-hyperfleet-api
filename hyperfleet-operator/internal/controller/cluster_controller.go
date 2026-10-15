@@ -291,6 +291,19 @@ func legacyAutomaticDNSReservationName(clusterName, clusterUID string) string {
 
 func (r *ClusterReconciler) reconcileDNSReservation(ctx context.Context, cluster *hyperfleetv1alpha1.Cluster) (string, bool, ctrl.Result, error) {
 	if cluster.Spec.DNSReservationID == "" {
+		if requestedBaseDomain := cluster.Spec.HostedCluster.DNS.BaseDomain; requestedBaseDomain != "" {
+			if cluster.Status.BaseDomain == "" {
+				if err := r.persistBaseDomain(ctx, cluster, requestedBaseDomain); err != nil {
+					return "", false, ctrl.Result{}, fmt.Errorf("persist customer DNS base domain: %w", err)
+				}
+				return "", false, ctrl.Result{}, nil
+			}
+			if cluster.Status.BaseDomain != requestedBaseDomain {
+				return "", false, ctrl.Result{}, fmt.Errorf("customer DNS base domain changed from %q to %q", cluster.Status.BaseDomain, requestedBaseDomain)
+			}
+			return requestedBaseDomain, true, ctrl.Result{}, nil
+		}
+
 		if err := r.ensureAutomaticDNSReservation(ctx, cluster); err != nil {
 			return "", false, ctrl.Result{}, fmt.Errorf("ensure automatic DNS reservation: %w", err)
 		}

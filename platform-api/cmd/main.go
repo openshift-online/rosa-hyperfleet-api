@@ -26,8 +26,10 @@ var (
 	allowedAccounts          string
 	postgresDSN              string
 	dynamodbRegion           string
+	awsRegion                string
 	dynamodbPrefix           string
 	oidcIssuerBaseURL        string
+	dnsBaseDomainSuffix      string
 	defaultClusterExpiration time.Duration
 	apiPort                  int
 	healthPort               int
@@ -59,8 +61,10 @@ func init() {
 	serveCmd.Flags().StringVar(&allowedAccounts, "allowed-accounts", "", "Comma-separated list of allowed AWS account IDs")
 	serveCmd.Flags().StringVar(&postgresDSN, "postgres-dsn", "", "PostgreSQL connection string (required)")
 	serveCmd.Flags().StringVar(&dynamodbRegion, "dynamodb-region", "", "AWS region for DynamoDB (defaults to auto-detected region)")
+	serveCmd.Flags().StringVar(&awsRegion, "aws-region", "", "AWS region for OIDC configuration (defaults to auto-detected region)")
 	serveCmd.Flags().StringVar(&dynamodbPrefix, "dynamodb-prefix", "rosa", "Prefix for DynamoDB table names")
 	serveCmd.Flags().StringVar(&oidcIssuerBaseURL, "oidc-issuer-base-url", "", "Base URL for OIDC issuer (e.g. https://<cloudfront-domain>)")
+	serveCmd.Flags().StringVar(&dnsBaseDomainSuffix, "dns-base-domain-suffix", "", "Base DNS suffix used to reserve HCP DNS domains")
 	serveCmd.Flags().DurationVar(&defaultClusterExpiration, "default-cluster-expiration", 0, "Default cluster lifetime (e.g. 24h). Clusters created without an explicit expirationTimestamp get one stamped at creation. Zero means no default.")
 	serveCmd.Flags().IntVar(&apiPort, "api-port", 8000, "API server port")
 	serveCmd.Flags().IntVar(&healthPort, "health-port", 8080, "Health check server port")
@@ -101,7 +105,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	cfg.DB.DSN = postgresDSN
 
 	cfg.Regional.OIDCIssuerBaseURL = oidcIssuerBaseURL
+	cfg.Regional.DNSBaseDomainSuffix = dnsBaseDomainSuffix
 	cfg.Regional.DefaultClusterExpiration = defaultClusterExpiration
+	cfg.Regional.AWSRegion = awsRegion
+	if cfg.Regional.AWSRegion == "" {
+		cfg.Regional.AWSRegion = awsCfg.Region
+	}
 	cfg.AllowedAccounts = parseAllowedAccounts(allowedAccounts)
 	cfg.Server.APIPort = apiPort
 	cfg.Server.HealthPort = healthPort

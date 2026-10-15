@@ -17,6 +17,8 @@ import (
 
 const accountIDLabel = "hyperfleet.io/account-id"
 const clusterUIDLabel = "hyperfleet.io/cluster-uid"
+const claimedByClusterUIDLabel = "hyperfleet.io/claimed-by-cluster-uid"
+const ownerUIDLabel = "hyperfleet.io/owner-uid"
 
 // Client wraps a pgruntime client.Client for CRUD on hyperfleet resources.
 type Client struct {
@@ -218,6 +220,73 @@ func (c *Client) DeleteDNSReservation(ctx context.Context, accountID, name strin
 
 func (c *Client) DeleteDNSReservationObject(ctx context.Context, reservation *hyperfleetv1alpha1.DNSReservation) error {
 	return c.client.Delete(ctx, reservation)
+}
+
+// CreateDNSDomainIndex reserves a generated HCP DNS prefix globally.
+func (c *Client) CreateDNSDomainIndex(ctx context.Context, accountID string, idx *hyperfleetv1alpha1.Index) error {
+	setAccountLabel(idx, accountID)
+	return c.client.Create(ctx, idx)
+}
+
+// SetDNSDomainIndexOwner associates a DNS-domain Index with its reservation UID.
+func (c *Client) SetDNSDomainIndexOwner(ctx context.Context, namespace, name, uid string) error {
+	var idx hyperfleetv1alpha1.Index
+	if err := c.client.Get(ctx, k8stypes.NamespacedName{Namespace: namespace, Name: name}, &idx); err != nil {
+		return err
+	}
+	labels := idx.GetLabels()
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+	labels[ownerUIDLabel] = uid
+	idx.SetLabels(labels)
+	return c.client.Update(ctx, &idx)
+}
+
+// DeleteDNSDomainIndex removes a DNS-domain prefix reservation.
+func (c *Client) DeleteDNSDomainIndex(ctx context.Context, namespace, name string) error {
+	var idx hyperfleetv1alpha1.Index
+	if err := c.client.Get(ctx, k8stypes.NamespacedName{Namespace: namespace, Name: name}, &idx); err != nil {
+		return err
+	}
+	return c.client.Delete(ctx, &idx)
+}
+
+// ListDNSDomainReservations lists DNS reservations that may contain HCP DNS domains.
+func (c *Client) ListDNSDomainReservations(ctx context.Context, accountID string) (*hyperfleetv1alpha1.DNSReservationList, error) {
+	return c.ListDNSReservations(ctx, accountID)
+}
+
+// CreateDNSDomainReservation stores a customer-created DNS domain for an account.
+func (c *Client) CreateDNSDomainReservation(ctx context.Context, accountID string, reservation *hyperfleetv1alpha1.DNSReservation) error {
+	return c.CreateDNSReservation(ctx, accountID, reservation)
+}
+
+// UpdateDNSDomainReservationStatus updates a DNS-domain reservation's status.
+func (c *Client) UpdateDNSDomainReservationStatus(ctx context.Context, reservation *hyperfleetv1alpha1.DNSReservation) error {
+	return c.UpdateDNSReservationStatus(ctx, reservation)
+}
+
+// DeleteDNSDomainReservation deletes a DNS-domain reservation object.
+func (c *Client) DeleteDNSDomainReservation(ctx context.Context, accountID, name string) error {
+	return c.DeleteDNSReservation(ctx, accountID, name)
+}
+
+// DeleteDNSDomainReservationIfUnclaimed deletes an unclaimed DNS-domain
+// reservation. Resource-version preconditions serialize the delete with claims.
+func (c *Client) DeleteDNSDomainReservationIfUnclaimed(ctx context.Context, accountID, name string) error {
+	reservation, err := c.GetDNSReservation(ctx, accountID, name)
+	if err != nil {
+		return err
+	}
+	if reservation.Labels[claimedByClusterUIDLabel] != "" {
+		return apierrors.NewConflict(dnsReservationGR, name, fmt.Errorf("DNS domain is in use by a cluster"))
+	}
+	uid := reservation.UID
+	resourceVersion := reservation.ResourceVersion
+	return c.client.Delete(ctx, reservation, &client.DeleteOptions{
+		Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &resourceVersion},
+	})
 }
 
 // --- Manifest operations ---

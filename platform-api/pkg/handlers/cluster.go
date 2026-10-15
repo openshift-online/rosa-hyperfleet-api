@@ -37,16 +37,22 @@ type ClusterHandler struct {
 	db                       *hyperfleetdb.Client
 	oidcIssuerBaseURL        string
 	defaultClusterExpiration time.Duration
+	dnsBaseDomainSuffix      string
 	validator                *validation.FieldValidator
 	logger                   *slog.Logger
 }
 
 // NewClusterHandler creates a new cluster handler
-func NewClusterHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, defaultClusterExpiration time.Duration, logger *slog.Logger) *ClusterHandler {
+func NewClusterHandler(db *hyperfleetdb.Client, oidcIssuerBaseURL string, defaultClusterExpiration time.Duration, logger *slog.Logger, dnsBaseDomainSuffix ...string) *ClusterHandler {
+	suffix := ""
+	if len(dnsBaseDomainSuffix) > 0 {
+		suffix = dnsBaseDomainSuffix[0]
+	}
 	return &ClusterHandler{
 		db:                       db,
 		oidcIssuerBaseURL:        oidcIssuerBaseURL,
 		defaultClusterExpiration: defaultClusterExpiration,
+		dnsBaseDomainSuffix:      strings.ToLower(strings.Trim(strings.TrimSpace(suffix), ".")),
 		validator:                validation.NewFieldValidator("Cluster"),
 		logger:                   logger,
 	}
@@ -151,10 +157,6 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validation.ValidateClusterNameForDNSReservation(req.Name, req.Spec.DNSReservationID != ""); err != nil {
-		writeAPIError(w, ErrClusterCreateInvalidName, h.logger)
-		return
-	}
 	if err := validation.ValidateAccountNamespace(req.Namespace, accountID); err != nil {
 		writeAPIError(w, ErrClusterCreateNamespaceMismatch, h.logger)
 		return
@@ -164,6 +166,22 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, ErrClusterValidation.WithErrors(errs), h.logger)
 		return
 	}
+
+	if req.Spec.DNSReservationID == "" {
+		reservationUID, apiErr := h.resolveManagedDNSDomain(ctx, accountID, req.Spec.HostedCluster.DNS.BaseDomain)
+		if apiErr != nil {
+			writeAPIError(w, *apiErr, h.logger)
+			return
+		}
+		if reservationUID != "" {
+			req.Spec.DNSReservationID = reservationUID
+		}
+	}
+	if err := validation.ValidateClusterNameForDNSReservation(req.Name, req.Spec.DNSReservationID != ""); err != nil {
+		writeAPIError(w, ErrClusterCreateInvalidName, h.logger)
+		return
+	}
+
 	var dnsReservation *hyperfleetv1alpha1.DNSReservation
 	var apiErr *APIError
 	if req.Spec.DNSReservationID != "" {
@@ -287,6 +305,45 @@ func (h *ClusterHandler) completeClusterCreate(ctx context.Context, accountID, c
 	}
 	return cluster, nil
 }
+
+// resolveManagedDNSDomain finds the HCP DNS-domain reservation backing a
+// regional managed base domain. Customer-owned domains outside the regional
+// suffix do not require a Hyperfleet reservation.
+func (h *ClusterHandler) resolveManagedDNSDomain(ctx context.Context, accountID, baseDomain string) (string, *APIError) {
+	if baseDomain == "" || h.dnsBaseDomainSuffix == "" || !isManagedDNSDomain(baseDomain, h.dnsBaseDomainSuffix) {
+		return "", nil
+	}
+
+	reservations, err := h.db.ListDNSDomainReservations(ctx, accountID)
+	if err != nil {
+		h.logger.Error("failed to look up managed DNS domain", "error_type", fmt.Sprintf("%T", err), "account_id", redact(accountID), "base_domain", redact(baseDomain))
+		return "", &ErrClusterCreateDNSDomainLookupFailed
+	}
+	for i := range reservations.Items {
+		reservation := &reservations.Items[i]
+		if !reservation.Spec.UserDefined || reservation.Spec.ClusterArch != dnsDomainArchHCP ||
+			!strings.EqualFold(strings.TrimSuffix(reservation.Spec.BaseDomain, "."), strings.TrimSuffix(baseDomain, ".")) {
+			continue
+		}
+		if reservation.Labels[claimedByClusterUIDLabel] != "" {
+			return "", &ErrClusterCreateDNSDomainInUse
+		}
+		if reservation.Status.Phase != hyperfleetv1alpha1.DNSReservationPhaseReady ||
+			reservation.Status.BaseDomain == "" || reservation.Status.InternalHostedClusterName == "" {
+			return "", &ErrClusterCreateDNSReservationNotReady
+		}
+		return string(reservation.UID), nil
+	}
+	return "", &ErrClusterCreateDNSDomainNotFound
+}
+
+// isManagedDNSDomain reports whether domain belongs to the configured regional suffix.
+func isManagedDNSDomain(domain, suffix string) bool {
+	domain = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
+	suffix = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(suffix)), ".")
+	return suffix != "" && (domain == suffix || strings.HasSuffix(domain, "."+suffix))
+}
+
 func (h *ClusterHandler) updateManagedIssuerURL(ctx context.Context, accountID, clusterName, clusterUID, issuerURL string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		cluster, err := h.db.GetCluster(ctx, accountID, clusterName)

@@ -60,6 +60,14 @@ spec:
             description: Spec configures the reservation's behavior when a Cluster
               releases its claim.
             properties:
+              baseDomain:
+                description: BaseDomain is the domain reserved for an HCP DNS-domain
+                  reservation.
+                type: string
+              clusterArch:
+                description: ClusterArch identifies the cluster architecture that
+                  can use this domain.
+                type: string
               clusterDeletionPolicy:
                 description: |-
                   ClusterDeletionPolicy determines what happens when the claiming Cluster is deleted.
@@ -69,6 +77,14 @@ spec:
                 - Retain
                 - Delete
                 type: string
+              reservedAt:
+                description: ReservedAt is the time when the domain was reserved.
+                format: date-time
+                type: string
+              userDefined:
+                description: UserDefined is true when the reservation was created
+                  by a customer.
+                type: boolean
             type: object
           status:
             description: Status describes whether the reservation has been allocated

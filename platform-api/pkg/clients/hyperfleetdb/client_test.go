@@ -488,3 +488,73 @@ func TestNewClient_RequiresDSN(t *testing.T) {
 		t.Fatalf("NewClient error = %v, want missing DSN error", err)
 	}
 }
+
+func TestClient_DNSDomainReservationLifecycle(t *testing.T) {
+	ctx := context.Background()
+	fc := newUIDIndexedClient(t)
+	c := NewClientFrom(fc, slog.New(slog.NewTextHandler(os.Stdout, nil)))
+
+	index := &hyperfleetv1alpha1.Index{
+		ObjectMeta: metav1.ObjectMeta{Name: "abc12345", Namespace: "dns-shard-0-reservations"},
+	}
+	if err := c.CreateDNSDomainIndex(ctx, "acct-1", index); err != nil {
+		t.Fatalf("CreateDNSDomainIndex: %v", err)
+	}
+	if index.Labels[accountIDLabel] != "acct-1" {
+		t.Fatalf("index account label = %#v", index.Labels)
+	}
+
+	reservation := &hyperfleetv1alpha1.DNSReservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "0-abc12345",
+			UID:  types.UID("550e8400-e29b-41d4-a716-446655440000"),
+		},
+		Spec: hyperfleetv1alpha1.DNSReservationSpec{
+			BaseDomain:            "abc12345.0.example.com",
+			ClusterArch:           "hcp",
+			UserDefined:           true,
+			ClusterDeletionPolicy: hyperfleetv1alpha1.DNSReservationClusterDeletionPolicyRetain,
+		},
+	}
+	if err := c.CreateDNSDomainReservation(ctx, "acct-1", reservation); err != nil {
+		t.Fatalf("CreateDNSDomainReservation: %v", err)
+	}
+	if reservation.Namespace != accountNamespace("acct-1") || reservation.Labels[accountIDLabel] != "acct-1" {
+		t.Fatalf("reservation namespace/labels = %q/%#v", reservation.Namespace, reservation.Labels)
+	}
+	if err := c.SetDNSDomainIndexOwner(ctx, index.Namespace, index.Name, string(reservation.UID)); err != nil {
+		t.Fatalf("SetDNSDomainIndexOwner: %v", err)
+	}
+
+	var updatedIndex hyperfleetv1alpha1.Index
+	if err := fc.Get(ctx, client.ObjectKeyFromObject(index), &updatedIndex); err != nil {
+		t.Fatalf("get DNS domain index: %v", err)
+	}
+	if updatedIndex.Labels[ownerUIDLabel] != string(reservation.UID) {
+		t.Fatalf("index owner label = %#v", updatedIndex.Labels)
+	}
+
+	reservations, err := c.ListDNSDomainReservations(ctx, "acct-1")
+	if err != nil || len(reservations.Items) != 1 {
+		t.Fatalf("ListDNSDomainReservations = (%v, %v), want one reservation", reservations, err)
+	}
+
+	reservation.Labels[claimedByClusterUIDLabel] = "cluster-uid"
+	if err := c.UpdateDNSReservation(ctx, reservation); err != nil {
+		t.Fatalf("claim DNS domain reservation: %v", err)
+	}
+	if err := c.DeleteDNSDomainReservationIfUnclaimed(ctx, "acct-1", reservation.Name); !IsConflict(err) {
+		t.Fatalf("delete claimed DNS domain error = %v, want conflict", err)
+	}
+
+	reservation.Labels[claimedByClusterUIDLabel] = ""
+	if err := c.UpdateDNSReservation(ctx, reservation); err != nil {
+		t.Fatalf("release DNS domain reservation: %v", err)
+	}
+	if err := c.DeleteDNSDomainReservationIfUnclaimed(ctx, "acct-1", reservation.Name); err != nil {
+		t.Fatalf("delete unclaimed DNS domain: %v", err)
+	}
+	if err := c.DeleteDNSDomainIndex(ctx, index.Namespace, index.Name); err != nil {
+		t.Fatalf("DeleteDNSDomainIndex: %v", err)
+	}
+}
