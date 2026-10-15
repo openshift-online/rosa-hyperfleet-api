@@ -5,6 +5,7 @@ import (
 	"maps"
 	"path"
 	"slices"
+	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -48,6 +49,12 @@ func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExterna
 	}
 	if cluster.Spec.AdditionalTrustBundle != nil {
 		resources = append(resources, additionalTrustBundle(clusterID, ns, *cluster.Spec.AdditionalTrustBundle))
+	}
+
+	// Create ConfigMap for registry additional trusted CA certificates if specified
+	if len(cluster.Spec.RegistryAdditionalTrustedCA) > 0 {
+		resources = append(resources,
+			registryAdditionalCA(clusterID, ns, cluster.Spec.RegistryAdditionalTrustedCA))
 	}
 
 	if oidcSigningKeyExternal {
@@ -157,6 +164,33 @@ func additionalTrustBundle(clusterID, ns, bundle string) Resource {
 	}
 }
 
+const registryAdditionalCAName = "registry-additional-ca"
+
+func registryAdditionalCA(clusterID, ns string, caCerts map[string]string) Resource {
+	// Normalize registry hostnames to valid ConfigMap keys by encoding colons as ".." (OpenShift convention).
+	normalizedData := make(map[string]string, len(caCerts))
+	for hostname, cert := range caCerts {
+		normalizedData[strings.ReplaceAll(hostname, ":", "..")] = cert
+	}
+
+	return Resource{
+		Group: "", Version: "v1", Resource: "configmaps",
+		Name: registryAdditionalCAName, Namespace: ns,
+		Object: &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      registryAdditionalCAName,
+				Namespace: ns,
+				Labels: map[string]string{
+					"hyperfleet.io/cluster-id":    clusterID,
+					"hyperfleet.io/resource-type": "registry-additional-ca",
+				},
+			},
+			Data: normalizedData,
+		},
+	}
+}
+
 func pullSecret(clusterID, ns string) Resource {
 	return Resource{
 		Group: "external-secrets.io", Version: "v1", Resource: "externalsecrets",
@@ -250,6 +284,55 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, clusterID, ns, hostedClu
 			hcSpec.AdditionalTrustBundle = nil
 		} else {
 			hcSpec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: additionalTrustBundleName}
+		}
+	}
+
+	// Map ImageConfiguration fields from HyperFleet to HyperShift ImageSpec
+	if cluster.Spec.HostedCluster.Configuration != nil &&
+		cluster.Spec.HostedCluster.Configuration.Image != nil {
+		if hcSpec.Configuration == nil {
+			hcSpec.Configuration = &hypershiftv1beta1.ClusterConfiguration{}
+		}
+
+		// Save the source Image (from JSON round-trip)
+		img := cluster.Spec.HostedCluster.Configuration.Image
+
+		// Reset to a clean ImageSpec to avoid passing through unsupported fields
+		hcSpec.Configuration.Image = &configv1.ImageSpec{}
+
+		// Map only the fields explicitly defined in HyperFleet ImageConfiguration
+		if len(img.RegistrySources.AllowedRegistries) > 0 ||
+			len(img.RegistrySources.BlockedRegistries) > 0 ||
+			len(img.RegistrySources.InsecureRegistries) > 0 {
+			hcSpec.Configuration.Image.RegistrySources = configv1.RegistrySources{
+				AllowedRegistries:  img.RegistrySources.AllowedRegistries,
+				BlockedRegistries:  img.RegistrySources.BlockedRegistries,
+				InsecureRegistries: img.RegistrySources.InsecureRegistries,
+			}
+		}
+
+		if len(img.AllowedRegistriesForImport) > 0 {
+			locations := make([]configv1.RegistryLocation, 0, len(img.AllowedRegistriesForImport))
+			for _, loc := range img.AllowedRegistriesForImport {
+				locations = append(locations, configv1.RegistryLocation{
+					DomainName: loc.DomainName,
+					Insecure:   loc.Insecure,
+				})
+			}
+			hcSpec.Configuration.Image.AllowedRegistriesForImport = locations
+		}
+	}
+
+	// AdditionalTrustedCA mapping (requires ConfigMap to be created)
+	if len(cluster.Spec.RegistryAdditionalTrustedCA) > 0 {
+		if hcSpec.Configuration == nil {
+			hcSpec.Configuration = &hypershiftv1beta1.ClusterConfiguration{}
+		}
+		if hcSpec.Configuration.Image == nil {
+			hcSpec.Configuration.Image = &configv1.ImageSpec{}
+		}
+		hcSpec.Configuration.Image.AdditionalTrustedCA = configv1.ConfigMapNameReference{
+			Name: registryAdditionalCAName,
 		}
 	}
 

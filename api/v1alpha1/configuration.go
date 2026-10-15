@@ -21,8 +21,8 @@ type ClusterConfiguration struct {
 	FeatureGate *FeatureGateConfiguration `json:"featureGate,omitempty"`
 
 	// image contains the configuration for internal registry.
-	// +k8s:openapi-gen=false
-	// +hyperfleet:write-mode=service-set
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=mutable
 	Image *ImageConfiguration `json:"image,omitempty"`
 
 	// ingress contains the configuration for ingress.
@@ -176,7 +176,66 @@ type ClusterAuthentication struct {
 
 type FeatureGateConfiguration struct{}
 
-type ImageConfiguration struct{}
+// ImageConfiguration configures how the cluster pulls container images.
+// +hyperfleet:upstream-reduced-object=configv1.ImageSpec
+type ImageConfiguration struct {
+	// registrySources contains configuration for external registries.
+	// +hyperfleet:write-mode=mutable
+	// +optional
+	RegistrySources *RegistrySources `json:"registrySources,omitempty"`
+
+	// allowedRegistriesForImport limits the container image registries from which
+	// normal users may import images.
+	// +hyperfleet:write-mode=mutable
+	// +kubebuilder:validation:MaxItems=256
+	// +listType=atomic
+	// +optional
+	AllowedRegistriesForImport []RegistryLocation `json:"allowedRegistriesForImport,omitempty"`
+}
+
+// RegistrySources holds cluster-wide information about how to handle container image registries.
+// +hyperfleet:upstream-reduced-object=configv1.RegistrySources
+type RegistrySources struct {
+	// allowedRegistries: when set, only these registries are permitted to pull images.
+	// All other registries are blocked.
+	// +hyperfleet:write-mode=mutable
+	// +kubebuilder:validation:MaxItems=256
+	// +listType=set
+	// +optional
+	AllowedRegistries []string `json:"allowedRegistries,omitempty"`
+
+	// blockedRegistries: registries for which image pull should be blocked.
+	// +hyperfleet:write-mode=mutable
+	// +kubebuilder:validation:MaxItems=256
+	// +listType=set
+	// +optional
+	BlockedRegistries []string `json:"blockedRegistries,omitempty"`
+
+	// insecureRegistries: registries for which image pull should allow HTTP or
+	// skip TLS certificate verification.
+	// +hyperfleet:write-mode=mutable
+	// +kubebuilder:validation:MaxItems=256
+	// +listType=set
+	// +optional
+	InsecureRegistries []string `json:"insecureRegistries,omitempty"`
+}
+
+// RegistryLocation contains configuration for a registry that may be used for image imports.
+// +hyperfleet:upstream-reduced-object=configv1.RegistryLocation
+type RegistryLocation struct {
+	// domainName is the registry hostname.
+	// +hyperfleet:write-mode=mutable
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	DomainName string `json:"domainName"`
+
+	// insecure indicates whether the registry is accessed over HTTP or with
+	// unverified TLS certificates.
+	// +hyperfleet:write-mode=mutable
+	// +optional
+	Insecure bool `json:"insecure,omitempty"`
+}
 
 // IngressConfiguration specifies the cluster-wide ingress settings.
 // +hyperfleet:upstream-reduced-object=configv1.IngressSpec

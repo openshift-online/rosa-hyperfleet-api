@@ -2,6 +2,7 @@ package render
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	k8svalidation "k8s.io/apimachinery/pkg/util/validation"
@@ -701,5 +702,45 @@ func TestHostedClusterCustomerTagsYieldToPassthroughTags(t *testing.T) {
 	}
 	if got := tagPairs(tags)["environment"]; got != "service-managed" {
 		t.Errorf("environment = %q, want %q", got, "service-managed")
+	}
+}
+
+func TestRegistryAdditionalCANormalizesHostnames(t *testing.T) {
+	caCerts := map[string]string{
+		"registry.example.com":      "cert1",
+		"registry.example.com:5000": "cert2",
+		"localhost:8080":            "cert3",
+	}
+
+	resource := registryAdditionalCA("test-cluster-id", "test-namespace", caCerts)
+
+	cm, ok := resource.Object.(*corev1.ConfigMap)
+	if !ok {
+		t.Fatalf("expected *corev1.ConfigMap, got %T", resource.Object)
+	}
+
+	expectedKeys := []string{
+		"registry.example.com",
+		"registry.example.com..5000",
+		"localhost..8080",
+	}
+
+	if len(cm.Data) != len(expectedKeys) {
+		t.Fatalf("expected %d keys in ConfigMap data, got %d", len(expectedKeys), len(cm.Data))
+	}
+
+	for _, key := range expectedKeys {
+		if _, ok := cm.Data[key]; !ok {
+			t.Errorf("expected ConfigMap data to contain key %q, but it was missing", key)
+		}
+	}
+
+	// Verify original keys are NOT present (they should be normalized)
+	for originalKey := range caCerts {
+		if strings.Contains(originalKey, ":") {
+			if _, ok := cm.Data[originalKey]; ok {
+				t.Errorf("ConfigMap data should not contain unnormalized key %q", originalKey)
+			}
+		}
 	}
 }
