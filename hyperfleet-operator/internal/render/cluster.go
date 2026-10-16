@@ -288,19 +288,39 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, clusterID, ns, hostedClu
 	}
 
 	// Map ImageConfiguration fields from HyperFleet to HyperShift ImageSpec
-	if cluster.Spec.HostedCluster.Configuration != nil &&
+	if hcSpec.Configuration != nil && hcSpec.Configuration.Image != nil {
+		img := hcSpec.Configuration.Image
+		hcSpec.Configuration.Image = &configv1.ImageSpec{}
+
+		if len(img.RegistrySources.AllowedRegistries) > 0 ||
+			len(img.RegistrySources.BlockedRegistries) > 0 ||
+			len(img.RegistrySources.InsecureRegistries) > 0 {
+			hcSpec.Configuration.Image.RegistrySources = configv1.RegistrySources{
+				AllowedRegistries:  img.RegistrySources.AllowedRegistries,
+				BlockedRegistries:  img.RegistrySources.BlockedRegistries,
+				InsecureRegistries: img.RegistrySources.InsecureRegistries,
+			}
+		}
+
+		if len(img.AllowedRegistriesForImport) > 0 {
+			locations := make([]configv1.RegistryLocation, 0, len(img.AllowedRegistriesForImport))
+			for _, loc := range img.AllowedRegistriesForImport {
+				locations = append(locations, configv1.RegistryLocation{
+					DomainName: loc.DomainName,
+					Insecure:   loc.Insecure,
+				})
+			}
+			hcSpec.Configuration.Image.AllowedRegistriesForImport = locations
+		}
+	} else if cluster.Spec.HostedCluster.Configuration != nil &&
 		cluster.Spec.HostedCluster.Configuration.Image != nil {
 		if hcSpec.Configuration == nil {
 			hcSpec.Configuration = &hypershiftv1beta1.ClusterConfiguration{}
 		}
 
-		// Save the source Image (from JSON round-trip)
 		img := cluster.Spec.HostedCluster.Configuration.Image
-
-		// Reset to a clean ImageSpec to avoid passing through unsupported fields
 		hcSpec.Configuration.Image = &configv1.ImageSpec{}
 
-		// Map only the fields explicitly defined in HyperFleet ImageConfiguration
 		if len(img.RegistrySources.AllowedRegistries) > 0 ||
 			len(img.RegistrySources.BlockedRegistries) > 0 ||
 			len(img.RegistrySources.InsecureRegistries) > 0 {
