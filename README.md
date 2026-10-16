@@ -32,6 +32,7 @@ platform-api/go.mod              ← requires: hyperfleet-db, api
 
 ## Docs
 
+- [Platform API Helm chart](platform-api/charts/README.md)
 - [OpenAPI spec](api/v1alpha1/public/openapi.yaml)
 - [Authorization](docs/authz.md)
 - [Konflux / Quay image tags](docs/konflux/quay-image-tags.md)
