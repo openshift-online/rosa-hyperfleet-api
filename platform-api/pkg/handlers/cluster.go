@@ -278,6 +278,34 @@ func (h *ClusterHandler) decodeClusterCreateRequest(accountID string, body []byt
 		return nil, &apiErr
 	}
 
+	// Validate image configuration if provided
+	if req.Spec.HostedCluster.Configuration != nil && req.Spec.HostedCluster.Configuration.Image != nil {
+		if err := validation.ValidateImageConfiguration(req.Spec.HostedCluster.Configuration.Image); err != nil {
+			h.logger.Error("invalid image configuration", "error", err, "account_id", accountID, "cluster_name", req.Name)
+			validationErr := ErrClusterValidation.WithErrors(validation.ValidationErrors{
+				&validation.ValidationError{
+					Field:  "spec.hostedCluster.configuration.image",
+					Reason: err.Error(),
+				},
+			})
+			return nil, &validationErr
+		}
+	}
+
+	// Validate registry additional trusted CA if provided
+	if len(req.Spec.RegistryAdditionalTrustedCA) > 0 {
+		if err := validation.ValidateRegistryAdditionalTrustedCA(req.Spec.RegistryAdditionalTrustedCA); err != nil {
+			h.logger.Error("invalid registry additional trusted CA", "error", err, "account_id", accountID, "cluster_name", req.Name)
+			validationErr := ErrClusterValidation.WithErrors(validation.ValidationErrors{
+				&validation.ValidationError{
+					Field:  "spec.registryAdditionalTrustedCA",
+					Reason: err.Error(),
+				},
+			})
+			return nil, &validationErr
+		}
+	}
+
 	return &req, nil
 }
 
@@ -373,6 +401,85 @@ func (h *ClusterHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// parseUpdateRequest parses and validates the cluster update request body.
+func (h *ClusterHandler) parseUpdateRequest(body []byte, accountID string) (envelope struct {
+	Metadata struct {
+		Namespace string `json:"namespace"`
+	} `json:"metadata"`
+	Spec json.RawMessage `json:"spec"`
+}, rawSpec map[string]any, apiErr *APIError) {
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return envelope, nil, &ErrClusterUpdateInvalidBody
+	}
+	if err := validation.ValidateAccountNamespace(envelope.Metadata.Namespace, accountID); err != nil {
+		return envelope, nil, &ErrClusterUpdateNamespaceMismatch
+	}
+	if len(envelope.Spec) == 0 || string(envelope.Spec) == "{}" {
+		return envelope, nil, &ErrClusterUpdateMissingFields
+	}
+	if err := json.Unmarshal(envelope.Spec, &rawSpec); err != nil {
+		return envelope, nil, &ErrClusterUpdateInvalidBody
+	}
+	if len(rawSpec) == 0 {
+		return envelope, nil, &ErrClusterUpdateMissingFields
+	}
+	return envelope, rawSpec, nil
+}
+
+// validateAndClaimSpotQueue validates and claims the Spot termination handler queue if it changed.
+func (h *ClusterHandler) validateAndClaimSpotQueue(ctx context.Context, accountID, clusterName string, current *hyperfleetv1alpha1.Cluster, oldQueueURL, oldRegion string, validationErr *validation.ValidationErrors) error {
+	queueURL, region := clusterTerminationHandlerQueue(current)
+	queueChanged := queueURL != oldQueueURL || region != oldRegion
+	if queueChanged && queueURL != "" {
+		existing, err := h.db.ListClusters(ctx, accountID)
+		if err != nil {
+			return err
+		}
+		if errs := validation.ValidateSpotTerminationHandlerQueueURL(queueURL, region, terminationHandlerQueueURLs(existing.Items, current.Name)); errs != nil {
+			*validationErr = errs
+			return fmt.Errorf("invalid cluster update")
+		}
+	}
+	if queueChanged && queueURL != "" {
+		if _, err := h.db.ClaimSpotTerminationQueue(ctx, accountID, queueURL, clusterName); err != nil {
+			if hyperfleetdb.IsAlreadyExists(err) {
+				*validationErr = validation.SpotTerminationHandlerQueueAlreadyInUse()
+				return fmt.Errorf("invalid cluster update")
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+// validateRegistryConfigAfterMerge validates image configuration and registry CA after spec merge.
+func (h *ClusterHandler) validateRegistryConfigAfterMerge(current *hyperfleetv1alpha1.Cluster, validationErr *validation.ValidationErrors) error {
+	publicCluster := hyperfleetdb.InternalToPublicCluster(current)
+	if publicCluster.Spec.HostedCluster.Configuration != nil && publicCluster.Spec.HostedCluster.Configuration.Image != nil {
+		if err := validation.ValidateImageConfiguration(publicCluster.Spec.HostedCluster.Configuration.Image); err != nil {
+			*validationErr = validation.ValidationErrors{
+				&validation.ValidationError{
+					Field:  "spec.hostedCluster.configuration.image",
+					Reason: err.Error(),
+				},
+			}
+			return fmt.Errorf("invalid image configuration")
+		}
+	}
+	if len(publicCluster.Spec.RegistryAdditionalTrustedCA) > 0 {
+		if err := validation.ValidateRegistryAdditionalTrustedCA(publicCluster.Spec.RegistryAdditionalTrustedCA); err != nil {
+			*validationErr = validation.ValidationErrors{
+				&validation.ValidationError{
+					Field:  "spec.registryAdditionalTrustedCA",
+					Reason: err.Error(),
+				},
+			}
+			return fmt.Errorf("invalid registry additional trusted CA")
+		}
+	}
+	return nil
+}
+
 // Update handles PUT/PATCH /api/v0/clusters/{id}
 // Request body: public.Cluster (K8s-native). Only spec fields are merged; metadata is ignored.
 func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -387,47 +494,14 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract raw "spec" JSON first so we know which fields the caller actually
-	// sent. This is used for both the empty-spec guard and field-presence-aware
-	// validation (avoids false positives from zero-valued absent fields in a
-	// decoded struct).
-	var envelope struct {
-		Metadata struct {
-			Namespace string `json:"namespace"`
-		} `json:"metadata"`
-		Spec json.RawMessage `json:"spec"`
-	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		writeAPIError(w, ErrClusterUpdateInvalidBody, h.logger)
-		return
-	}
-	if err := validation.ValidateAccountNamespace(envelope.Metadata.Namespace, accountID); err != nil {
-		writeAPIError(w, ErrClusterUpdateNamespaceMismatch, h.logger)
-		return
-	}
-
-	// Reject absent spec (nil) and empty spec object ({}) — both are no-ops
-	// that indicate a malformed request rather than a deliberate partial update.
-	if len(envelope.Spec) == 0 || string(envelope.Spec) == "{}" {
-		writeAPIError(w, ErrClusterUpdateMissingFields, h.logger)
+	envelope, rawSpec, apiErr := h.parseUpdateRequest(body, accountID)
+	if apiErr != nil {
+		writeAPIError(w, *apiErr, h.logger)
 		return
 	}
 
 	h.logger.Info("updating cluster", "account_id", accountID, "cluster_name", clusterName)
 
-	// Validate using the raw spec map so only fields the client actually sent
-	// are checked — avoids false positives from zero-valued absent fields when
-	// the body is decoded into a full struct.
-	var rawSpec map[string]any
-	if err := json.Unmarshal(envelope.Spec, &rawSpec); err != nil {
-		writeAPIError(w, ErrClusterUpdateInvalidBody, h.logger)
-		return
-	}
-	// Reject semantically empty specs (nil, empty decoded maps, whitespace variants).
-	if len(rawSpec) == 0 {
-		writeAPIError(w, ErrClusterUpdateMissingFields, h.logger)
-		return
-	}
 	var updated *hyperfleetv1alpha1.Cluster
 	var validationErr validation.ValidationErrors
 	var mergeErr error
@@ -445,26 +519,12 @@ func (h *ClusterHandler) Update(w http.ResponseWriter, r *http.Request) {
 			mergeErr = err
 			return err
 		}
-		queueURL, region := clusterTerminationHandlerQueue(current)
-		queueChanged := queueURL != oldQueueURL || region != oldRegion
-		if queueChanged && queueURL != "" {
-			existing, err := h.db.ListClusters(ctx, accountID)
-			if err != nil {
-				return err
-			}
-			if errs := validation.ValidateSpotTerminationHandlerQueueURL(queueURL, region, terminationHandlerQueueURLs(existing.Items, current.Name)); errs != nil {
-				validationErr = errs
-				return fmt.Errorf("invalid cluster update")
-			}
+
+		if err := h.validateAndClaimSpotQueue(ctx, accountID, clusterName, current, oldQueueURL, oldRegion, &validationErr); err != nil {
+			return err
 		}
-		if queueChanged && queueURL != "" {
-			if _, err := h.db.ClaimSpotTerminationQueue(ctx, accountID, queueURL, clusterName); err != nil {
-				if hyperfleetdb.IsAlreadyExists(err) {
-					validationErr = validation.SpotTerminationHandlerQueueAlreadyInUse()
-					return fmt.Errorf("invalid cluster update")
-				}
-				return err
-			}
+		if err := h.validateRegistryConfigAfterMerge(current, &validationErr); err != nil {
+			return err
 		}
 		if err := h.db.UpdateCluster(ctx, current); err != nil {
 			return err
