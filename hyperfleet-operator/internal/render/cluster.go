@@ -287,59 +287,80 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, clusterID, ns, hostedClu
 		}
 	}
 
-	// Map ImageConfiguration fields from HyperFleet to HyperShift ImageSpec
+	// Map ImageConfiguration fields from HyperFleet to HyperShift ImageSpec.
+	// CRITICAL: We must clear Configuration.Image created by the JSON round-trip to avoid
+	// passing through unsupported fields like imageStreamImportMode. We only recreate Image
+	// if we have actual fields to populate. If empty, leave it nil to avoid marshaling
+	// zero-value fields that don't have omitempty tags.
 	if hcSpec.Configuration != nil && hcSpec.Configuration.Image != nil {
 		img := hcSpec.Configuration.Image
-		hcSpec.Configuration.Image = &configv1.ImageSpec{}
 
-		if len(img.RegistrySources.AllowedRegistries) > 0 ||
+		// Clear the Image that came from JSON round-trip
+		hcSpec.Configuration.Image = nil
+
+		// Only recreate if we have fields to populate
+		hasRegistrySources := len(img.RegistrySources.AllowedRegistries) > 0 ||
 			len(img.RegistrySources.BlockedRegistries) > 0 ||
-			len(img.RegistrySources.InsecureRegistries) > 0 {
-			hcSpec.Configuration.Image.RegistrySources = configv1.RegistrySources{
-				AllowedRegistries:  img.RegistrySources.AllowedRegistries,
-				BlockedRegistries:  img.RegistrySources.BlockedRegistries,
-				InsecureRegistries: img.RegistrySources.InsecureRegistries,
-			}
-		}
+			len(img.RegistrySources.InsecureRegistries) > 0
+		hasAllowedForImport := len(img.AllowedRegistriesForImport) > 0
 
-		if len(img.AllowedRegistriesForImport) > 0 {
-			locations := make([]configv1.RegistryLocation, 0, len(img.AllowedRegistriesForImport))
-			for _, loc := range img.AllowedRegistriesForImport {
-				locations = append(locations, configv1.RegistryLocation{
-					DomainName: loc.DomainName,
-					Insecure:   loc.Insecure,
-				})
+		if hasRegistrySources || hasAllowedForImport {
+			hcSpec.Configuration.Image = &configv1.ImageSpec{}
+
+			if hasRegistrySources {
+				hcSpec.Configuration.Image.RegistrySources = configv1.RegistrySources{
+					AllowedRegistries:  img.RegistrySources.AllowedRegistries,
+					BlockedRegistries:  img.RegistrySources.BlockedRegistries,
+					InsecureRegistries: img.RegistrySources.InsecureRegistries,
+				}
 			}
-			hcSpec.Configuration.Image.AllowedRegistriesForImport = locations
+
+			if hasAllowedForImport {
+				locations := make([]configv1.RegistryLocation, 0, len(img.AllowedRegistriesForImport))
+				for _, loc := range img.AllowedRegistriesForImport {
+					locations = append(locations, configv1.RegistryLocation{
+						DomainName: loc.DomainName,
+						Insecure:   loc.Insecure,
+					})
+				}
+				hcSpec.Configuration.Image.AllowedRegistriesForImport = locations
+			}
 		}
 	} else if cluster.Spec.HostedCluster.Configuration != nil &&
 		cluster.Spec.HostedCluster.Configuration.Image != nil {
+		// Source has Image but hcSpec doesn't (shouldn't happen with JSON round-trip, but defensive)
 		if hcSpec.Configuration == nil {
 			hcSpec.Configuration = &hypershiftv1beta1.ClusterConfiguration{}
 		}
 
 		img := cluster.Spec.HostedCluster.Configuration.Image
-		hcSpec.Configuration.Image = &configv1.ImageSpec{}
 
-		if len(img.RegistrySources.AllowedRegistries) > 0 ||
+		hasRegistrySources := len(img.RegistrySources.AllowedRegistries) > 0 ||
 			len(img.RegistrySources.BlockedRegistries) > 0 ||
-			len(img.RegistrySources.InsecureRegistries) > 0 {
-			hcSpec.Configuration.Image.RegistrySources = configv1.RegistrySources{
-				AllowedRegistries:  img.RegistrySources.AllowedRegistries,
-				BlockedRegistries:  img.RegistrySources.BlockedRegistries,
-				InsecureRegistries: img.RegistrySources.InsecureRegistries,
-			}
-		}
+			len(img.RegistrySources.InsecureRegistries) > 0
+		hasAllowedForImport := len(img.AllowedRegistriesForImport) > 0
 
-		if len(img.AllowedRegistriesForImport) > 0 {
-			locations := make([]configv1.RegistryLocation, 0, len(img.AllowedRegistriesForImport))
-			for _, loc := range img.AllowedRegistriesForImport {
-				locations = append(locations, configv1.RegistryLocation{
-					DomainName: loc.DomainName,
-					Insecure:   loc.Insecure,
-				})
+		if hasRegistrySources || hasAllowedForImport {
+			hcSpec.Configuration.Image = &configv1.ImageSpec{}
+
+			if hasRegistrySources {
+				hcSpec.Configuration.Image.RegistrySources = configv1.RegistrySources{
+					AllowedRegistries:  img.RegistrySources.AllowedRegistries,
+					BlockedRegistries:  img.RegistrySources.BlockedRegistries,
+					InsecureRegistries: img.RegistrySources.InsecureRegistries,
+				}
 			}
-			hcSpec.Configuration.Image.AllowedRegistriesForImport = locations
+
+			if hasAllowedForImport {
+				locations := make([]configv1.RegistryLocation, 0, len(img.AllowedRegistriesForImport))
+				for _, loc := range img.AllowedRegistriesForImport {
+					locations = append(locations, configv1.RegistryLocation{
+						DomainName: loc.DomainName,
+						Insecure:   loc.Insecure,
+					})
+				}
+				hcSpec.Configuration.Image.AllowedRegistriesForImport = locations
+			}
 		}
 	}
 
