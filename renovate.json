@@ -9,6 +9,9 @@
     "tekton"
   ],
   "timezone": "UTC",
+  "constraints": {
+    "go": "1.26"
+  },
   "dockerfile": {
     "managerFilePatterns": [
       "/^Dockerfile$/",
@@ -56,6 +59,17 @@
         "dependencies",
         "docker"
       ]
+    },
+    {
+      "description": "Never bump go/toolchain directives; Go upgrades stay manual",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["golang", "toolchain"],
+      "enabled": false
+    },
+    {
+      "description": "Skip module updates that require newer than Go 1.26",
+      "matchManagers": ["gomod"],
+      "constraintsFiltering": "strict"
     },
     {
       "description": "Batch + automerge patch/minor/digest Go module updates when Prow + Konflux pass",
