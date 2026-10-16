@@ -43,6 +43,14 @@ func NodePoolResource(nodePool *hyperfleetv1alpha1.NodePool, cluster *hyperfleet
 	if err != nil {
 		return Resource{}, fmt.Errorf("converting NodePoolSpec for nodepool %s/%s: %w", ns, npName, err)
 	}
+	managementNodePoolName := npName
+	if aws := npSpec.Platform.AWS; aws != nil &&
+		aws.Placement != nil &&
+		aws.Placement.MarketType == hypershiftv1beta1.MarketTypeSpot {
+		// Spot pools use a cluster-qualified management name. Keep existing
+		// non-Spot NodePool names unchanged.
+		managementNodePoolName = fmt.Sprintf("%s-%s", clusterName, npName)
+	}
 	npSpec.ClusterName = hostedClusterName
 	// NodePools without an explicit release follow the parent cluster's.
 	if npSpec.Release.Image == "" {
@@ -90,14 +98,14 @@ func NodePoolResource(nodePool *hyperfleetv1alpha1.NodePool, cluster *hyperfleet
 
 	return Resource{
 		Group: "hypershift.openshift.io", Version: "v1beta1", Resource: "nodepools",
-		Name: npName, Namespace: ns,
+		Name: managementNodePoolName, Namespace: ns,
 		Object: &hypershiftv1beta1.NodePool{
 			TypeMeta: metav1.TypeMeta{
 				APIVersion: "hypershift.openshift.io/v1beta1",
 				Kind:       "NodePool",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:        npName,
+				Name:        managementNodePoolName,
 				Namespace:   ns,
 				Labels:      clusterLabels(clusterID),
 				Annotations: annotations,

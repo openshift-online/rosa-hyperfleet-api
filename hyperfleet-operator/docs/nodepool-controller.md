@@ -20,7 +20,7 @@ sequenceDiagram
         NPC->>PG: Set phase=WaitingForCluster, requeue
     else Cluster has Bound Placement
         NPC->>NPC: Generate NodePool manifest
-        NPC->>DDB: Write ApplyDesire (nodepools/{clusterName}-{nodePoolName})
+        NPC->>DDB: Write ApplyDesire for the rendered management NodePool name
         NPC->>DDB: Write ReadDesire for NodePool status
         NPC->>PG: Set phase=Provisioning
         KA->>DDB: Read ApplyDesires
@@ -44,11 +44,13 @@ sequenceDiagram
 
 ### Generated Resource
 
-The NodePool manifest name on the MC is `{clusterName}-{nodePoolName}` and lives in namespace `clusters-{clusterID}`.
+The public NodePool name is `{clusterName}.{childName}`. Non-Spot NodePools retain
+the child name on the management cluster. AWS Spot NodePools use
+`{clusterName}-{childName}`. All NodePools live in namespace `clusters-{clusterID}`.
 
 | Resource              | Name                           | Purpose                                   |
 | --------------------- | ------------------------------ | ----------------------------------------- |
-| NodePool (HyperShift) | `{clusterName}-{nodePoolName}` | Worker node set on the management cluster |
+| NodePool (HyperShift) | `{childName}` (non-Spot); `{clusterName}-{childName}` (Spot) | Worker node set on the management cluster |
 
 ## Deletion Flow
 
@@ -64,8 +66,8 @@ sequenceDiagram
     User->>PG: Delete NodePool CR (sets DeletionTimestamp)
     NPC->>PG: Detect DeletionTimestamp, set phase=Deleting
     NPC->>PG: Look up parent Cluster → get PlacementRef
-    NPC->>DDB: Delete ApplyDesire spec for nodepools/{clusterName}-{nodePoolName}
-    NPC->>DDB: Write DeleteDesire for nodepools/{clusterName}-{nodePoolName}
+    NPC->>DDB: Delete ApplyDesire spec for the rendered management NodePool name
+    NPC->>DDB: Write DeleteDesire for the rendered management NodePool name
     NPC->>DDB: Poll status table for deletion confirmation
     NPC->>NPC: Requeue until confirmed
     NPC->>DDB: Delete ReadDesire spec
