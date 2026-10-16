@@ -1466,8 +1466,7 @@
   },
   {
     "fieldPath": "spec.nodePool.nodeVolumeDetachTimeout",
-    "writeMode": "service-set",
-    "hidden": true,
+    "writeMode": "mutable",
     "ownerType": "NodePool",
     "ownerGVK": "hyperfleet.io/v1alpha1.NodePool"
   },

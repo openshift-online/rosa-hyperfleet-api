@@ -8833,6 +8833,9 @@ components:
                                   type: string
                               description: nodeLabels propagates a list of labels to Nodes, only once on creation.
                               type: object
+                          nodeVolumeDetachTimeout:
+                              description: nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+                              type: string
                           platform:
                               description: platform specifies the underlying infrastructure provider for the NodePool
                               properties:
@@ -9588,6 +9591,9 @@ components:
                                               type: string
                                           description: nodeLabels propagates a list of labels to Nodes, only once on creation.
                                           type: object
+                                      nodeVolumeDetachTimeout:
+                                          description: nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+                                          type: string
                                       platform:
                                           description: platform specifies the underlying infrastructure provider for the NodePool
                                           properties:
@@ -10277,6 +10283,9 @@ components:
                   type: string
               description: nodeLabels propagates a list of labels to Nodes, only once on creation.
               type: object
+          nodeVolumeDetachTimeout:
+              description: nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+              type: string
           platform:
               $ref: '#/components/schemas/NodePoolPlatform'
           release:

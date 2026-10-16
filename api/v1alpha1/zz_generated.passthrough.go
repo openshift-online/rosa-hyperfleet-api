@@ -221,8 +221,8 @@ type NodePoolSpecPassthrough struct {
 	// +optional
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
 	// nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
-	// +k8s:openapi-gen=false
-	// +hyperfleet:write-mode=service-set
+	// +k8s:openapi-gen=true
+	// +hyperfleet:write-mode=mutable
 	// +optional
 	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout,omitempty"`
 	// nodeLabels propagates a list of labels to Nodes, only once on creation.

@@ -14,9 +14,9 @@ func TestFilterHiddenFieldsRetainsMutableNodePoolLabelsAndTaints(t *testing.T) {
 		"NodePoolSpecPassthrough": {
 			Type: "object",
 			Properties: map[string]apiextensionsv1.JSONSchemaProps{
-				"nodeLabels":              {Type: "object"},
-				"taints":                  {Type: "array"},
-				"nodeVolumeDetachTimeout": {Type: "string"},
+				"nodeLabels":  {Type: "object"},
+				"taints":      {Type: "array"},
+				"pausedUntil": {Type: "string"},
 			},
 		},
 	}
@@ -30,8 +30,8 @@ func TestFilterHiddenFieldsRetainsMutableNodePoolLabelsAndTaints(t *testing.T) {
 			t.Errorf("mutable field %q was filtered from the public schema", visible)
 		}
 	}
-	if _, ok := properties["nodeVolumeDetachTimeout"]; ok {
-		t.Error("service-set field nodeVolumeDetachTimeout was not filtered from the public schema")
+	if _, ok := properties["pausedUntil"]; ok {
+		t.Error("service-set field pausedUntil was not filtered from the public schema")
 	}
 }
 

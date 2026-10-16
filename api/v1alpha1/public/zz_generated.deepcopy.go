@@ -990,6 +990,11 @@ func (in *NodePoolSpecPassthrough) DeepCopyInto(out *NodePoolSpecPassthrough) {
 		*out = new(metav1.Duration)
 		**out = **in
 	}
+	if in.NodeVolumeDetachTimeout != nil {
+		in, out := &in.NodeVolumeDetachTimeout, &out.NodeVolumeDetachTimeout
+		*out = new(metav1.Duration)
+		**out = **in
+	}
 	if in.NodeLabels != nil {
 		in, out := &in.NodeLabels, &out.NodeLabels
 		*out = make(map[string]string, len(*in))

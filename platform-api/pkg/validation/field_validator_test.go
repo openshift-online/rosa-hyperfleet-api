@@ -2,11 +2,13 @@ package validation
 
 import (
 	"testing"
+	"time"
 
 	rest "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-hyperfleet-api/hack/api-codegen/pkg/registry"
 	"github.com/openshift-online/rosa-hyperfleet-api/platform-api/internal/codegen/featuregate"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func newTestValidator(entries map[string]registry.FieldMeta) *FieldValidator {
@@ -713,5 +715,43 @@ func TestValidateUpdate_AllowsImageTypeUnchanged(t *testing.T) {
 	errs := v.ValidateUpdate(spec, spec, featuregate.Default)
 	if errs != nil {
 		t.Errorf("expected no errors when imageType is unchanged, got %v", errs)
+	}
+}
+
+// nodeVolumeDetachTimeout was platform-managed until it was enabled for v2
+// alongside its sibling nodeDrainTimeout. Customers can now set it on create
+// and retune it afterwards.
+func TestValidateCreate_AllowsNodeVolumeDetachTimeout(t *testing.T) {
+	v := NewFieldValidator("NodePool")
+
+	spec := &rest.NodePoolSpec{
+		NodePool: rest.NodePoolSpecPassthrough{
+			NodeVolumeDetachTimeout: &metav1.Duration{Duration: 25 * time.Minute},
+		},
+	}
+
+	errs := v.ValidateCreate(spec, featuregate.Default)
+	if errs != nil {
+		t.Errorf("expected no errors setting nodeVolumeDetachTimeout on create, got %v", errs)
+	}
+}
+
+func TestValidateUpdate_AllowsNodeVolumeDetachTimeoutChange(t *testing.T) {
+	v := NewFieldValidator("NodePool")
+
+	existing := &rest.NodePoolSpec{
+		NodePool: rest.NodePoolSpecPassthrough{
+			NodeVolumeDetachTimeout: &metav1.Duration{Duration: 25 * time.Minute},
+		},
+	}
+	updated := &rest.NodePoolSpec{
+		NodePool: rest.NodePoolSpecPassthrough{
+			NodeVolumeDetachTimeout: &metav1.Duration{Duration: 45 * time.Minute},
+		},
+	}
+
+	errs := v.ValidateUpdate(updated, existing, featuregate.Default)
+	if errs != nil {
+		t.Errorf("expected no errors retuning nodeVolumeDetachTimeout, got %v", errs)
 	}
 }

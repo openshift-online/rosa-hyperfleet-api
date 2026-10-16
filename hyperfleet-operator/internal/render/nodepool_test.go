@@ -2,6 +2,7 @@ package render
 
 import (
 	"testing"
+	"time"
 
 	hyperfleetv1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -552,5 +553,41 @@ func TestNodePoolUpgradeBudgetDoesNotAliasSource(t *testing.T) {
 	}
 	if np.Spec.Management.Replace.RollingUpdate.MaxSurge == nodePool.Spec.MaxSurge {
 		t.Error("MaxSurge aliases the source NodePool")
+	}
+}
+
+// nodeVolumeDetachTimeout is a passthrough field, so enabling it in the public
+// API is only useful if the value actually reaches the HyperShift NodePool.
+func TestNodePoolPassesThroughNodeVolumeDetachTimeout(t *testing.T) {
+	nodePool := testNodePool()
+	nodePool.Spec.NodePool.NodeVolumeDetachTimeout = &metav1.Duration{Duration: 25 * time.Minute}
+	nodePool.Spec.NodePool.NodeDrainTimeout = &metav1.Duration{Duration: 10 * time.Minute}
+
+	resource, err := NodePoolResource(nodePool, testCluster())
+	if err != nil {
+		t.Fatalf("NodePoolResource: %v", err)
+	}
+	np := resource.Object.(*hypershiftv1beta1.NodePool)
+
+	if got := np.Spec.NodeVolumeDetachTimeout; got == nil || got.Duration != 25*time.Minute {
+		t.Errorf("NodeVolumeDetachTimeout = %v, want 25m", got)
+	}
+	if got := np.Spec.NodeDrainTimeout; got == nil || got.Duration != 10*time.Minute {
+		t.Errorf("NodeDrainTimeout = %v, want 10m", got)
+	}
+}
+
+func TestNodePoolOmitsUnsetDrainTimeouts(t *testing.T) {
+	resource, err := NodePoolResource(testNodePool(), testCluster())
+	if err != nil {
+		t.Fatalf("NodePoolResource: %v", err)
+	}
+	np := resource.Object.(*hypershiftv1beta1.NodePool)
+
+	if np.Spec.NodeVolumeDetachTimeout != nil {
+		t.Errorf("NodeVolumeDetachTimeout = %v, want nil", np.Spec.NodeVolumeDetachTimeout)
+	}
+	if np.Spec.NodeDrainTimeout != nil {
+		t.Errorf("NodeDrainTimeout = %v, want nil", np.Spec.NodeDrainTimeout)
 	}
 }
