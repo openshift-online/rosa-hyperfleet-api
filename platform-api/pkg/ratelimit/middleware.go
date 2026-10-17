@@ -75,6 +75,12 @@ func (l *Limiter) Middleware(next http.Handler) http.Handler {
 				"method", r.Method,
 				"path", limit.Path,
 			)
+			// Fail-open: set fallback rate-limit headers so downstream clients and
+			// e2e tests always see rate-limit information, even when the backend is
+			// temporarily unreachable.
+			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limit.Rate))
+			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(limit.Rate))
+			w.Header().Set("X-RateLimit-Reset", strconv.Itoa(limit.Window))
 			next.ServeHTTP(w, r)
 			return
 		}

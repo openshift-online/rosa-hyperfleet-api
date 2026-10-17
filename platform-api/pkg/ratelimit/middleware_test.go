@@ -238,6 +238,15 @@ func TestMiddleware_FailOpenWhenRedisDown(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected fail-open 200, got %d", w.Code)
 	}
+	if w.Header().Get("X-RateLimit-Limit") != "5" {
+		t.Errorf("expected fallback X-RateLimit-Limit=5, got %s", w.Header().Get("X-RateLimit-Limit"))
+	}
+	if w.Header().Get("X-RateLimit-Remaining") != "5" {
+		t.Errorf("expected fallback X-RateLimit-Remaining=5, got %s", w.Header().Get("X-RateLimit-Remaining"))
+	}
+	if w.Header().Get("X-RateLimit-Reset") != "1" {
+		t.Errorf("expected fallback X-RateLimit-Reset=1, got %s", w.Header().Get("X-RateLimit-Reset"))
+	}
 }
 
 func TestMiddleware_RecoverAfterWindow(t *testing.T) {
