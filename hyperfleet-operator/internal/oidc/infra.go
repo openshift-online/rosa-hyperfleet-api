@@ -51,6 +51,7 @@ func SecretName(accountID, configID string) string {
 type InfraClient interface {
 	StorePrivateKey(ctx context.Context, accountID, configID string, privateKeyPEM []byte) error
 	PrivateKeyExists(ctx context.Context, accountID, configID string) (bool, error)
+	ReadPrivateKey(ctx context.Context, accountID, configID string) ([]byte, error)
 	ReadCrossAccountSecret(ctx context.Context, secretARN, roleARN string) ([]byte, error)
 	DeletePrivateKey(ctx context.Context, accountID, configID string) error
 	ComputeThumbprint(ctx context.Context, issuerURL string) (string, error)
@@ -138,6 +139,22 @@ func (c *AWSClient) StorePrivateKey(ctx context.Context, accountID, configID str
 		}
 	}
 	return nil
+}
+
+// ReadPrivateKey reads back the OIDC signing key from Secrets Manager
+// using GetSecretValue, confirming the secret value is actually readable.
+func (c *AWSClient) ReadPrivateKey(ctx context.Context, accountID, configID string) ([]byte, error) {
+	secretName := SecretName(accountID, configID)
+	result, err := c.sm.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: aws.String(secretName),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read private key: %w", err)
+	}
+	if result.SecretBinary != nil {
+		return result.SecretBinary, nil
+	}
+	return []byte(aws.ToString(result.SecretString)), nil
 }
 
 func (c *AWSClient) PrivateKeyExists(ctx context.Context, accountID, configID string) (bool, error) {
