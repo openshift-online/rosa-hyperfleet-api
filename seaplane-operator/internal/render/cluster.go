@@ -1,6 +1,7 @@
 package render
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"path"
@@ -13,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/utils/ptr"
 
 	seaplanev1alpha1 "github.com/openshift-online/rosa-seaplane-api/api/v1alpha1"
@@ -388,22 +390,30 @@ func hostedCluster(cluster *seaplanev1alpha1.Cluster, clusterID, ns, hostedClust
 		annotations[hypershiftv1beta1.ControlPlaneOperatorImageAnnotation] = controlPlaneOperatorImage
 	}
 
+	hc := &hypershiftv1beta1.HostedCluster{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "hypershift.openshift.io/v1beta1",
+			Kind:       "HostedCluster",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        hostedClusterName,
+			Namespace:   ns,
+			Labels:      clusterLabels(clusterID),
+			Annotations: annotations,
+		},
+		Spec: *hcSpec,
+	}
+
+	// Convert to unstructured to remove feature-gated fields that lack omitempty
+	unstructuredHC, err := toUnstructuredAndStripFields(hc)
+	if err != nil {
+		return Resource{}, fmt.Errorf("convert to unstructured and strip fields: %w", err)
+	}
+
 	return Resource{
 		Group: "hypershift.openshift.io", Version: "v1beta1", Resource: "hostedclusters",
 		Name: hostedClusterName, Namespace: ns,
-		Object: &hypershiftv1beta1.HostedCluster{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: "hypershift.openshift.io/v1beta1",
-				Kind:       "HostedCluster",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        hostedClusterName,
-				Namespace:   ns,
-				Labels:      clusterLabels(clusterID),
-				Annotations: annotations,
-			},
-			Spec: *hcSpec,
-		},
+		Object: unstructuredHC,
 	}, nil
 }
 
@@ -526,4 +536,35 @@ func sshKey(clusterID, ns string) Resource {
 			},
 		},
 	}
+}
+
+// toUnstructuredAndStripFields converts a HostedCluster to unstructured.Unstructured
+// and removes feature-gated fields that may not exist in the CRD schema.
+// Specifically imageStreamImportMode which lacks omitempty and causes server-side
+// apply failures when not in the schema. Using unstructured ensures the removed
+// fields stay removed when the object is marshaled by client-go.
+func toUnstructuredAndStripFields(hc *hypershiftv1beta1.HostedCluster) (*unstructured.Unstructured, error) {
+	// Marshal the HostedCluster to JSON
+	data, err := json.Marshal(hc)
+	if err != nil {
+		return nil, fmt.Errorf("marshal HostedCluster: %w", err)
+	}
+
+	// Unmarshal into a map
+	var obj map[string]interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil, fmt.Errorf("unmarshal to map: %w", err)
+	}
+
+	// Navigate to spec.configuration.image and remove imageStreamImportMode
+	if spec, ok := obj["spec"].(map[string]interface{}); ok {
+		if config, ok := spec["configuration"].(map[string]interface{}); ok {
+			if image, ok := config["image"].(map[string]interface{}); ok {
+				delete(image, "imageStreamImportMode")
+			}
+		}
+	}
+
+	// Return as unstructured
+	return &unstructured.Unstructured{Object: obj}, nil
 }
