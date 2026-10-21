@@ -405,6 +405,62 @@ func TestValidateUpdateWithRawSpec_UsesExplicitImmutableFieldValues(t *testing.T
 	}
 }
 
+func TestValidateUpdateWithRawSpec_IgnoresOmittedValueFields(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.nodePool.platform.type": {FieldPath: "spec.nodePool.platform.type", WriteMode: registry.Immutable},
+		"spec.nodePool.management":    {FieldPath: "spec.nodePool.management", WriteMode: registry.ServiceSet},
+		"spec.nodePool.replicas":      {FieldPath: "spec.nodePool.replicas", WriteMode: registry.Mutable},
+	})
+	type platformSpec struct {
+		Type string `json:"type"`
+	}
+	type managementSpec struct {
+		UpgradeType string `json:"upgradeType"`
+	}
+	type nodePoolSpec struct {
+		Platform   platformSpec   `json:"platform"`
+		Management managementSpec `json:"management"`
+		Replicas   *int32         `json:"replicas,omitempty"`
+	}
+	type spec struct {
+		NodePool nodePoolSpec `json:"nodePool"`
+	}
+
+	oldReplicas, newReplicas := int32(2), int32(3)
+	existing := spec{NodePool: nodePoolSpec{
+		Platform:   platformSpec{Type: "AWS"},
+		Management: managementSpec{UpgradeType: "Replace"},
+		Replicas:   &oldReplicas,
+	}}
+	partialUpdate := spec{NodePool: nodePoolSpec{Replicas: &newReplicas}}
+	rawSpec := map[string]any{"nodePool": map[string]any{"replicas": float64(3)}}
+
+	if errs := v.ValidateUpdateWithRawSpec(partialUpdate, rawSpec, existing, featuregate.Default); errs != nil {
+		t.Fatalf("partial replica update should ignore omitted platform.type and management fields: %v", errs)
+	}
+}
+
+func TestValidateUpdateWithRawSpec_RejectsNullParentOfServiceSetField(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.nodePool.management": {FieldPath: "spec.nodePool.management", WriteMode: registry.ServiceSet},
+	})
+	type managementSpec struct {
+		UpgradeType string `json:"upgradeType"`
+	}
+	type nodePoolSpec struct {
+		Management managementSpec `json:"management"`
+	}
+	type spec struct {
+		NodePool nodePoolSpec `json:"nodePool"`
+	}
+
+	existing := spec{NodePool: nodePoolSpec{Management: managementSpec{UpgradeType: "Replace"}}}
+	errs := v.ValidateUpdateWithRawSpec(spec{}, map[string]any{"nodePool": nil}, existing, featuregate.Default)
+	if len(errs) != 1 || errs[0].Field != "spec.nodePool.management" {
+		t.Fatalf("ValidateUpdateWithRawSpec() returned %v, want service-set error for spec.nodePool.management", errs)
+	}
+}
+
 func TestValidateUpdateWithRawSpec_RequiresRawSpec(t *testing.T) {
 	v := newTestValidator(map[string]registry.FieldMeta{})
 	type testSpec struct {

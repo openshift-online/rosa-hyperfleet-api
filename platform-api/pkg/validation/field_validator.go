@@ -81,7 +81,16 @@ func (v *FieldValidator) validateUpdate(newSpec, rawSpec, existingSpec any, fs f
 	if newSpec == nil {
 		return nil
 	}
-	newFields := flattenToFieldPaths(newSpec)
+	fieldsToValidate := newSpec
+	var rawFields map[string]any
+	if rawSpec != nil {
+		// The decoded type includes zero values for omitted non-pointer fields.
+		// For partial updates, validate only paths explicitly present in the raw
+		// request so omitted immutable and service-set fields remain unchanged.
+		fieldsToValidate = rawSpec
+		rawFields = flattenToFieldPaths(rawSpec)
+	}
+	newFields := flattenToFieldPaths(fieldsToValidate)
 	pointers := make(map[string]bool)
 	collectPointerSet("spec", reflect.ValueOf(newSpec), pointers)
 	var existingFields map[string]any
@@ -89,19 +98,18 @@ func (v *FieldValidator) validateUpdate(newSpec, rawSpec, existingSpec any, fs f
 		existingFields = flattenToFieldPaths(existingSpec)
 	}
 	errs := v.validate(newFields, existingFields, OperationUpdate, fs, pointers)
-	if rawSpec != nil && existingFields != nil {
-		rawFields := flattenToFieldPaths(rawSpec)
+	if rawFields != nil && existingFields != nil {
 		errs = appendUniqueValidationErrors(errs, v.validateRawImmutableChanges(rawFields, existingFields, fs))
+		errs = appendUniqueValidationErrors(errs, v.validateRawServiceSetClears(rawFields, existingFields, fs))
 	}
 	return errs
 }
 
-// ValidateUpdateWithRawSpec validates an update using both its decoded form and
-// the original JSON spec. newSpec is the typed value used by the regular field
-// checks; rawSpec is the request spec as a map and preserves which fields were
-// explicitly sent, including null and zero values that typed omitempty fields
-// may lose. A missing or empty raw spec is rejected so immutable-field checks
-// cannot silently fall back to the typed representation.
+// ValidateUpdateWithRawSpec validates the fields explicitly present in the
+// original JSON spec against the existing object. newSpec supplies pointer
+// presence information; rawSpec preserves omitted fields and explicit null/zero
+// values that a typed partial update may lose. A missing or empty raw spec is
+// rejected so validation cannot silently fall back to decoded zero values.
 func (v *FieldValidator) ValidateUpdateWithRawSpec(newSpec any, rawSpec map[string]any, existingSpec any, fs featuregate.FeatureSet) ValidationErrors {
 	if newSpec == nil {
 		return ValidationErrors{&ValidationError{Field: "spec", Reason: "typed spec is required for update validation"}}
@@ -132,6 +140,26 @@ func (v *FieldValidator) validateRawImmutableChanges(rawFields, existingFields m
 		// even though the flattened raw spec has no entry for the immutable leaf.
 		if oldExists && !isZeroValue(oldValue) && hasNullAncestor(fieldPath, rawFields) {
 			errs = append(errs, &ValidationError{Field: fieldPath, Reason: immutableFieldErrorReason})
+		}
+	}
+
+	return errs
+}
+
+func (v *FieldValidator) validateRawServiceSetClears(rawFields, existingFields map[string]any, fs featuregate.FeatureSet) ValidationErrors {
+	var errs ValidationErrors
+	fieldMetaMap := v.typedRegistry[v.resourceType]
+
+	for fieldPath, meta := range fieldMetaMap {
+		if meta.Hidden || isStructuralContainer(fieldPath, fieldMetaMap) || effectiveWriteMode(meta, fs) != registry.ServiceSet {
+			continue
+		}
+		oldValue, oldExists := existingFields[fieldPath]
+		if oldExists && !isZeroValue(oldValue) && hasNullAncestor(fieldPath, rawFields) {
+			errs = append(errs, &ValidationError{
+				Field:  fieldPath,
+				Reason: "field is platform-managed and cannot be set by customers",
+			})
 		}
 	}
 
