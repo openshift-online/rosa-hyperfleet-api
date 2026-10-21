@@ -87,16 +87,16 @@ func assertClusterConfiguration(t *testing.T, output schemaOutput) {
 		t.Fatal("ClusterConfiguration definition not found")
 	}
 
-	// The local type's markers expose authentication, ingress, proxy, scheduler,
+	// The local type's markers expose authentication, image, ingress, proxy, scheduler,
 	// kubelet, and machineConfig.
 	// If the upstream hypershiftv1beta1.ClusterConfiguration were used instead,
 	// all 10 sub-config fields would be present (no hidden markers).
-	for _, visible := range []string{"authentication", "ingress", "proxy", "scheduler", "kubelet", "machineConfig"} {
+	for _, visible := range []string{"authentication", "image", "ingress", "proxy", "scheduler", "kubelet", "machineConfig"} {
 		if _, found := cc.Properties[visible]; !found {
 			t.Errorf("expected visible property %q in ClusterConfiguration", visible)
 		}
 	}
-	for _, hidden := range []string{"apiServer", "featureGate", "image", "network", "oauth"} {
+	for _, hidden := range []string{"apiServer", "featureGate", "network", "oauth"} {
 		if _, found := cc.Properties[hidden]; found {
 			t.Errorf("property %q should be hidden in ClusterConfiguration (local markers not applied?)", hidden)
 		}

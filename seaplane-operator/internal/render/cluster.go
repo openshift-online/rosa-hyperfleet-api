@@ -1,10 +1,12 @@
 package render
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"path"
 	"slices"
+	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -12,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/utils/ptr"
 
 	seaplanev1alpha1 "github.com/openshift-online/rosa-seaplane-api/api/v1alpha1"
@@ -48,6 +51,12 @@ func ClusterResources(cluster *seaplanev1alpha1.Cluster, oidcSigningKeyExternal 
 	}
 	if cluster.Spec.AdditionalTrustBundle != nil {
 		resources = append(resources, additionalTrustBundle(clusterID, ns, *cluster.Spec.AdditionalTrustBundle))
+	}
+
+	// Create ConfigMap for registry additional trusted CA certificates if specified
+	if len(cluster.Spec.RegistryAdditionalTrustedCA) > 0 {
+		resources = append(resources,
+			registryAdditionalCA(clusterID, ns, cluster.Spec.RegistryAdditionalTrustedCA))
 	}
 
 	if oidcSigningKeyExternal {
@@ -157,6 +166,33 @@ func additionalTrustBundle(clusterID, ns, bundle string) Resource {
 	}
 }
 
+const registryAdditionalCAName = "registry-additional-ca"
+
+func registryAdditionalCA(clusterID, ns string, caCerts map[string]string) Resource {
+	// Normalize registry hostnames to valid ConfigMap keys by encoding colons as ".." (OpenShift convention).
+	normalizedData := make(map[string]string, len(caCerts))
+	for hostname, cert := range caCerts {
+		normalizedData[strings.ReplaceAll(hostname, ":", "..")] = cert
+	}
+
+	return Resource{
+		Group: "", Version: "v1", Resource: "configmaps",
+		Name: registryAdditionalCAName, Namespace: ns,
+		Object: &corev1.ConfigMap{
+			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      registryAdditionalCAName,
+				Namespace: ns,
+				Labels: map[string]string{
+					"hyperfleet.io/cluster-id":    clusterID,
+					"hyperfleet.io/resource-type": "registry-additional-ca",
+				},
+			},
+			Data: normalizedData,
+		},
+	}
+}
+
 func pullSecret(clusterID, ns string) Resource {
 	return Resource{
 		Group: "external-secrets.io", Version: "v1", Resource: "externalsecrets",
@@ -253,6 +289,55 @@ func hostedCluster(cluster *seaplanev1alpha1.Cluster, clusterID, ns, hostedClust
 		}
 	}
 
+	// Map ImageConfiguration fields from HyperFleet to HyperShift ImageSpec
+	if cluster.Spec.HostedCluster.Configuration != nil &&
+		cluster.Spec.HostedCluster.Configuration.Image != nil {
+		if hcSpec.Configuration == nil {
+			hcSpec.Configuration = &hypershiftv1beta1.ClusterConfiguration{}
+		}
+
+		img := cluster.Spec.HostedCluster.Configuration.Image
+		if len(img.RegistrySources.AllowedRegistries) > 0 ||
+			len(img.RegistrySources.BlockedRegistries) > 0 ||
+			len(img.RegistrySources.InsecureRegistries) > 0 {
+			if hcSpec.Configuration.Image == nil {
+				hcSpec.Configuration.Image = &configv1.ImageSpec{}
+			}
+			hcSpec.Configuration.Image.RegistrySources = configv1.RegistrySources{
+				AllowedRegistries:  img.RegistrySources.AllowedRegistries,
+				BlockedRegistries:  img.RegistrySources.BlockedRegistries,
+				InsecureRegistries: img.RegistrySources.InsecureRegistries,
+			}
+		}
+
+		if len(img.AllowedRegistriesForImport) > 0 {
+			if hcSpec.Configuration.Image == nil {
+				hcSpec.Configuration.Image = &configv1.ImageSpec{}
+			}
+			locations := make([]configv1.RegistryLocation, 0, len(img.AllowedRegistriesForImport))
+			for _, loc := range img.AllowedRegistriesForImport {
+				locations = append(locations, configv1.RegistryLocation{
+					DomainName: loc.DomainName,
+					Insecure:   loc.Insecure,
+				})
+			}
+			hcSpec.Configuration.Image.AllowedRegistriesForImport = locations
+		}
+	}
+
+	// AdditionalTrustedCA mapping (requires ConfigMap to be created)
+	if len(cluster.Spec.RegistryAdditionalTrustedCA) > 0 {
+		if hcSpec.Configuration == nil {
+			hcSpec.Configuration = &hypershiftv1beta1.ClusterConfiguration{}
+		}
+		if hcSpec.Configuration.Image == nil {
+			hcSpec.Configuration.Image = &configv1.ImageSpec{}
+		}
+		hcSpec.Configuration.Image.AdditionalTrustedCA = configv1.ConfigMapNameReference{
+			Name: registryAdditionalCAName,
+		}
+	}
+
 	// --- Defaults (only set if customer didn't specify) ---
 	if hcSpec.Etcd.ManagementType == "" {
 		hcSpec.Etcd = defaultEtcdSpec()
@@ -305,22 +390,30 @@ func hostedCluster(cluster *seaplanev1alpha1.Cluster, clusterID, ns, hostedClust
 		annotations[hypershiftv1beta1.ControlPlaneOperatorImageAnnotation] = controlPlaneOperatorImage
 	}
 
+	hc := &hypershiftv1beta1.HostedCluster{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "hypershift.openshift.io/v1beta1",
+			Kind:       "HostedCluster",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        hostedClusterName,
+			Namespace:   ns,
+			Labels:      clusterLabels(clusterID),
+			Annotations: annotations,
+		},
+		Spec: *hcSpec,
+	}
+
+	// Convert to unstructured to remove feature-gated fields that lack omitempty
+	unstructuredHC, err := toUnstructuredAndStripFields(hc)
+	if err != nil {
+		return Resource{}, fmt.Errorf("convert to unstructured and strip fields: %w", err)
+	}
+
 	return Resource{
 		Group: "hypershift.openshift.io", Version: "v1beta1", Resource: "hostedclusters",
 		Name: hostedClusterName, Namespace: ns,
-		Object: &hypershiftv1beta1.HostedCluster{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: "hypershift.openshift.io/v1beta1",
-				Kind:       "HostedCluster",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        hostedClusterName,
-				Namespace:   ns,
-				Labels:      clusterLabels(clusterID),
-				Annotations: annotations,
-			},
-			Spec: *hcSpec,
-		},
+		Object: unstructuredHC,
 	}, nil
 }
 
@@ -443,4 +536,35 @@ func sshKey(clusterID, ns string) Resource {
 			},
 		},
 	}
+}
+
+// toUnstructuredAndStripFields converts a HostedCluster to unstructured.Unstructured
+// and removes feature-gated fields that may not exist in the CRD schema.
+// Specifically imageStreamImportMode which lacks omitempty and causes server-side
+// apply failures when not in the schema. Using unstructured ensures the removed
+// fields stay removed when the object is marshaled by client-go.
+func toUnstructuredAndStripFields(hc *hypershiftv1beta1.HostedCluster) (*unstructured.Unstructured, error) {
+	// Marshal the HostedCluster to JSON
+	data, err := json.Marshal(hc)
+	if err != nil {
+		return nil, fmt.Errorf("marshal HostedCluster: %w", err)
+	}
+
+	// Unmarshal into a map
+	var obj map[string]interface{}
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil, fmt.Errorf("unmarshal to map: %w", err)
+	}
+
+	// Navigate to spec.configuration.image and remove imageStreamImportMode
+	if spec, ok := obj["spec"].(map[string]interface{}); ok {
+		if config, ok := spec["configuration"].(map[string]interface{}); ok {
+			if image, ok := config["image"].(map[string]interface{}); ok {
+				delete(image, "imageStreamImportMode")
+			}
+		}
+	}
+
+	// Return as unstructured
+	return &unstructured.Unstructured{Object: obj}, nil
 }
