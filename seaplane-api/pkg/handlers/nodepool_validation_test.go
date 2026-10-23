@@ -1,12 +1,13 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -19,8 +20,8 @@ import (
 
 	seaplanev1alpha1 "github.com/openshift-online/rosa-seaplane-api/api/v1alpha1"
 	public "github.com/openshift-online/rosa-seaplane-api/api/v1alpha1/public"
+	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/pkg/authz"
 	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/pkg/clients/seaplanedb"
-	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/pkg/middleware"
 )
 
 func TestValidateNodePoolReplicas(t *testing.T) {
@@ -57,7 +58,7 @@ func TestNodePoolHandlerCreateRejectsNegativeReplicas(t *testing.T) {
 	handler := newNodePoolValidationTestHandler(t)
 	body := `{"metadata":{"name":"test-cluster.pool-a","namespace":"account-` + accountID + `"},"spec":{"nodePool":{"replicas":-1}}}`
 	request := httptest.NewRequest(http.MethodPost, "/api/v0/nodepools", strings.NewReader(body))
-	request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+	request = request.WithContext(testContext(accountID))
 	response := httptest.NewRecorder()
 
 	handler.Create(response, request)
@@ -86,7 +87,7 @@ func TestNodePoolHandlerCreateRejectsInvalidEC2InstanceMetadataHttpTokens(t *tes
 			handler := newNodePoolValidationTestHandler(t)
 			body := `{"metadata":{"name":"my-cluster.pool-a","namespace":"account-` + accountID + `"},"spec":{"ec2InstanceMetadataHttpTokens":` + tt.value + `}}`
 			request := httptest.NewRequest(http.MethodPost, "/api/v0/nodepools", strings.NewReader(body))
-			request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+			request = request.WithContext(testContext(accountID))
 			response := httptest.NewRecorder()
 
 			handler.Create(response, request)
@@ -116,7 +117,7 @@ func TestNodePoolHandlerUpdateRejectsNegativeReplicas(t *testing.T) {
 	handler := newNodePoolValidationTestHandler(t, object)
 	body := `{"spec":{"nodePool":{"replicas":-1}}}`
 	request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName, strings.NewReader(body))
-	request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+	request = request.WithContext(testContext(accountID))
 	request = mux.SetURLVars(request, map[string]string{"id": poolName})
 	response := httptest.NewRecorder()
 
@@ -162,7 +163,7 @@ func TestNodePoolHandlerUpdateRejectsEC2InstanceMetadataHttpTokensChanges(t *tes
 			handler := newNodePoolValidationTestHandler(t, object)
 			body := `{"metadata":{"namespace":"account-` + accountID + `"},"spec":{"ec2InstanceMetadataHttpTokens":` + tt.value + `}}`
 			request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName, strings.NewReader(body))
-			request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+			request = request.WithContext(testContext(accountID))
 			request = mux.SetURLVars(request, map[string]string{"id": poolName})
 			response := httptest.NewRecorder()
 
@@ -200,7 +201,7 @@ func TestNodePoolHandlerUpdateAllowsUnchangedEC2InstanceMetadataHttpTokens(t *te
 	handler := newNodePoolValidationTestHandler(t, object)
 	body := `{"metadata":{"namespace":"account-` + accountID + `"},"spec":{"ec2InstanceMetadataHttpTokens":"required"}}`
 	request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName, strings.NewReader(body))
-	request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+	request = request.WithContext(testContext(accountID))
 	request = mux.SetURLVars(request, map[string]string{"id": poolName})
 	response := httptest.NewRecorder()
 
@@ -209,7 +210,7 @@ func TestNodePoolHandlerUpdateAllowsUnchangedEC2InstanceMetadataHttpTokens(t *te
 	if response.Code != http.StatusOK {
 		t.Fatalf("Update() status = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
 	}
-	stored, err := handler.db.GetNodePool(context.Background(), accountID, poolName)
+	stored, err := handler.db.GetNodePool(request.Context(), poolName)
 	if err != nil {
 		t.Fatalf("GetNodePool: %v", err)
 	}
@@ -241,7 +242,7 @@ func TestNodePoolHandlerUpdateReturnsMultipleValidationErrors(t *testing.T) {
 	handler := newNodePoolValidationTestHandler(t, object)
 	body := `{"spec":{"nodePool":{"platform":{"type":"Azure"},"replicas":-1}}}`
 	request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName, strings.NewReader(body))
-	request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+	request = request.WithContext(testContext(accountID))
 	request = mux.SetURLVars(request, map[string]string{"id": poolName})
 	response := httptest.NewRecorder()
 
@@ -309,7 +310,7 @@ func TestNodePoolHandlerCreateRejectsRootVolumeServiceSetFields(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			body := `{"metadata":{"name":"` + poolName + `","namespace":"account-` + accountID + `"},"spec":{"nodePool":{"platform":{"aws":{"rootVolume":{` + tt.rootVol + `}}}}}}`
 			request := httptest.NewRequest(http.MethodPost, "/api/v0/nodepools", strings.NewReader(body))
-			request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+			request = request.WithContext(testContext(accountID))
 			response := httptest.NewRecorder()
 
 			handler.Create(response, request)
@@ -341,7 +342,7 @@ func TestNodePoolHandlerCreateAllowsRootVolumeSizeOnly(t *testing.T) {
 	handler := newNodePoolValidationTestHandler(t, cluster)
 	body := `{"metadata":{"name":"` + clusterName + `.pool-a","namespace":"account-` + accountID + `"},"spec":{"nodePool":{"platform":{"aws":{"rootVolume":{"size":500}}}}}}`
 	request := httptest.NewRequest(http.MethodPost, "/api/v0/nodepools", strings.NewReader(body))
-	request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+	request = request.WithContext(testContext(accountID))
 	response := httptest.NewRecorder()
 
 	handler.Create(response, request)
@@ -388,7 +389,7 @@ func TestNodePoolHandlerUpdateRejectsRootVolumeSizeChangesAndClears(t *testing.T
 			handler := newNodePoolValidationTestHandler(t, object)
 			body := `{"spec":{"nodePool":{"platform":{"aws":{"rootVolume":{"size":` + tt.size + `}}}}}}`
 			request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName, strings.NewReader(body))
-			request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+			request = request.WithContext(testContext(accountID))
 			request = mux.SetURLVars(request, map[string]string{"id": poolName})
 			response := httptest.NewRecorder()
 
@@ -430,7 +431,7 @@ func TestNodePoolHandlerUpdateRejectsExplicitNullRootVolume(t *testing.T) {
 	handler := newNodePoolValidationTestHandler(t, object)
 	body := `{"spec":{"nodePool":{"platform":{"aws":{"rootVolume":null}}}}}`
 	request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName, strings.NewReader(body))
-	request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+	request = request.WithContext(testContext(accountID))
 	request = mux.SetURLVars(request, map[string]string{"id": poolName})
 	response := httptest.NewRecorder()
 
@@ -444,7 +445,7 @@ func TestNodePoolHandlerUpdateRejectsExplicitNullRootVolume(t *testing.T) {
 	}
 
 	// Confirm the stored RootVolume was NOT wiped out by a rejected request.
-	stored, err := handler.db.GetNodePool(context.Background(), accountID, poolName)
+	stored, err := handler.db.GetNodePool(request.Context(), poolName)
 	if err != nil {
 		t.Fatalf("GetNodePool: %v", err)
 	}
@@ -479,10 +480,11 @@ func TestNodePoolHandlerUpdateAllowsOmittedRootVolume(t *testing.T) {
 			},
 		},
 	}
-	handler := newNodePoolValidationTestHandler(t, object)
+	parent := &seaplanev1alpha1.Cluster{ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: object.Namespace, Labels: object.Labels}}
+	handler := newNodePoolValidationTestHandler(t, object, parent)
 	body := `{"spec":{"nodePool":{"platform":{"aws":{"instanceType":"m5.xlarge"}}}}}`
 	request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName, strings.NewReader(body))
-	request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+	request = request.WithContext(testContext(accountID))
 	request = mux.SetURLVars(request, map[string]string{"id": poolName})
 	response := httptest.NewRecorder()
 
@@ -492,7 +494,7 @@ func TestNodePoolHandlerUpdateAllowsOmittedRootVolume(t *testing.T) {
 		t.Fatalf("Update() status = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
 	}
 
-	stored, err := handler.db.GetNodePool(context.Background(), accountID, poolName)
+	stored, err := handler.db.GetNodePool(request.Context(), poolName)
 	if err != nil {
 		t.Fatalf("GetNodePool: %v", err)
 	}
@@ -541,7 +543,7 @@ func TestNodePoolHandlerUpdateRejectsExplicitNullAtParentLevels(t *testing.T) {
 			}
 			handler := newNodePoolValidationTestHandler(t, object)
 			request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName, strings.NewReader(tt.body))
-			request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+			request = request.WithContext(testContext(accountID))
 			request = mux.SetURLVars(request, map[string]string{"id": poolName})
 			response := httptest.NewRecorder()
 
@@ -554,7 +556,7 @@ func TestNodePoolHandlerUpdateRejectsExplicitNullAtParentLevels(t *testing.T) {
 				t.Fatalf("Update() response does not identify rootVolume.size: %s", response.Body.String())
 			}
 
-			stored, err := handler.db.GetNodePool(context.Background(), accountID, poolName)
+			stored, err := handler.db.GetNodePool(request.Context(), poolName)
 			if err != nil {
 				t.Fatalf("GetNodePool: %v", err)
 			}
@@ -568,15 +570,41 @@ func TestNodePoolHandlerUpdateRejectsExplicitNullAtParentLevels(t *testing.T) {
 	}
 }
 
+const nodePoolTestCaller = "arn:aws:iam::123456789012:user/test"
+
 func newNodePoolValidationTestHandler(t *testing.T, objects ...client.Object) *NodePoolHandler {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	if err := seaplanev1alpha1.AddToScheme(scheme); err != nil {
 		t.Fatalf("register NodePool API types: %v", err)
 	}
+	// Keep parent-ownership checks from masking the validation under test.
+	for _, object := range objects {
+		switch resource := object.(type) {
+		case *seaplanev1alpha1.Cluster:
+			if resource.UID == "" {
+				resource.UID = "validation-parent"
+			}
+		case *seaplanev1alpha1.NodePool:
+			resource.UID = "validation-pool"
+			parent := testClusterCR("validation-parent", resource.Name, resource.Labels["seaplane.io/account-id"])
+			resource.OwnerReferences = []metav1.OwnerReference{*metav1.NewControllerRef(parent, seaplanev1alpha1.GroupVersion.WithKind("Cluster"))}
+			resource.Labels[clusterUIDLabel] = string(parent.UID)
+			resource.Spec.NodePool.ClusterName = parent.Name
+			objects = append(objects, parent)
+		}
+	}
 	dbClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewNodePoolHandler(seaplanedb.NewClientFrom(dbClient, logger), logger)
+	path := filepath.Join(t.TempDir(), "authz.json")
+	if err := os.WriteFile(path, []byte(`{"formatVersion":1,"registeredAccounts":["123456789012"],"policies":[{"id":"all","ownerAccountID":"123456789012","content":"permit(principal, action in Seaplane::Action::\"AllActions\", resource);"}],"attachments":[{"id":"all","policyID":"all","principalARN":"`+nodePoolTestCaller+`","scope":"global"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	authorizer, err := authz.LoadConfig(path, "us-east-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewNodePoolHandler(seaplanedb.NewClientFrom(dbClient, logger), authorizer, logger)
 }
 
 // TestNodePoolHandlerUpdateRejectsClearedImageType verifies that raw-aware
@@ -616,7 +644,7 @@ func TestNodePoolHandlerUpdateRejectsClearedImageType(t *testing.T) {
 			handler := newNodePoolValidationTestHandler(t, object)
 			body := `{"spec":{"nodePool":{"platform":{"aws":{"imageType":` + tt.value + `}}}}}`
 			request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName, strings.NewReader(body))
-			request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+			request = request.WithContext(testContext(accountID))
 			request = mux.SetURLVars(request, map[string]string{"id": poolName})
 			response := httptest.NewRecorder()
 
@@ -629,7 +657,7 @@ func TestNodePoolHandlerUpdateRejectsClearedImageType(t *testing.T) {
 				t.Fatalf("Update() response does not identify imageType: %s", response.Body.String())
 			}
 
-			stored, err := handler.db.GetNodePool(context.Background(), accountID, poolName)
+			stored, err := handler.db.GetNodePool(request.Context(), poolName)
 			if err != nil {
 				t.Fatalf("GetNodePool: %v", err)
 			}
@@ -667,7 +695,7 @@ func TestNodePoolHandlerUpdateAllowsOmittedImageType(t *testing.T) {
 	handler := newNodePoolValidationTestHandler(t, object)
 	body := `{"spec":{"labels":{"team":"platform"}}}`
 	request := httptest.NewRequest(http.MethodPut, "/api/v0/nodepools/"+poolName, strings.NewReader(body))
-	request = request.WithContext(context.WithValue(request.Context(), middleware.ContextKeyAccountID, accountID))
+	request = request.WithContext(testContext(accountID))
 	request = mux.SetURLVars(request, map[string]string{"id": poolName})
 	response := httptest.NewRecorder()
 
@@ -677,7 +705,7 @@ func TestNodePoolHandlerUpdateAllowsOmittedImageType(t *testing.T) {
 		t.Fatalf("Update() status = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
 	}
 
-	stored, err := handler.db.GetNodePool(context.Background(), accountID, poolName)
+	stored, err := handler.db.GetNodePool(request.Context(), poolName)
 	if err != nil {
 		t.Fatalf("GetNodePool: %v", err)
 	}

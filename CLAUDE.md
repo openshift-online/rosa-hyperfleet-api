@@ -6,7 +6,7 @@ ROSA Seaplane API — ROSA HCP regional cluster management.
 
 Three components:
 
-- **seaplane-api/** — Stateless REST gateway (SigV4 auth, Cedar/AVP authz)
+- **seaplane-api/** — Stateless REST gateway for API Gateway SigV4-authenticated AWS callers; Cedar authorization (`docs/authz.md`)
 - **seaplane-operator/** — Kubernetes operator (Cluster, ClusterNetworking, DNSReservation, Index, ManagementCluster, Manifest, NodePool, OIDCConfig, Placement, UpgradePolicies CRDs)
 - **seaplane-db/** — PostgreSQL-backed controller-runtime library
 

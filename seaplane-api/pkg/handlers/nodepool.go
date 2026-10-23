@@ -2,11 +2,14 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 
@@ -21,22 +24,28 @@ import (
 	public "github.com/openshift-online/rosa-seaplane-api/api/v1alpha1/public"
 	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/internal/codegen/featuregate"
 	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/pkg/api"
+	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/pkg/authz"
 	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/pkg/clients/seaplanedb"
 	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/pkg/middleware"
 	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/pkg/validation"
 )
 
 type NodePoolHandler struct {
-	db        *seaplanedb.Client
-	validator *validation.FieldValidator
-	logger    *slog.Logger
+	db         *seaplanedb.Client
+	validator  *validation.FieldValidator
+	logger     *slog.Logger
+	authorizer *authz.Authorizer
 }
 
-func NewNodePoolHandler(db *seaplanedb.Client, logger *slog.Logger) *NodePoolHandler {
+func NewNodePoolHandler(db *seaplanedb.Client, authorizer *authz.Authorizer, logger *slog.Logger) *NodePoolHandler {
+	if authorizer == nil {
+		panic("node pool authorizer is required")
+	}
 	return &NodePoolHandler{
-		db:        db,
-		validator: validation.NewFieldValidator("NodePool"),
-		logger:    logger,
+		authorizer: authorizer,
+		db:         db,
+		validator:  validation.NewFieldValidator("NodePool"),
+		logger:     logger,
 	}
 }
 
@@ -67,55 +76,21 @@ func validateNodePoolEC2InstanceMetadataHttpTokens(value public.EC2InstanceMetad
 	}
 }
 
-func nodePoolTagsSupplied(rawSpec map[string]any) bool {
-	_, exists := rawSpec["tags"]
-	return exists
-}
-
 func (h *NodePoolHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	accountID := middleware.GetAccountID(ctx)
+	clusterUID, apiErr := listClusterUID(r.URL.Query())
+	if apiErr != nil {
+		writeAPIError(w, *apiErr, h.logger)
+		return
+	}
+	prepared, attempt := authorizeCollection(w, r, h.authorizer, h.logger, authz.ListNodePools, authz.Resource{Kind: authz.Collection, CollectionKind: authz.NodePool, AccountID: accountID})
+	if prepared == nil {
+		return
+	}
 
 	limitStr := r.URL.Query().Get("limit")
 	offsetStr := r.URL.Query().Get("offset")
-	clusterUID := r.URL.Query().Get("clusterUID")
-	clusterID := r.URL.Query().Get("clusterId")
-	if clusterUID != "" && clusterID != "" && clusterUID != clusterID {
-		writeAPIError(w, ErrNodePoolListInvalidClusterUID, h.logger)
-		return
-	}
-	if clusterUID == "" {
-		// The existing OpenAPI list parameter is named clusterId. Its value is
-		// now the parent Cluster UID and is applied as the cluster-uid label.
-		clusterUID = clusterID
-	}
-	if selector := r.URL.Query().Get("labelSelector"); selector != "" {
-		parsed, err := labels.Parse(selector)
-		if err != nil {
-			writeAPIError(w, ErrNodePoolListInvalidLabelSelector, h.logger)
-			return
-		}
-		requirements, selectable := parsed.Requirements()
-		if !selectable || len(requirements) != 1 || requirements[0].Key() != clusterUIDLabel ||
-			(requirements[0].Operator() != selection.Equals && requirements[0].Operator() != selection.DoubleEquals) ||
-			requirements[0].Values().Len() != 1 {
-			writeAPIError(w, ErrNodePoolListInvalidLabelSelector, h.logger)
-			return
-		}
-		selectedUID := requirements[0].Values().List()[0]
-		if clusterUID != "" && clusterUID != selectedUID {
-			writeAPIError(w, ErrNodePoolListInvalidLabelSelector, h.logger)
-			return
-		}
-		clusterUID = selectedUID
-	}
-	if clusterUID != "" {
-		parsedUID, err := uuid.Parse(clusterUID)
-		if err != nil || parsedUID.String() != clusterUID {
-			writeAPIError(w, ErrNodePoolListInvalidClusterUID, h.logger)
-			return
-		}
-	}
 
 	limit := 50
 	offset := 0
@@ -134,24 +109,27 @@ func (h *NodePoolHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("listing nodepools", "account_id", accountID, "limit", limit, "offset", offset, "cluster_uid", clusterUID)
 
-	list, err := h.db.ListNodePools(ctx, accountID, clusterUID)
+	list, err := h.db.ListNodePools(ctx, clusterUID)
 	if err != nil {
 		h.logger.Error("failed to list nodepools", "error", err, "account_id", accountID)
+		attempt.Finish(authz.OutcomeError, authz.StageResourceLoading)
 		writeAPIError(w, ErrNodePoolList, h.logger)
 		return
 	}
 
+	// List permission returns every item in full; Describe is not checked per item.
 	nodepools := make([]*public.NodePool, 0, len(list.Items))
 	for i := range list.Items {
 		nodepools = append(nodepools, seaplanedb.InternalToPublicNodePool(&list.Items[i]))
 	}
+	attempt.Finish(authz.OutcomeAllow, authz.StageNone)
 
 	total := len(nodepools)
 
 	if offset >= len(nodepools) {
 		nodepools = nil
 	} else {
-		end := min(offset+limit, len(nodepools))
+		end := offset + min(limit, len(nodepools)-offset)
 		nodepools = nodepools[offset:end]
 	}
 
@@ -165,6 +143,45 @@ func (h *NodePoolHandler) List(w http.ResponseWriter, r *http.Request) {
 	if err := api.Write(w, http.StatusOK, response); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
+}
+
+// listClusterUID resolves the optional parent Cluster UID filter from clusterUID,
+// clusterId, or a cluster-uid labelSelector.
+func listClusterUID(query url.Values) (string, *APIError) {
+	clusterUID := query.Get("clusterUID")
+	clusterID := query.Get("clusterId")
+	if clusterUID != "" && clusterID != "" && clusterUID != clusterID {
+		return "", &ErrNodePoolListInvalidClusterUID
+	}
+	if clusterUID == "" {
+		// The existing OpenAPI list parameter is named clusterId. Its value is
+		// now the parent Cluster UID and is applied as the cluster-uid label.
+		clusterUID = clusterID
+	}
+	if selector := query.Get("labelSelector"); selector != "" {
+		parsed, err := labels.Parse(selector)
+		if err != nil {
+			return "", &ErrNodePoolListInvalidLabelSelector
+		}
+		requirements, selectable := parsed.Requirements()
+		if !selectable || len(requirements) != 1 || requirements[0].Key() != clusterUIDLabel ||
+			(requirements[0].Operator() != selection.Equals && requirements[0].Operator() != selection.DoubleEquals) ||
+			requirements[0].Values().Len() != 1 {
+			return "", &ErrNodePoolListInvalidLabelSelector
+		}
+		selectedUID := requirements[0].Values().List()[0]
+		if clusterUID != "" && clusterUID != selectedUID {
+			return "", &ErrNodePoolListInvalidLabelSelector
+		}
+		clusterUID = selectedUID
+	}
+	if clusterUID != "" {
+		parsedUID, err := uuid.Parse(clusterUID)
+		if err != nil || parsedUID.String() != clusterUID {
+			return "", &ErrNodePoolListInvalidClusterUID
+		}
+	}
+	return clusterUID, nil
 }
 
 // Create handles POST /api/v0/nodepools
@@ -220,7 +237,7 @@ func (h *NodePoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cluster, err := h.db.GetCluster(ctx, accountID, clusterName)
+	cluster, err := h.db.GetCluster(ctx, clusterName)
 	if err != nil {
 		if seaplanedb.IsNotFound(err) {
 			writeAPIError(w, ErrNodePoolCreateClusterNotFound, h.logger)
@@ -243,12 +260,18 @@ func (h *NodePoolHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// internalPoolID is retained as a service-set implementation field; FleetDB UID
 	// is the public object identity.
 	internalPoolID := uuid.New().String()
+	if !validateCreateLabels(w, req.Annotations, h.logger) {
+		return
+	}
 	cr := seaplanedb.PublicToInternalNodePool(&req, accountID, internalPoolID)
 	cr.Spec.NodePool.ClusterName = cluster.Name
 	cr.OwnerReferences = []metav1.OwnerReference{*metav1.NewControllerRef(cluster, seaplanev1alpha1.GroupVersion.WithKind("Cluster"))}
 	cr.Labels["seaplane.io/cluster-uid"] = string(cluster.UID)
 
-	if err := h.db.CreateNodePool(ctx, accountID, cr); err != nil {
+	if !h.authorizeNodePool(w, withRequestLabels(r, cr.Annotations), authz.CreateNodePool, cr) {
+		return
+	}
+	if err := h.db.CreateNodePool(ctx, cr); err != nil {
 		h.logger.Error("failed to create nodepool", "error", err, "account_id", accountID)
 		if seaplanedb.IsAlreadyExists(err) {
 			writeAPIError(w, ErrNodePoolCreateNameConflict, h.logger)
@@ -271,7 +294,7 @@ func (h *NodePoolHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("getting nodepool", "account_id", accountID, "nodepool_name", nodepoolName)
 
-	cr, err := h.db.GetNodePool(ctx, accountID, nodepoolName)
+	cr, err := h.db.GetNodePool(ctx, nodepoolName)
 	if err != nil {
 		if seaplanedb.IsNotFound(err) {
 			writeAPIError(w, ErrNodePoolGetNotFound, h.logger)
@@ -282,6 +305,9 @@ func (h *NodePoolHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.authorizeNodePool(w, r, authz.DescribeNodePool, cr) {
+		return
+	}
 	if err := api.Write(w, http.StatusOK, seaplanedb.InternalToPublicNodePool(cr)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
@@ -321,7 +347,6 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reject semantically empty specs (nil, empty decoded maps, whitespace variants).
 	var rawSpec map[string]any
 	if err := json.Unmarshal(envelope.Spec, &rawSpec); err != nil {
 		writeAPIError(w, ErrNodePoolUpdateInvalidBody, h.logger)
@@ -332,89 +357,122 @@ func (h *NodePoolHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Retry conflicts like upstream. Each attempt re-reads, re-validates, and
+	// re-authorizes, so no write uses a snapshot that was not checked.
+	r, finish := withAuthzOutcome(r)
+	defer finish()
 	var updated *seaplanev1alpha1.NodePool
-	var validationErr validation.ValidationErrors
-	var mergeErr error
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		current, err := h.db.GetNodePool(ctx, accountID, nodepoolName)
-		if err != nil {
-			return err
-		}
-		errs := h.validator.ValidateUpdateWithRawSpec(&req.Spec, rawSpec, &current.Spec, featuregate.Default)
-		errs = append(errs, validateNodePoolReplicas(&req.Spec)...)
-		if len(errs) > 0 {
-			validationErr = errs
-			return fmt.Errorf("invalid nodepool update: %w", errs)
-		}
-		if err := seaplanedb.MergeSpecJSON(&current.Spec, envelope.Spec); err != nil {
-			mergeErr = err
-			return fmt.Errorf("merge nodepool spec: %w", err)
-		}
-		if nodePoolTagsSupplied(rawSpec) {
-			tagErrs := validation.ValidateCustomerAWSTags(current.Spec.Tags, "spec.tags")
-			if len(tagErrs) > 0 {
-				validationErr = tagErrs
-				return fmt.Errorf("invalid nodepool AWS tags")
-			}
-			clusterName := current.Spec.NodePool.ClusterName
-			if clusterName == "" {
-				clusterName, _, err = validation.ParseNodePoolName(current.Name)
-				if err != nil {
-					validationErr = validation.ValidationErrors{&validation.ValidationError{
-						Field:  "spec.tags",
-						Reason: "unable to resolve the parent Cluster for tag budget validation",
-					}}
-					return fmt.Errorf("invalid nodepool AWS tags")
-				}
-			}
-			cluster, err := h.db.GetCluster(ctx, accountID, clusterName)
-			if err != nil {
-				if seaplanedb.IsNotFound(err) {
-					validationErr = validation.ValidationErrors{&validation.ValidationError{
-						Field:  "spec.tags",
-						Reason: "parent Cluster must be available for tag budget validation",
-					}}
-					return fmt.Errorf("invalid nodepool AWS tags")
-				}
-				return fmt.Errorf("get parent Cluster for tag budget validation: %w", err)
-			}
-			if errs := validation.ValidateNodePoolAWSTagBudget(cluster.Spec.Tags, current.Spec.Tags, "spec.tags"); len(errs) > 0 {
-				validationErr = errs
-				return fmt.Errorf("invalid nodepool AWS tags")
-			}
-		}
-		if err := h.db.UpdateNodePool(ctx, current); err != nil {
-			return err
-		}
-		updated = current
-		return nil
+		var attemptErr error
+		updated, attemptErr = h.updateOnce(w, r, nodepoolName, &req.Spec, rawSpec, envelope.Spec)
+		return attemptErr
 	})
-	if len(validationErr) != 0 {
-		writeAPIError(w, ErrNodePoolValidation.WithErrors(validationErr), h.logger)
-		return
-	}
-	if mergeErr != nil {
-		h.logger.Error("failed to merge nodepool spec", "error", mergeErr)
-		writeAPIError(w, ErrNodePoolUpdateInvalidSpec, h.logger)
+	if errors.Is(err, errResponded) {
 		return
 	}
 	if err != nil {
-		if seaplanedb.IsNotFound(err) {
-			writeAPIError(w, ErrNodePoolUpdateNotFound, h.logger)
-			return
-		}
-		if seaplanedb.IsConflict(err) {
-			writeAPIError(w, ErrNodePoolUpdateConflict, h.logger)
-			return
-		}
-		h.logger.Error("failed to update nodepool", "error", err, "account_id", accountID, "nodepool_name", nodepoolName)
-		writeAPIError(w, ErrNodePoolUpdateFailed, h.logger)
+		writeAPIError(w, ErrNodePoolUpdateConflict, h.logger)
 		return
 	}
 
 	if err := api.Write(w, http.StatusOK, seaplanedb.InternalToPublicNodePool(updated)); err != nil {
 		h.logger.Error("failed to write response", "error", err)
 	}
+}
+
+// updateOnce makes one checked update attempt; see ClusterHandler.updateOnce.
+func (h *NodePoolHandler) updateOnce(w http.ResponseWriter, r *http.Request, nodepoolName string, reqSpec *public.NodePoolSpec, rawSpec map[string]any, spec json.RawMessage) (*seaplanev1alpha1.NodePool, error) {
+	ctx := r.Context()
+	accountID := middleware.GetAccountID(ctx)
+	cr, err := h.db.GetNodePool(ctx, nodepoolName)
+	if err != nil {
+		if seaplanedb.IsNotFound(err) {
+			writeAPIError(w, ErrNodePoolUpdateNotFound, h.logger)
+			return nil, errResponded
+		}
+		h.logger.Error("failed to get nodepool for update", "error", err, "account_id", accountID, "nodepool_name", nodepoolName)
+		writeAPIError(w, ErrNodePoolUpdateFailed, h.logger)
+		return nil, errResponded
+	}
+	// Authorize before validation, so a caller without UpdateNodePool learns no field details.
+	if !h.authorizeNodePool(w, r, authz.UpdateNodePool, cr) {
+		return nil, errResponded
+	}
+
+	errs := h.validator.ValidateUpdate(rawSpec, &cr.Spec, featuregate.Default)
+	errs = append(errs, validateNodePoolReplicas(reqSpec)...)
+	if len(errs) > 0 {
+		writeAPIError(w, ErrNodePoolValidation.WithErrors(errs), h.logger)
+		return nil, errResponded
+	}
+	candidate := cr.DeepCopy()
+	if err := seaplanedb.MergeSpecJSON(&candidate.Spec, spec); err != nil {
+		h.logger.Error("failed to merge nodepool spec", "error", err)
+		writeAPIError(w, ErrNodePoolUpdateInvalidSpec, h.logger)
+		return nil, errResponded
+	}
+	if err := h.validator.PreserveServiceSet(&candidate.Spec, &cr.Spec, featuregate.Default); err != nil {
+		h.logger.Error("failed to preserve service-set fields", "error", err, "account_id", accountID, "nodepool_name", nodepoolName)
+		writeAPIError(w, ErrNodePoolUpdateFailed, h.logger)
+		return nil, errResponded
+	}
+
+	// Authorize the stored snapshot and every changed-field action before its CAS write.
+	if !h.authorizeNodePool(w, r, authz.UpdateNodePool, cr, nodePoolUpdateActions(&cr.Spec, &candidate.Spec)...) {
+		return nil, errResponded
+	}
+	if nodePoolTagsSupplied(rawSpec) {
+		errs, err := h.validateUpdatedNodePoolTags(ctx, candidate)
+		if len(errs) > 0 {
+			writeAPIError(w, ErrNodePoolValidation.WithErrors(errs), h.logger)
+			return nil, errResponded
+		}
+		if err != nil {
+			h.logger.Error("failed to validate nodepool AWS tags", "error", err, "account_id", accountID, "nodepool_name", nodepoolName)
+			writeAPIError(w, ErrNodePoolUpdateFailed, h.logger)
+			return nil, errResponded
+		}
+	}
+	if err := h.db.UpdateNodePool(ctx, candidate); err != nil {
+		if seaplanedb.IsConflict(err) {
+			return nil, err
+		}
+		if seaplanedb.IsNotFound(err) {
+			writeAPIError(w, ErrNodePoolUpdateNotFound, h.logger)
+			return nil, errResponded
+		}
+		h.logger.Error("failed to update nodepool", "error", err, "account_id", accountID, "nodepool_name", nodepoolName)
+		writeAPIError(w, ErrNodePoolUpdateFailed, h.logger)
+		return nil, errResponded
+	}
+	return candidate, nil
+}
+
+// validateUpdatedNodePoolTags checks the pool's AWS tags and its budget under the parent's tags.
+func (h *NodePoolHandler) validateUpdatedNodePoolTags(ctx context.Context, np *seaplanev1alpha1.NodePool) (validation.ValidationErrors, error) {
+	if errs := validation.ValidateCustomerAWSTags(np.Spec.Tags, "spec.tags"); len(errs) > 0 {
+		return errs, nil
+	}
+	clusterName := np.Spec.NodePool.ClusterName
+	if clusterName == "" {
+		var err error
+		if clusterName, _, err = validation.ParseNodePoolName(np.Name); err != nil {
+			return validation.ValidationErrors{&validation.ValidationError{Field: "spec.tags", Reason: "unable to resolve the parent Cluster for tag budget validation"}}, nil
+		}
+	}
+	cluster, err := h.db.GetCluster(ctx, clusterName)
+	if seaplanedb.IsNotFound(err) {
+		return validation.ValidationErrors{&validation.ValidationError{Field: "spec.tags", Reason: "parent Cluster must be available for tag budget validation"}}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get parent Cluster for tag budget validation: %w", err)
+	}
+	return validation.ValidateNodePoolAWSTagBudget(cluster.Spec.Tags, np.Spec.Tags, "spec.tags"), nil
+}
+
+func nodePoolTagsSupplied(rawSpec map[string]any) bool {
+	_, exists := rawSpec["tags"]
+	return exists
 }
 
 func (h *NodePoolHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -425,8 +483,25 @@ func (h *NodePoolHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("deleting nodepool", "account_id", accountID, "nodepool_name", nodepoolName)
 
-	err := h.db.DeleteNodePool(ctx, accountID, nodepoolName)
+	cr, err := h.db.GetNodePool(ctx, nodepoolName)
 	if err != nil {
+		if seaplanedb.IsNotFound(err) {
+			writeAPIError(w, ErrNodePoolDeleteNotFound, h.logger)
+			return
+		}
+		h.logger.Error("failed to get nodepool for delete", "error", err, "account_id", accountID, "nodepool_name", nodepoolName)
+		writeAPIError(w, ErrNodePoolDeleteFailed, h.logger)
+		return
+	}
+	if !h.authorizeNodePool(w, r, authz.DeleteNodePool, cr) {
+		return
+	}
+	err = h.db.DeleteNodePoolObject(ctx, cr)
+	if err != nil {
+		if seaplanedb.IsConflict(err) {
+			writeAPIError(w, ErrResourceConflict, h.logger)
+			return
+		}
 		if seaplanedb.IsNotFound(err) {
 			writeAPIError(w, ErrNodePoolDeleteNotFound, h.logger)
 			return

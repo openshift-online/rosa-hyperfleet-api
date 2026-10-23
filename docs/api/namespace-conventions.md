@@ -50,6 +50,7 @@ characters. HyperShift NodePool resources use only the child portion of that nam
 
 ## Authorization
 
-Cedar/AVP performs authorization at the API layer. The account namespace provides
-storage isolation; it is derived from authenticated identity, not trusted as a
-client-provided authorization claim.
+API Gateway authenticates AWS callers. Cedar authorizes every resource operation
+before it reads or writes data ([authorization](../authz.md)). The account
+namespace provides storage isolation; it is derived from authenticated identity,
+not trusted as a client-provided authorization claim.

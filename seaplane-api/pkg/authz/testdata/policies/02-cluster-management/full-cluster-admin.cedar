@@ -1,5 +1,0 @@
-permit(
-  ?principal,
-  action,
-  resource
-);

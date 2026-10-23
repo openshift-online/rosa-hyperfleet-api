@@ -223,13 +223,16 @@ func InternalToPublicDNSReservation(res *seaplanev1alpha1.DNSReservation) *publi
 
 // customerObjectMeta sets the account namespace and trusted account label while
 // discarding client-supplied server-owned identity and ownership metadata.
+// Customer tags are annotations (the Cedar tags); labels are system-owned, so
+// client labels are dropped.
 func customerObjectMeta(meta metav1.ObjectMeta, accountID string) metav1.ObjectMeta {
-	meta.Labels = maps.Clone(meta.Labels)
-	for key := range meta.Labels {
+	meta.Annotations = maps.Clone(meta.Annotations)
+	for key := range meta.Annotations {
 		if strings.HasPrefix(key, "seaplane.io/") {
-			delete(meta.Labels, key)
+			delete(meta.Annotations, key)
 		}
 	}
+	meta.Labels = map[string]string{"seaplane.io/account-id": accountID}
 	meta.Namespace = accountNamespace(accountID)
 	meta.UID = ""
 	meta.ResourceVersion = ""
@@ -240,10 +243,6 @@ func customerObjectMeta(meta metav1.ObjectMeta, accountID string) metav1.ObjectM
 	meta.OwnerReferences = nil
 	meta.Finalizers = nil
 	meta.ManagedFields = nil
-	if meta.Labels == nil {
-		meta.Labels = make(map[string]string)
-	}
-	meta.Labels["seaplane.io/account-id"] = accountID
 	return meta
 }
 

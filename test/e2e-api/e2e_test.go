@@ -2,13 +2,11 @@ package e2e_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -91,62 +89,6 @@ var _ = Describe("Platform API", Ordered, func() {
 		Expect(string(response.Body)).To(ContainSubstring("ok"))
 		Expect(response.Headers).To(HaveKey("Content-Type"))
 		Expect(response.Headers).To(HaveKey("X-Amz-Apigw-Id"))
-	})
-
-	It("should be able to list all the registered management clusters", func() {
-		response := getAndExpectOK(apiClient, "/api/v0/management_clusters", accountID, "")
-		Expect(response.StatusCode).To(Equal(http.StatusOK))
-		var list struct {
-			Kind  string                   `json:"kind"`
-			Items []map[string]interface{} `json:"items"`
-			Total int                      `json:"total"`
-		}
-		err := json.Unmarshal(response.Body, &list)
-		Expect(err).To(BeNil())
-		Expect(list.Kind).To(Equal("ManagementClusterList"))
-		for _, item := range list.Items {
-			GinkgoWriter.Printf("management cluster id=%v region=%v accountId=%v\n", item["id"], item["region"], item["accountId"])
-		}
-		Expect(response.Headers).To(HaveKey("Content-Type"))
-		Expect(response.Headers).To(HaveKey("X-Amz-Apigw-Id"))
-	})
-
-	It("should be able to register a new management cluster", func() {
-		mcID := fmt.Sprintf("test-mc-%s", time.Now().Format("20060102150405"))
-		GinkgoWriter.Printf("Creating management cluster: %s\n", mcID)
-
-		createReq := map[string]interface{}{
-			"id":        mcID,
-			"region":    "us-east-2",
-			"accountId": accountID,
-		}
-
-		response, err := apiClient.Post("/api/v0/management_clusters", createReq, accountID)
-		Expect(err).To(BeNil())
-		Expect(response.StatusCode).To(Equal(http.StatusCreated))
-		Expect(response.Headers).To(HaveKey("Content-Type"))
-		Expect(response.Headers).To(HaveKey("X-Amz-Apigw-Id"))
-
-		var created map[string]interface{}
-		err = json.Unmarshal(response.Body, &created)
-		Expect(err).To(BeNil())
-		Expect(created["id"]).To(Equal(mcID))
-		Expect(created["region"]).To(Equal("us-east-2"))
-		Expect(created["accountId"]).To(Equal(accountID))
-
-		// it should be able to get the management cluster by ID
-		response, err = apiClient.Get("/api/v0/management_clusters/"+mcID, accountID)
-		Expect(err).To(BeNil())
-		Expect(response.StatusCode).To(Equal(http.StatusOK))
-		Expect(response.Headers).To(HaveKey("Content-Type"))
-		Expect(response.Headers).To(HaveKey("X-Amz-Apigw-Id"))
-
-		var fetched map[string]interface{}
-		err = json.Unmarshal(response.Body, &fetched)
-		Expect(err).To(BeNil())
-		Expect(fetched["id"]).To(Equal(mcID))
-		Expect(fetched["region"]).To(Equal("us-east-2"))
-		Expect(fetched["accountId"]).To(Equal(accountID))
 	})
 
 	// it should be able to GET /clusters endpoint and return an array

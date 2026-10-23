@@ -2,10 +2,13 @@ package handlers
 
 import (
 	"context"
+	"net/http"
 
 	"k8s.io/client-go/util/retry"
 
 	seaplanev1alpha1 "github.com/openshift-online/rosa-seaplane-api/api/v1alpha1"
+	public "github.com/openshift-online/rosa-seaplane-api/api/v1alpha1/public"
+	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/pkg/authz"
 	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/pkg/clients/seaplanedb"
 )
 
@@ -28,15 +31,14 @@ type ClusterClaimableResource interface {
 }
 
 type dnsReservationClaimableResource struct {
-	db        *seaplanedb.Client
-	accountID string
-	uid       string
-	resource  *seaplanev1alpha1.DNSReservation
+	db       *seaplanedb.Client
+	uid      string
+	resource *seaplanev1alpha1.DNSReservation
 }
 
 func (r *dnsReservationClaimableResource) LoadByUID(ctx context.Context) error {
 	r.resource = nil
-	reservation, err := r.db.GetDNSReservationByUID(ctx, r.accountID, r.uid)
+	reservation, err := r.db.GetDNSReservationByUID(ctx, r.uid)
 	if err != nil {
 		return err
 	}
@@ -75,15 +77,14 @@ func (r *dnsReservationClaimableResource) InUseAPIError() *APIError {
 }
 
 type oidcConfigClaimableResource struct {
-	db        *seaplanedb.Client
-	accountID string
-	uid       string
-	resource  *seaplanev1alpha1.OidcConfig
+	db       *seaplanedb.Client
+	uid      string
+	resource *seaplanev1alpha1.OidcConfig
 }
 
 func (r *oidcConfigClaimableResource) LoadByUID(ctx context.Context) error {
 	r.resource = nil
-	config, err := r.db.GetOidcConfigByUID(ctx, r.accountID, r.uid)
+	config, err := r.db.GetOidcConfigByUID(ctx, r.uid)
 	if err != nil {
 		return err
 	}
@@ -123,7 +124,7 @@ func (h *ClusterHandler) resolveDNSReservation(ctx context.Context, accountID, r
 	if reservationUID == "" {
 		return nil, &ErrClusterCreateDNSReservationRequired
 	}
-	reservation, err := h.db.GetDNSReservationByUID(ctx, accountID, reservationUID)
+	reservation, err := h.db.GetDNSReservationByUID(ctx, reservationUID)
 	if err != nil {
 		if seaplanedb.IsNotFound(err) {
 			return nil, &ErrClusterCreateDNSReservationNotFound
@@ -149,7 +150,7 @@ func (h *ClusterHandler) resolveOidcConfig(ctx context.Context, accountID, oidcC
 	if oidcConfigUID == "" {
 		return nil, nil
 	}
-	oidcConfig, err := h.db.GetOidcConfigByUID(ctx, accountID, oidcConfigUID)
+	oidcConfig, err := h.db.GetOidcConfigByUID(ctx, oidcConfigUID)
 	if err != nil {
 		if seaplanedb.IsNotFound(err) {
 			return nil, &ErrClusterCreateOidcConfigNotFound
@@ -172,9 +173,8 @@ func (h *ClusterHandler) resolveOidcConfig(ctx context.Context, accountID, oidcC
 
 func (h *ClusterHandler) claimDNSReservation(ctx context.Context, accountID, reservationUID, clusterUID string) *APIError {
 	claimAPIError, err := claimResource(ctx, clusterUID, &dnsReservationClaimableResource{
-		db:        h.db,
-		accountID: accountID,
-		uid:       reservationUID,
+		db:  h.db,
+		uid: reservationUID,
 	})
 	if claimAPIError != nil {
 		return claimAPIError
@@ -188,9 +188,8 @@ func (h *ClusterHandler) claimDNSReservation(ctx context.Context, accountID, res
 
 func (h *ClusterHandler) claimOidcConfig(ctx context.Context, accountID, oidcConfigUID, clusterUID string) *APIError {
 	claimAPIError, err := claimResource(ctx, clusterUID, &oidcConfigClaimableResource{
-		db:        h.db,
-		accountID: accountID,
-		uid:       oidcConfigUID,
+		db:  h.db,
+		uid: oidcConfigUID,
 	})
 	if claimAPIError != nil {
 		return claimAPIError
@@ -245,4 +244,22 @@ func oidcConfigUsable(oidcConfig *seaplanev1alpha1.OidcConfig) bool {
 	}
 	return oidcConfig.Spec.Type != seaplanev1alpha1.OidcConfigTypeUnmanaged ||
 		oidcConfig.Status.Phase == seaplanev1alpha1.OidcConfigPhaseReady
+}
+
+// authorizeCreate checks CreateCluster before any lookup, so a caller without it learns nothing about references.
+func (h *ClusterHandler) authorizeCreate(w http.ResponseWriter, r *http.Request, req *public.Cluster, accountID string) bool {
+	if !validateCreateLabels(w, req.Annotations, h.logger) {
+		return false
+	}
+	// The shared prepared context keeps these request labels for the reference checks too.
+	cr := seaplanedb.PublicToInternalCluster(req, accountID)
+	return authorizeResource(w, withRequestLabels(r, cr.Annotations), h.authorizer, h.logger, authz.CreateCluster, candidateResource(h.clusterResource(cr), req.Name))
+}
+
+// authorizeReferences requires Describe on each referenced resource before it is claimed, so a forbid on it holds.
+func (h *ClusterHandler) authorizeReferences(w http.ResponseWriter, r *http.Request, dns *seaplanev1alpha1.DNSReservation, oidc *seaplanev1alpha1.OidcConfig) bool {
+	if dns != nil && !authorizeResource(w, r, h.authorizer, h.logger, authz.DescribeDNSReservation, dnsReservationResource(dns)) {
+		return false
+	}
+	return oidc == nil || authorizeResource(w, r, h.authorizer, h.logger, authz.DescribeOIDCConfig, oidcConfigResource(oidc))
 }

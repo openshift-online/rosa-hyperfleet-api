@@ -2,7 +2,11 @@ package middleware
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
+
+	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/pkg/api"
+	"github.com/openshift-online/rosa-seaplane-api/seaplane-api/pkg/authz"
 )
 
 type contextKey string
@@ -18,7 +22,20 @@ const (
 	ContextKeySourceIP contextKey = "source_ip"
 	// ContextKeyRequestID is the context key for request ID
 	ContextKeyRequestID contextKey = "request_id"
+	// ContextKeyAllowlisted marks an account admitted by the temporary allowlist
+	ContextKeyAllowlisted contextKey = "allowlisted"
 )
+
+// WithAllowlisted marks the caller's account as admitted by the temporary allowlist.
+func WithAllowlisted(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ContextKeyAllowlisted, true)
+}
+
+// IsAllowlisted reports whether the caller's account was admitted by the allowlist.
+func IsAllowlisted(ctx context.Context) bool {
+	allowlisted, _ := ctx.Value(ContextKeyAllowlisted).(bool)
+	return allowlisted
+}
 
 // AWS identity headers from API Gateway
 const (
@@ -58,6 +75,47 @@ func Identity(next http.Handler) http.Handler {
 	})
 }
 
+func RequireIdentity(logger *slog.Logger, isAccountRegistered func(context.Context, string) bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/v0/live", "/api/v0/ready", "/api/v0/info":
+				next.ServeHTTP(w, r)
+				return
+			}
+			accountID := GetAccountID(r.Context())
+			if accountID == "" || GetCallerARN(r.Context()) == "" {
+				if err := api.WriteError(w, api.APIError{
+					Code: "AUTH-001", HTTPStatus: http.StatusForbidden, Message: "Caller account ID and ARN are required",
+				}); err != nil {
+					logger.Error("failed to write identity error", "error", err)
+				}
+				return
+			}
+			// Reject inconsistent gateway identity before enrollment or grant selection.
+			identity := authz.Identity{AccountID: accountID, CallerARN: GetCallerARN(r.Context())}
+			if err := identity.Validate(); err != nil {
+				logger.Warn("invalid caller identity", "error", err)
+				if err := api.WriteError(w, api.APIError{
+					Code: "AUTH-001", HTTPStatus: http.StatusForbidden, Message: "Caller identity is invalid",
+				}); err != nil {
+					logger.Error("failed to write identity error", "error", err)
+				}
+				return
+			}
+			if !isAccountRegistered(r.Context(), accountID) {
+				if err := api.WriteError(w, api.APIError{
+					Code: "AUTH-002", HTTPStatus: http.StatusForbidden, Message: "Account is not registered",
+				}); err != nil {
+					logger.Error("failed to write registration error", "error", err)
+				}
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // GetAccountID retrieves the AWS account ID from context
 func GetAccountID(ctx context.Context) string {
 	if v := ctx.Value(ContextKeyAccountID); v != nil {
@@ -70,6 +128,14 @@ func GetAccountID(ctx context.Context) string {
 func GetCallerARN(ctx context.Context) string {
 	if v := ctx.Value(ContextKeyCallerARN); v != nil {
 		return v.(string)
+	}
+	return ""
+}
+
+// GetSourceIP retrieves the gateway-supplied source address, never a forwarding header.
+func GetSourceIP(ctx context.Context) string {
+	if v, ok := ctx.Value(ContextKeySourceIP).(string); ok {
+		return v
 	}
 	return ""
 }

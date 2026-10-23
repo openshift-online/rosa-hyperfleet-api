@@ -12,11 +12,11 @@ go install github.com/onsi/ginkgo/v2/ginkgo@latest
 
 ```bash
 # Run with ginkgo
-cd test/e2e
+cd test/e2e-api
 ginkgo -v
 
 # Run with go test
-cd test/e2e
+cd test/e2e-api
 go test -v
 ```
 
@@ -25,6 +25,13 @@ go test -v
 - `E2E_BASE_URL`: Base URL of the API server (default: `http://localhost:8000`)
 - `E2E_TOKEN`: Authentication token for API requests
 - `E2E_RHOBS_API_URL`: RHOBS API Gateway URL for observability tests (optional — tests are skipped if unset)
+
+## Local authorization test
+
+`make test-e2e-authz` runs `TestAuthzHTTP`: the real API binary against a
+disposable PostgreSQL (Podman), with no AWS credentials. It checks every
+resource operation over HTTP, plus startup, metrics, and logs. Logs go to
+`test-results/authz-http-*`.
 
 ## Note
 

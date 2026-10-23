@@ -25,7 +25,6 @@ limitations under the License.
 // Optional:
 //
 //	AWS_REGION                — defaults to us-east-1
-//	E2E_ACCOUNT_ID            — RC account ID (derived from STS if absent)
 //	E2E_CUSTOMER_ACCOUNT_ID   — customer account ID (derived from STS if absent)
 //	HCP_CLUSTER_NAME          — fixed cluster name longer than the automatic-DNS budget (generated if absent)
 //	OCP_IMAGE               — release image passed to release.image; defaults to defaultReleaseImage
@@ -37,7 +36,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -55,7 +53,6 @@ import (
 	seaplane "github.com/openshift-online/rosa-seaplane-api/clientset"
 	"github.com/openshift-online/rosa-seaplane-api/clientset/platform"
 	hfrest "github.com/openshift-online/rosa-seaplane-api/clientset/rest"
-	awstest "github.com/openshift-online/rosa-seaplane-api/test/helpers/aws"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -99,9 +96,7 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		baseURL            string
 		rosactlBin         string
 		customerProfile    string
-		rcProfile          string
 		region             string
-		accountID          string
 		customerAccountID  string
 		version            string
 		instanceType       string
@@ -120,9 +115,8 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		subnetID string
 		iamOut   iamStackOutputs
 
-		awsCfg    aws.Config
-		cs        *seaplane.Clientset
-		apiClient *awstest.APIClient
+		awsCfg aws.Config
+		cs     *seaplane.Clientset
 
 		vpcCreated            bool
 		iamCreated            bool
@@ -152,11 +146,6 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 			Skip("CUSTOMER_AWS_PROFILE is not set")
 		}
 
-		rcProfile = os.Getenv("RC_AWS_PROFILE")
-		if rcProfile == "" {
-			Skip("RC_AWS_PROFILE is not set")
-		}
-
 		region = os.Getenv("AWS_REGION")
 		if region == "" {
 			region = defaultRegion
@@ -172,17 +161,6 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 		if instanceType == "" {
 			instanceType = defaultInstanceType
 		}
-
-		accountID = os.Getenv("E2E_ACCOUNT_ID")
-		if accountID == "" {
-			cmd := exec.Command("aws", "sts", "get-caller-identity", "--query",
-				"Account", "--output", "text", "--region", region)
-			cmd.Env = append(os.Environ(), "AWS_PROFILE="+rcProfile)
-			out, err := cmd.CombinedOutput()
-			Expect(err).ToNot(HaveOccurred(), "getting RC account ID: %s", string(out))
-			accountID = strings.TrimSpace(string(out))
-		}
-		GinkgoWriter.Printf("RC account ID: %s\n", accountID)
 
 		customerAccountID = os.Getenv("E2E_CUSTOMER_ACCOUNT_ID")
 		if customerAccountID == "" {
@@ -221,29 +199,6 @@ var _ = Describe("SDK E2E: cluster and nodepool lifecycle", Ordered, func() {
 			AWSConfig: awsCfg,
 		})
 		Expect(err).ToNot(HaveOccurred(), "building SDK clientset")
-
-		apiClient = awstest.NewAPIClient(baseURL)
-		apiClient.AWSProfile = rcProfile
-		By("registering customer account")
-		body := map[string]interface{}{
-			"accountId":  customerAccountID,
-			"privileged": true,
-		}
-		resp, err := apiClient.Post("/api/v0/accounts", body, accountID)
-		Expect(err).ToNot(HaveOccurred())
-		switch resp.StatusCode {
-		case http.StatusCreated:
-			GinkgoWriter.Printf("Customer account %s registered\n", customerAccountID)
-		case http.StatusConflict:
-			var body map[string]interface{}
-			Expect(json.Unmarshal(resp.Body, &body)).To(Succeed())
-			msg, _ := body["message"].(string)
-			Expect(msg).To(ContainSubstring("ACCOUNTS-MGMT-CREATE-004"),
-				"unexpected 409 body: %s", string(resp.Body))
-			GinkgoWriter.Printf("Customer account %s already registered\n", customerAccountID)
-		default:
-			Fail(fmt.Sprintf("account registration: status %d body: %s", resp.StatusCode, string(resp.Body)))
-		}
 
 		// Safety-net: runs after the Ordered container finishes using the same
 		// delete helpers as the It block, so teardown behaviour is identical

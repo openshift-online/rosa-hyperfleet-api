@@ -18,6 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -42,13 +43,14 @@ func newSpotUnitTestHandler(t *testing.T, objects ...client.Object) *ClusterHand
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewClusterHandler(seaplanedb.NewClientFrom(fakeClient, logger), "", 0, logger)
+	return NewClusterHandler(seaplanedb.NewClientFrom(fakeClient, logger), "", 0, clusterAuthorizer(t, lifecyclePermit), logger)
 }
 
 func spotUnitTestCluster(clusterName string) *seaplanev1alpha1.Cluster {
 	return &seaplanev1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      clusterName,
+			UID:       types.UID(clusterName),
 			Namespace: "account-" + spotUnitTestAccountID,
 			Labels:    map[string]string{"seaplane.io/account-id": spotUnitTestAccountID},
 		},
@@ -175,7 +177,7 @@ func TestSpotUnit_UpdateSkipsQueueLookupWhenUnchanged(t *testing.T) {
 		},
 	}).Build()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := NewClusterHandler(seaplanedb.NewClientFrom(fakeClient, logger), "", 0, logger)
+	handler := NewClusterHandler(seaplanedb.NewClientFrom(fakeClient, logger), "", 0, clusterAuthorizer(t, lifecyclePermit), logger)
 	request := newSpotUnitUpdateRequest(t, map[string]any{"displayName": "updated-display"})
 	response := httptest.NewRecorder()
 	handler.Update(response, request)

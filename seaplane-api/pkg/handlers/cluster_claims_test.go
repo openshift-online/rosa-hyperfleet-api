@@ -425,7 +425,7 @@ func TestResolveDNSReservation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := newDNSReservationResolverHandler(t, tt.reservation, tt.indexedUID, tt.registerAPITypes)
-			reservation, apiErr := handler.resolveDNSReservation(context.Background(), testAccountID, tt.requestedUID)
+			reservation, apiErr := handler.resolveDNSReservation(testContext(testAccountID), testAccountID, tt.requestedUID)
 			if tt.wantError != "" {
 				if apiErr == nil || apiErr.Code != tt.wantError {
 					t.Fatalf("resolveDNSReservation error = %v, want %s", apiErr, tt.wantError)
@@ -466,5 +466,5 @@ func newDNSReservationResolverHandler(t *testing.T, reservation *seaplanev1alpha
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	db := seaplanedb.NewClientFrom(builder.Build(), logger)
-	return NewClusterHandler(db, "", 0, logger)
+	return NewClusterHandler(db, "", 0, clusterAuthorizer(t, clusterReadPermit), logger)
 }

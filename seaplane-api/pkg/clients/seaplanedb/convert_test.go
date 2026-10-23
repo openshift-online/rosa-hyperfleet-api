@@ -123,6 +123,19 @@ func TestInternalToPublicCluster_FiltersServiceSetFields(t *testing.T) {
 	// Service-set fields absent from public type (filtered by JSON roundtrip)
 }
 
+// Customer tags are annotations end to end; labels stay system-only.
+func TestCustomerTagsAreAnnotations(t *testing.T) {
+	pub := &public.Cluster{ObjectMeta: metav1.ObjectMeta{Name: testClusterName,
+		Labels:      map[string]string{"team": "dropped", "seaplane.io/account-id": "forged"},
+		Annotations: map[string]string{"team": "blue", "seaplane.io/forged": "dropped"},
+	}}
+
+	cr := PublicToInternalCluster(pub, testAccountID)
+	assert.Equal(t, map[string]string{"seaplane.io/account-id": testAccountID}, cr.Labels)
+	assert.Equal(t, map[string]string{"team": "blue"}, cr.Annotations)
+	assert.Equal(t, cr.ObjectMeta, InternalToPublicCluster(cr).ObjectMeta)
+}
+
 func TestInternalToPublicCluster_NilInput(t *testing.T) {
 	result := InternalToPublicCluster(nil)
 	assert.Nil(t, result)
@@ -389,7 +402,7 @@ func TestCustomerObjectMeta_SetsAccountNamespaceAndProtectsMetadata(t *testing.T
 	assert.True(t, got.CreationTimestamp.IsZero())
 	assert.Empty(t, got.OwnerReferences)
 	assert.Empty(t, got.Finalizers)
-	assert.Equal(t, "test", got.Labels["app"])
+	assert.NotContains(t, got.Labels, "app")
 	assert.Equal(t, testAccountID, got.Labels["seaplane.io/account-id"])
 	assert.NotContains(t, got.Labels, "seaplane.io/claimed-by-cluster-uid")
 	assert.Equal(t, "account-attacker", input.Namespace, "input metadata must not be mutated")
