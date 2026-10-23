@@ -12,10 +12,6 @@ import (
 
 // ServiceSetFieldsDNS contains DNS-related fields for hostedCluster.dns
 type ServiceSetFieldsDNS struct {
-	// BaseDomain is service-set (platform-managed, hidden from API)
-	BaseDomain string `json:"baseDomain,omitempty"`
-	// BaseDomainPrefix is service-set (platform-managed, hidden from API)
-	BaseDomainPrefix *string `json:"baseDomainPrefix,omitempty"`
 	// PrivateZoneID is service-set (platform-managed, hidden from API)
 	PrivateZoneID string `json:"privateZoneID,omitempty"`
 	// PublicZoneID is service-set (platform-managed, hidden from API)
@@ -128,8 +124,8 @@ type ServiceSetFields struct {
 	Arch string `json:"arch,omitempty"`
 	// BaseDomain is service-set (platform-managed, hidden from API)
 	BaseDomain string `json:"baseDomain,omitempty"`
-	// BaseDomainPrefix is service-set (platform-managed, hidden from API)
-	BaseDomainPrefix *string `json:"baseDomainPrefix,omitempty"`
+	// ClusterArch is service-set (platform-managed, hidden from API)
+	ClusterArch string `json:"clusterArch,omitempty"`
 	// ClusterDeletionPolicy is service-set (platform-managed, hidden from API)
 	ClusterDeletionPolicy v1alpha1.DNSReservationClusterDeletionPolicy `json:"clusterDeletionPolicy,omitempty"`
 	// CpuManagerPolicy is service-set (platform-managed, hidden from API)
@@ -188,6 +184,8 @@ type ServiceSetFields struct {
 	PublicZoneID string `json:"publicZoneID,omitempty"`
 	// ReadinessEndpoints is service-set (platform-managed, hidden from API)
 	ReadinessEndpoints []string `json:"readinessEndpoints,omitempty"`
+	// ReservedAt is service-set (platform-managed, hidden from API)
+	ReservedAt metav1.Time `json:"reservedAt,omitempty"`
 	// ResourceTags is service-set (platform-managed, hidden from API)
 	ResourceTags []hypershiftv1beta1.AWSResourceTag `json:"resourceTags,omitempty"`
 	// SystemdUnits is service-set (platform-managed, hidden from API)
@@ -200,4 +198,6 @@ type ServiceSetFields struct {
 	TrustedCA string `json:"trustedCA,omitempty"`
 	// Type is service-set (platform-managed, hidden from API)
 	Type string `json:"type,omitempty"`
+	// UserDefined is service-set (platform-managed, hidden from API)
+	UserDefined bool `json:"userDefined,omitempty"`
 }

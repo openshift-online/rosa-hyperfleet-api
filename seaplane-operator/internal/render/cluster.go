@@ -19,8 +19,8 @@ import (
 )
 
 // ClusterResources generates the Kubernetes resources for a cluster on the MC.
-// baseDomain is the fully assembled DNS base domain from the DNSReservation
-// (e.g. "f7a3.0.openshiftapps.com").
+// baseDomain is either the customer's configured DNS base domain or the fully
+// assembled DNS base domain from a DNSReservation.
 func ClusterResources(cluster *seaplanev1alpha1.Cluster, oidcSigningKeyExternal bool,
 	baseDomain, controlPlaneOperatorImage string) ([]Resource, error) {
 	clusterID, ns, err := managementClusterIdentity(cluster)
@@ -233,9 +233,12 @@ func hostedCluster(cluster *seaplanev1alpha1.Cluster, clusterID, ns, hostedClust
 		// Managed OIDC: InfraID must equal issuerURL's trailing path segment, since that's the S3 key HyperShift uploads discovery docs to.
 		hcSpec.InfraID = path.Base(hcSpec.IssuerURL)
 	}
-	hcSpec.DNS = hypershiftv1beta1.DNSSpec{
-		BaseDomain: baseDomain,
-	}
+	// Keep the customer-provided base-domain prefix while setting the reserved
+	// domain used for cluster ingress. Clear any stale zone IDs: they are
+	// platform-managed and must not be accepted from the Cluster CR.
+	hcSpec.DNS.BaseDomain = baseDomain
+	hcSpec.DNS.PublicZoneID = ""
+	hcSpec.DNS.PrivateZoneID = ""
 	hcSpec.PullSecret = corev1.LocalObjectReference{Name: "pull-secret"}
 	hcSpec.SSHKey = corev1.LocalObjectReference{Name: "ssh-key"}
 	hcSpec.KubeAPIServerDNSName = apiHost

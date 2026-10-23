@@ -37,16 +37,22 @@ type ClusterHandler struct {
 	db                       *seaplanedb.Client
 	oidcIssuerBaseURL        string
 	defaultClusterExpiration time.Duration
+	dnsBaseDomainSuffix      string
 	validator                *validation.FieldValidator
 	logger                   *slog.Logger
 }
 
 // NewClusterHandler creates a new cluster handler
-func NewClusterHandler(db *seaplanedb.Client, oidcIssuerBaseURL string, defaultClusterExpiration time.Duration, logger *slog.Logger) *ClusterHandler {
+func NewClusterHandler(db *seaplanedb.Client, oidcIssuerBaseURL string, defaultClusterExpiration time.Duration, logger *slog.Logger, dnsBaseDomainSuffix ...string) *ClusterHandler {
+	suffix := ""
+	if len(dnsBaseDomainSuffix) > 0 {
+		suffix = dnsBaseDomainSuffix[0]
+	}
 	return &ClusterHandler{
 		db:                       db,
 		oidcIssuerBaseURL:        oidcIssuerBaseURL,
 		defaultClusterExpiration: defaultClusterExpiration,
+		dnsBaseDomainSuffix:      strings.ToLower(strings.Trim(strings.TrimSpace(suffix), ".")),
 		validator:                validation.NewFieldValidator("Cluster"),
 		logger:                   logger,
 	}
@@ -130,14 +136,10 @@ func (h *ClusterHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var dnsReservation *seaplanev1alpha1.DNSReservation
-	var apiErr *APIError
-	if req.Spec.DNSReservationID != "" {
-		dnsReservation, apiErr = h.resolveDNSReservation(ctx, accountID, req.Spec.DNSReservationID)
-		if apiErr != nil {
-			writeAPIError(w, *apiErr, h.logger)
-			return
-		}
+	dnsReservation, apiErr := h.resolveClusterCreateDNSReservation(ctx, accountID, req)
+	if apiErr != nil {
+		writeAPIError(w, *apiErr, h.logger)
+		return
 	}
 	oidcConfig, apiErr := h.resolveOidcConfig(ctx, accountID, req.Spec.OidcConfigID)
 	if apiErr != nil {
@@ -263,9 +265,6 @@ func (h *ClusterHandler) decodeClusterCreateRequest(accountID string, body []byt
 	if len(rawSpec) == 0 {
 		return nil, &ErrClusterCreateMissingFields
 	}
-	if err := validation.ValidateClusterNameForDNSReservation(req.Name, req.Spec.DNSReservationID != ""); err != nil {
-		return nil, &ErrClusterCreateInvalidName
-	}
 	if err := validation.ValidateAccountNamespace(req.Namespace, accountID); err != nil {
 		return nil, &ErrClusterCreateNamespaceMismatch
 	}
@@ -339,6 +338,78 @@ func (h *ClusterHandler) completeClusterCreate(ctx context.Context, accountID, c
 	}
 	return cluster, nil
 }
+
+// resolveManagedDNSDomain finds the HCP DNS-domain reservation backing a
+// customer-selected base domain. Every non-generated base domain must belong to
+// the regional managed suffix and be reserved by the requesting account.
+func (h *ClusterHandler) resolveManagedDNSDomain(ctx context.Context, accountID, baseDomain string) (string, *APIError) {
+	if baseDomain == "" {
+		return "", nil
+	}
+	if h.dnsBaseDomainSuffix == "" {
+		return "", &ErrClusterCreateDNSDomainLookupFailed
+	}
+	if !isManagedDNSDomain(baseDomain, h.dnsBaseDomainSuffix) {
+		return "", &ErrClusterCreateDNSDomainNotFound
+	}
+
+	reservations, err := h.db.ListDNSDomainReservations(ctx, accountID)
+	if err != nil {
+		h.logger.Error("failed to look up managed DNS domain", "error_type", fmt.Sprintf("%T", err), "account_id", redact(accountID), "base_domain", redact(baseDomain))
+		return "", &ErrClusterCreateDNSDomainLookupFailed
+	}
+	for i := range reservations.Items {
+		reservation := &reservations.Items[i]
+		if !reservation.Spec.UserDefined || reservation.Spec.ClusterArch != dnsDomainArchHCP ||
+			!strings.EqualFold(strings.TrimSuffix(reservation.Spec.BaseDomain, "."), strings.TrimSuffix(baseDomain, ".")) {
+			continue
+		}
+		if reservation.Labels[claimedByClusterUIDLabel] != "" {
+			return "", &ErrClusterCreateDNSDomainInUse
+		}
+		if reservation.Status.Phase != seaplanev1alpha1.DNSReservationPhaseReady ||
+			reservation.Status.BaseDomain == "" || reservation.Status.InternalHostedClusterName == "" {
+			return "", &ErrClusterCreateDNSReservationNotReady
+		}
+		return string(reservation.UID), nil
+	}
+	return "", &ErrClusterCreateDNSDomainNotFound
+}
+
+func (h *ClusterHandler) resolveCreateDNSReservationID(ctx context.Context, accountID string, req *public.Cluster) *APIError {
+	reservationUID, apiErr := h.resolveManagedDNSDomain(ctx, accountID, req.Spec.HostedCluster.DNS.BaseDomain)
+	if apiErr != nil {
+		return apiErr
+	}
+	if req.Spec.DNSReservationID != "" && reservationUID != "" && req.Spec.DNSReservationID != reservationUID {
+		return &ErrClusterCreateDNSDomainMismatch
+	}
+	if reservationUID != "" {
+		req.Spec.DNSReservationID = reservationUID
+	}
+	return nil
+}
+
+func (h *ClusterHandler) resolveClusterCreateDNSReservation(ctx context.Context, accountID string, req *public.Cluster) (*seaplanev1alpha1.DNSReservation, *APIError) {
+	if apiErr := h.resolveCreateDNSReservationID(ctx, accountID, req); apiErr != nil {
+		return nil, apiErr
+	}
+	if err := validation.ValidateClusterNameForDNSReservation(req.Name, req.Spec.DNSReservationID != ""); err != nil {
+		return nil, &ErrClusterCreateInvalidName
+	}
+	if req.Spec.DNSReservationID == "" {
+		return nil, nil
+	}
+	return h.resolveDNSReservation(ctx, accountID, req.Spec.DNSReservationID)
+}
+
+// isManagedDNSDomain reports whether domain belongs to the configured regional suffix.
+func isManagedDNSDomain(domain, suffix string) bool {
+	domain = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
+	suffix = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(suffix)), ".")
+	return suffix != "" && (domain == suffix || strings.HasSuffix(domain, "."+suffix))
+}
+
 func (h *ClusterHandler) updateManagedIssuerURL(ctx context.Context, accountID, clusterName, clusterUID, issuerURL string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		cluster, err := h.db.GetCluster(ctx, accountID, clusterName)

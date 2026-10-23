@@ -77,6 +77,30 @@ type DNSReservationSpec struct {
 	// +seaplane:write-mode=service-set
 	// +optional
 	ClusterDeletionPolicy DNSReservationClusterDeletionPolicy `json:"clusterDeletionPolicy,omitempty"`
+
+	// BaseDomain is the domain reserved for an HCP DNS-domain reservation.
+	// +k8s:openapi-gen=false
+	// +seaplane:write-mode=service-set
+	// +optional
+	BaseDomain string `json:"baseDomain,omitempty"`
+
+	// ClusterArch identifies the cluster architecture that can use this domain.
+	// +k8s:openapi-gen=false
+	// +seaplane:write-mode=service-set
+	// +optional
+	ClusterArch string `json:"clusterArch,omitempty"`
+
+	// UserDefined is true when the reservation was created by a customer.
+	// +k8s:openapi-gen=false
+	// +seaplane:write-mode=service-set
+	// +optional
+	UserDefined bool `json:"userDefined,omitempty"`
+
+	// ReservedAt is the time when the domain was reserved.
+	// +k8s:openapi-gen=false
+	// +seaplane:write-mode=service-set
+	// +optional
+	ReservedAt metav1.Time `json:"reservedAt,omitempty"`
 }
 
 // DNSReservationPhase represents the allocation lifecycle of a DNS reservation.

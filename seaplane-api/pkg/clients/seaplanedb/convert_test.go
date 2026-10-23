@@ -57,24 +57,27 @@ func TestPublicToInternalCluster_InjectsServiceSetFields(t *testing.T) {
 	assert.Empty(t, result.Spec.HostedClusterName)
 }
 
-func TestUnprojectCluster_DNSFieldsNestedCorrectly(t *testing.T) {
+func TestUnprojectCluster_PreservesCustomDNSAndEnrichesServiceSetFields(t *testing.T) {
 	baseDomainPrefix := "my-cluster"
 	pub := &public.Cluster{
 		ObjectMeta: metav1.ObjectMeta{Name: testClusterName},
-		Spec:       public.ClusterSpec{DNSReservationID: "reservation-uid"},
+		Spec: public.ClusterSpec{
+			DNSReservationID: "reservation-uid",
+			HostedCluster: public.HostedClusterSpecPassthrough{
+				DNS: hypershiftv1beta1.DNSSpec{
+					BaseDomain:       "example.com",
+					BaseDomainPrefix: &baseDomainPrefix,
+					PrivateZoneID:    "Z1234PRIVATE",
+					PublicZoneID:     "Z5678PUBLIC",
+				},
+			},
+		},
 	}
 
-	// Import conversion package for direct UnprojectCluster call
 	enrichment := &conversion.ServiceSetFields{
 		AccountID:         testAccountID,
 		HostedClusterName: "hc-550e8400e29b41d",
 		HostedCluster: &conversion.ServiceSetFieldsHostedCluster{
-			DNS: &conversion.ServiceSetFieldsDNS{
-				BaseDomain:       "example.com",
-				BaseDomainPrefix: &baseDomainPrefix,
-				PrivateZoneID:    "Z1234PRIVATE",
-				PublicZoneID:     "Z5678PUBLIC",
-			},
 			KubeAPIServerDNSName: "api.my-cluster.example.com",
 		},
 	}
@@ -82,12 +85,12 @@ func TestUnprojectCluster_DNSFieldsNestedCorrectly(t *testing.T) {
 	result := v1alpha1conv.UnprojectCluster(&pub.Spec, enrichment)
 
 	require.NotNil(t, result)
-	// Verify DNS fields are nested under HostedCluster.DNS
+	// Custom DNS values are supplied by the request and survive unprojection.
 	assert.Equal(t, "example.com", result.HostedCluster.DNS.BaseDomain)
 	assert.Equal(t, &baseDomainPrefix, result.HostedCluster.DNS.BaseDomainPrefix)
 	assert.Equal(t, "Z1234PRIVATE", result.HostedCluster.DNS.PrivateZoneID)
 	assert.Equal(t, "Z5678PUBLIC", result.HostedCluster.DNS.PublicZoneID)
-	// Verify KubeAPIServerDNSName is at HostedCluster level
+	// Service-set DNS values remain enriched at HostedCluster level.
 	assert.Equal(t, "api.my-cluster.example.com", result.HostedCluster.KubeAPIServerDNSName)
 	// Verify other service-set fields still work
 	assert.Equal(t, testAccountID, result.AccountID)

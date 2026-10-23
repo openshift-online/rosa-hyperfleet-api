@@ -98,6 +98,23 @@ reservations) and releases the claim from retained reservations (customer
 pre-created reservations that should outlive the Cluster). The reservation's own
 finalizer releases only Indexes carrying its UID.
 
+To use a customer-reserved DNS domain, set `spec.hostedCluster.dns.baseDomain`
+on the Platform API create request. The API resolves that value to an
+account-owned HCP DNS-domain reservation and sets the Cluster's
+`spec.dnsReservationId`; the controller then uses the reservation's assigned
+`status.baseDomain` when rendering the HostedCluster. A non-empty base domain
+must belong to the configured regional suffix and have an account-owned
+reservation. The reservation is atomically claimed by the cluster and released
+when the cluster is deleted. If `baseDomain` is empty, the generated reservation
+flow above is used. DNS zone IDs are platform-managed and are not accepted from
+customers.
+The Platform API exposes HCP DNS-domain reservations at
+`/api/v0/dns_domains` and the ROSA-compatible
+`/api/clusters_mgmt/v1/dns_domains` path. Configure the API's
+`--dns-base-domain-suffix` to exactly the same suffix as the operator's
+`--base-domain`; the API requires this flag at startup so reserved domains
+resolve under the regional DNS zone.
+
 ## Deletion Flow
 
 Deletion follows a strict ordering: NodePools first, then all MC resources (by upsetting existing ApplyDesires with `Type=Delete` so kube-applier removes them from the MC), then Placement, then OidcConfig/DNS claim release, then finalizer removal.

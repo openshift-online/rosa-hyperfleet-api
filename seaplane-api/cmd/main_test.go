@@ -2,6 +2,7 @@ package main
 
 import (
 	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -182,6 +183,7 @@ func TestServeCmd(t *testing.T) {
 		"log-level",
 		"log-format",
 		"allowed-accounts",
+		"dns-base-domain-suffix",
 		"api-port",
 		"health-port",
 		"metrics-port",
@@ -192,5 +194,19 @@ func TestServeCmd(t *testing.T) {
 		if flag == nil {
 			t.Errorf("expected flag %s to be registered", flagName)
 		}
+	}
+}
+
+func TestRunServeRequiresDNSBaseDomainSuffix(t *testing.T) {
+	original := dnsBaseDomainSuffix
+	dnsBaseDomainSuffix = ""
+	defer func() { dnsBaseDomainSuffix = original }()
+
+	err := runServe(serveCmd, nil)
+	if err == nil {
+		t.Fatal("expected runServe to reject an empty DNS base domain suffix")
+	}
+	if !strings.Contains(err.Error(), "--dns-base-domain-suffix is required") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

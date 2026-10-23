@@ -3,13 +3,14 @@ package v1alpha1
 // ClusterDNS mirrors upstream DNSSpec with custom markers.
 // +seaplane:upstream-reduced-object=hypershiftv1beta1.DNSSpec
 type ClusterDNS struct {
-	// baseDomain is the base domain of the hosted cluster.
+	// baseDomain selects an account-owned HCP DNS-domain reservation. The
+	// Platform API resolves it to the reservation UID before creating a Cluster.
 	// It will be used to configure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
 	// If baseDomainPrefix is omitted, the hostedCluster.name will be used as the subdomain.
 	// Once set, this field is immutable.
 	// When the value is the empty string "", the controller might default to a value depending on the platform.
 	// +k8s:openapi-gen=true
-	// +seaplane:write-mode=service-set
+	// +seaplane:write-mode=immutable
 	// +kubebuilder:validation:XValidation:rule=`self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')`,message="baseDomain must be a valid domain name (e.g., example, example.com, sub.example.com)"
 	// +kubebuilder:validation:XValidation:rule=`oldSelf == "" || self == oldSelf`, message="baseDomain is immutable"
 	// +kubebuilder:validation:MaxLength=253
@@ -22,7 +23,7 @@ type ClusterDNS struct {
 	// Set baseDomainPrefix to an empty string "", if you don't want a prefix at all (not even hostedCluster.name) to be prepended to baseDomain.
 	// This field is immutable.
 	// +k8s:openapi-gen=true
-	// +seaplane:write-mode=service-set
+	// +seaplane:write-mode=immutable
 	// +kubebuilder:validation:XValidation:rule=`self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')`,message="baseDomainPrefix must be a valid domain name (e.g., example, example.com, sub.example.com)"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="baseDomainPrefix is immutable"
 	// +kubebuilder:validation:MaxLength=253
@@ -31,7 +32,7 @@ type ClusterDNS struct {
 
 	// publicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to the internet exist.
 	// This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
-	// Once set, this value is immutable.
+	// This value is platform-managed and is not accepted from customers.
 	//
 	// On Azure, this is a full Azure resource ID for a DNS Zone in the format:
 	//   /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/dnsZones/{zoneName}
@@ -46,7 +47,7 @@ type ClusterDNS struct {
 
 	// privateZoneID is the Hosted Zone ID where all the DNS records that are only available internally to the cluster exist.
 	// This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
-	// Once set, this value is immutable.
+	// This value is platform-managed and is not accepted from customers.
 	//
 	// On Azure, this is a full Azure resource ID for a Private DNS Zone in the format:
 	//   /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/privateDnsZones/{zoneName}

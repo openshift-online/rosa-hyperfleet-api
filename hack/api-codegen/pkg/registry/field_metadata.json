@@ -581,13 +581,13 @@
   },
   {
     "fieldPath": "spec.hostedCluster.dns.baseDomain",
-    "writeMode": "service-set",
+    "writeMode": "immutable",
     "ownerType": "Cluster",
     "ownerGVK": "seaplane.io/v1alpha1.Cluster"
   },
   {
     "fieldPath": "spec.hostedCluster.dns.baseDomainPrefix",
-    "writeMode": "service-set",
+    "writeMode": "immutable",
     "ownerType": "Cluster",
     "ownerGVK": "seaplane.io/v1alpha1.Cluster"
   },
@@ -1205,13 +1205,13 @@
   },
   {
     "fieldPath": "baseDomain",
-    "writeMode": "service-set",
+    "writeMode": "immutable",
     "ownerType": "ClusterDNS",
     "ownerGVK": ""
   },
   {
     "fieldPath": "baseDomainPrefix",
-    "writeMode": "service-set",
+    "writeMode": "immutable",
     "ownerType": "ClusterDNS",
     "ownerGVK": ""
   },
@@ -1288,7 +1288,35 @@
     "ownerGVK": ""
   },
   {
+    "fieldPath": "spec.baseDomain",
+    "writeMode": "service-set",
+    "hidden": true,
+    "ownerType": "DNSReservation",
+    "ownerGVK": "seaplane.io/v1alpha1.DNSReservation"
+  },
+  {
+    "fieldPath": "spec.clusterArch",
+    "writeMode": "service-set",
+    "hidden": true,
+    "ownerType": "DNSReservation",
+    "ownerGVK": "seaplane.io/v1alpha1.DNSReservation"
+  },
+  {
     "fieldPath": "spec.clusterDeletionPolicy",
+    "writeMode": "service-set",
+    "hidden": true,
+    "ownerType": "DNSReservation",
+    "ownerGVK": "seaplane.io/v1alpha1.DNSReservation"
+  },
+  {
+    "fieldPath": "spec.reservedAt",
+    "writeMode": "service-set",
+    "hidden": true,
+    "ownerType": "DNSReservation",
+    "ownerGVK": "seaplane.io/v1alpha1.DNSReservation"
+  },
+  {
+    "fieldPath": "spec.userDefined",
     "writeMode": "service-set",
     "hidden": true,
     "ownerType": "DNSReservation",

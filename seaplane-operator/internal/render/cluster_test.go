@@ -499,6 +499,31 @@ func TestHostedClusterDNS(t *testing.T) {
 	}
 }
 
+func TestHostedClusterDNSClearsZoneIDs(t *testing.T) {
+	cluster := testCluster()
+	cluster.Spec.HostedCluster.DNS.PublicZoneID = "Z0123456789PUBLIC"
+	cluster.Spec.HostedCluster.DNS.PrivateZoneID = "Z0123456789PRIVATE"
+
+	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "")
+	if err != nil {
+		t.Fatalf("ClusterResources: %v", err)
+	}
+
+	var hc *hypershiftv1beta1.HostedCluster
+	for _, resource := range resources {
+		if resource.Resource == "hostedclusters" {
+			hc = resource.Object.(*hypershiftv1beta1.HostedCluster)
+			break
+		}
+	}
+	if hc == nil {
+		t.Fatal("no hostedcluster resource found")
+	}
+	if hc.Spec.DNS.PublicZoneID != "" || hc.Spec.DNS.PrivateZoneID != "" {
+		t.Fatalf("rendered DNS zone IDs = (%q, %q), want empty values", hc.Spec.DNS.PublicZoneID, hc.Spec.DNS.PrivateZoneID)
+	}
+}
+
 // TestHostedClusterInfraIDManagedOidcConfig verifies InfraID is derived from issuerURL's trailing
 // path segment for a managed OidcConfig, since that's the S3 key HyperShift uploads OIDC
 // discovery docs to.

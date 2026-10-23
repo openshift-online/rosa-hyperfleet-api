@@ -611,13 +611,13 @@ var FieldRegistry = TypedFieldRegistry{
 		},
 		"spec.hostedCluster.dns.baseDomain": {
 			FieldPath: "spec.hostedCluster.dns.baseDomain",
-			WriteMode: ServiceSet,
+			WriteMode: Immutable,
 			OwnerType: "Cluster",
 			OwnerGVK:  "seaplane.io/v1alpha1.Cluster",
 		},
 		"spec.hostedCluster.dns.baseDomainPrefix": {
 			FieldPath: "spec.hostedCluster.dns.baseDomainPrefix",
-			WriteMode: ServiceSet,
+			WriteMode: Immutable,
 			OwnerType: "Cluster",
 			OwnerGVK:  "seaplane.io/v1alpha1.Cluster",
 		},
@@ -1241,13 +1241,13 @@ var FieldRegistry = TypedFieldRegistry{
 	"ClusterDNS": {
 		"baseDomain": {
 			FieldPath: "baseDomain",
-			WriteMode: ServiceSet,
+			WriteMode: Immutable,
 			OwnerType: "ClusterDNS",
 			OwnerGVK:  "",
 		},
 		"baseDomainPrefix": {
 			FieldPath: "baseDomainPrefix",
-			WriteMode: ServiceSet,
+			WriteMode: Immutable,
 			OwnerType: "ClusterDNS",
 			OwnerGVK:  "",
 		},
@@ -1329,8 +1329,36 @@ var FieldRegistry = TypedFieldRegistry{
 		},
 	},
 	"DNSReservation": {
+		"spec.baseDomain": {
+			FieldPath: "spec.baseDomain",
+			WriteMode: ServiceSet,
+			Hidden:    true,
+			OwnerType: "DNSReservation",
+			OwnerGVK:  "seaplane.io/v1alpha1.DNSReservation",
+		},
+		"spec.clusterArch": {
+			FieldPath: "spec.clusterArch",
+			WriteMode: ServiceSet,
+			Hidden:    true,
+			OwnerType: "DNSReservation",
+			OwnerGVK:  "seaplane.io/v1alpha1.DNSReservation",
+		},
 		"spec.clusterDeletionPolicy": {
 			FieldPath: "spec.clusterDeletionPolicy",
+			WriteMode: ServiceSet,
+			Hidden:    true,
+			OwnerType: "DNSReservation",
+			OwnerGVK:  "seaplane.io/v1alpha1.DNSReservation",
+		},
+		"spec.reservedAt": {
+			FieldPath: "spec.reservedAt",
+			WriteMode: ServiceSet,
+			Hidden:    true,
+			OwnerType: "DNSReservation",
+			OwnerGVK:  "seaplane.io/v1alpha1.DNSReservation",
+		},
+		"spec.userDefined": {
+			FieldPath: "spec.userDefined",
 			WriteMode: ServiceSet,
 			Hidden:    true,
 			OwnerType: "DNSReservation",

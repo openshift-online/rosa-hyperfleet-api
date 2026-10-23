@@ -234,6 +234,7 @@ type PlatformSpec struct {
 	// type specifies the underlying infrastructure provider for the cluster.
 	// +k8s:openapi-gen=true
 	// +seaplane:write-mode=immutable
+	// +kubebuilder:validation:Enum=AWS
 	// +required
 	Type hypershiftv1beta1.PlatformType `json:"type"`
 
