@@ -10,6 +10,10 @@ demonstrate the target behavior. It is kept with seaplane-db because PR 1 establ
 the database primitives that later identity phases rely on; PR 2 is coordinated across
 the API, operator, and clientset as well as seaplane-db.
 
+The lasting rules are in
+[seaplane-db-guidelines.md](../../docs/seaplane-db-guidelines.md). This plan tracks
+the work to make the code follow them.
+
 ## 1. Target contract
 
 1. **Customer account namespace rule.** Customer-created resources and resources
@@ -17,7 +21,8 @@ the API, operator, and clientset as well as seaplane-db.
    account ID comes from the authenticated caller, never from an untrusted body
    value. Independent operator-internal resources, such as `ManagementCluster`, may
    use operator-controlled namespaces; internal namespaces used for `Index` claims
-   are operator-only.
+   are server-only. The request namespace is required; a missing or different
+   namespace returns 400, so the response reveals nothing about other accounts.
 2. **Name identifies the human-facing resource.** The client chooses it and it is
    immutable. A Cluster name is one DNS label of at most 63 characters. A child name
    is `<cluster>.<child>`; each part is a DNS label of at most 63 characters. The API
@@ -29,7 +34,9 @@ the API, operator, and clientset as well as seaplane-db.
 5. **Owned children have an ownerReference and a
    `seaplane.io/cluster-uid` label.** Both are set at create from the same parent.
    Claims use a holder UID label such as `seaplane.io/owner-uid` on Indexes or
-   `seaplane.io/claimed-by-cluster-uid` on a claim held by a Cluster.
+   `seaplane.io/claimed-by-cluster-uid` on a claim held by a Cluster. Labels are
+   platform-owned: customers never write them, and customer metadata goes in
+   validated annotations.
 6. **Cleanup is explicit.** A generic garbage collector deletes owned children with
    a missing, replaced, or deleting owner. The owner's finalizer waits for children
    to disappear and releases its claims. A child's finalizer must not wait forever
@@ -44,6 +51,13 @@ the API, operator, and clientset as well as seaplane-db.
 9. **Sharding follows ownership.** Cache List/Watch work is keyed by
    `seaplane.io/cluster-uid`, falling back to the row UID when there is no Cluster
    owner. Reads through the direct client remain unsharded.
+10. **Platform-set fields are set once and checked, never rewritten.** seaplane-api's
+    conversion step sets the account label, `spec.accountId`, and other service-set
+    fields before authorization. The storage layer checks ownership fields and
+    returns an error on a mismatch.
+11. **Writes use the checked snapshot.** Updates and deletes write the
+    `resourceVersion` that was validated and authorized; a conflict retry re-reads,
+    re-validates, and re-authorizes.
 
 On the management cluster, Cluster resources use namespace `cluster-<cluster UID>`.
 New Clusters persist the UID-derived `spec.hostedClusterName`, sized so the
@@ -84,33 +98,35 @@ claim, not an internal mirror that can be deleted from the product flow:
   rendering. The DNSReservation remains the claim holder; its Index is not exposed
   to customers.
 - Customer deletion of a claimed reservation returns a conflict. On Cluster
-  deletion, the Cluster finalizer deletes the reservation by UID and waits for it to
-  disappear; the reservation's finalizer deletes only Indexes labelled with its own
-  UID. An unclaimed reservation can be explicitly deleted by its customer.
+  deletion, the reservation's `clusterDeletionPolicy` decides: with `Delete` (set on
+  operator-created reservations), the Cluster finalizer deletes it by UID and waits
+  for it to disappear; otherwise (customer-created reservations), it releases only
+  the claim and the reservation stays for reuse. The reservation's finalizer deletes
+  only Indexes labelled with its own UID. An unclaimed reservation can be explicitly
+  deleted by its customer.
 
 DNSReservation is a claim resource, not an ownerReference child of the Cluster.
 Its Cluster binding label does not change its sharding key; without
 `cluster-uid`, it remains keyed by its own database UID. The generic garbage
 collector initially applies to Cluster-owned NodePool and Placement objects.
 
-## 2. Current implementation status after PR 1
+## 2. Current implementation status
 
-| Area                  | Current implementation                                                                                                                                                                                                                                                                                                                  | Remaining gap to the target                                                                                                                                                                                   |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| seaplane-db UID       | UID is database-generated and returned by Create; client-sent UIDs are ignored; tombstone revival assigns a fresh UID. Controller-runtime updates, status writes, and deletes use UID plus resourceVersion preconditions.                                                                                                               | seaplane-api conversions still replace the seaplane-db UID in public Cluster, NodePool, and OidcConfig responses.                                                                                             |
-| seaplane-db selectors | `metadata.name`, `metadata.namespace`, and `metadata.uid` field selectors map to columns. Label selectors are translated to SQL before pagination, with a GIN index on labels. Equality, set, existence, negative, and numeric range selectors are supported; invalid/missing/out-of-int64 label values do not match numeric selectors. | Public API and clientset do not yet expose label selectors.                                                                                                                                                   |
-| Create semantics      | Duplicate Create returns `AlreadyExists`, even for identical content. Content-equal updates are suppressed only when UID and resourceVersion are current; stale versions or UIDs conflict.                                                                                                                                              | API-level idempotency keys for safely replaying POSTs after a lost response are deferred future work; see §4.                                                                                                 |
-| Platform identity     | Cluster names are client-facing; OidcConfig storage already uses an account namespace.                                                                                                                                                                                                                                                  | Cluster and NodePool storage uses `cluster-<generated UUID>`. Cluster, NodePool, and OidcConfig responses override database UIDs. Namespace and DNS-label validation is incomplete.                           |
-| Protected metadata    | seaplane-db stores and returns labels and ownerReferences. seaplane-api update handlers fetch the stored object and merge spec, preserving its metadata.                                                                                                                                                                                | Create conversions copy request ObjectMeta; reserved labels and ownerReferences are not consistently stripped or set by the server.                                                                           |
-| Operator ownership    | Cluster, NodePool, and OidcConfig finalizers exist.                                                                                                                                                                                                                                                                                     | No generic garbage collector or Cluster ownerReferences/UID labels are set. NodePool parent lookup lists by namespace and selects the first Cluster. Cluster deletion manually deletes children by namespace. |
-| DNS/OIDC claims       | `Index` uses seaplane-db's primary-key uniqueness; issuer URLs are normalized and hashed. The operator has an internal DNSReservation type.                                                                                                                                                                                             | DNSReservation is currently created by the Cluster reconciler after the Index claim; there is no customer-facing reservation API. DNS and OIDC claim ownership uses namespace/name labels rather than UIDs.   |
-| Clientset             | SigV4 signing and polling waiters exist.                                                                                                                                                                                                                                                                                                | Namespace paths currently influence account headers and NodePool `clusterId`; updates route by UID; waiters do not treat a changed UID as gone.                                                               |
-| Sharding/docs         | List/Watch sharding and unsharded GVKs are implemented.                                                                                                                                                                                                                                                                                 | Sharding hashes namespace. Docs still describe namespace hashing and claim rescale overlap is safe because of fenced writes.                                                                                  |
+Phases 1 and 2 are implemented. Phases 3–6 remain.
 
-The conversion layer already projects ObjectMeta on reads, so returning labels and
-ownerReferences is partly supported once the correct metadata is stored. The required
-work is to set and protect those fields consistently, add tests for the public
-behavior, and expose selectors on list endpoints.
+| Area                   | Current implementation                                                                                                                                                                                                                                                                                                                  | Remaining gap to the target                                                                                                                                                        |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| seaplane-db UID        | UID is database-generated and returned by Create; client-sent UIDs are ignored; tombstone revival assigns a fresh UID. Controller-runtime updates, status writes, and deletes use UID plus resourceVersion preconditions. Public responses return the seaplane-db UID.                                                                  | None.                                                                                                                                                                              |
+| seaplane-db selectors  | `metadata.name`, `metadata.namespace`, and `metadata.uid` field selectors map to columns. Label selectors are translated to SQL before pagination, with a GIN index on labels. Equality, set, existence, negative, and numeric range selectors are supported; invalid/missing/out-of-int64 label values do not match numeric selectors. | The public API accepts only the NodePool `seaplane.io/cluster-uid` selector; the clientset exposes none. List endpoints paginate in memory (Phase 4).                              |
+| Create semantics       | Duplicate Create returns `AlreadyExists`, even for identical content. Content-equal updates are suppressed only when UID and resourceVersion are current; stale versions or UIDs conflict.                                                                                                                                              | API-level idempotency keys for safely replaying POSTs after a lost response are deferred future work; see §4.                                                                      |
+| Platform identity      | Cluster, NodePool, OidcConfig, and DNSReservation are stored in `account-<accountID>` under client-chosen names. Names are validated as DNS labels; a different request namespace returns 400.                                                                                                                                          | An empty request namespace is filled in instead of rejected (Phase 6).                                                                                                             |
+| Protected metadata     | Create conversion discards client UIDs, ownerReferences, finalizers, and `seaplane.io/*` labels, and sets the account label. Update handlers merge spec only.                                                                                                                                                                           | Customer labels outside `seaplane.io/` are stored; annotations are stored unvalidated; the storage client sets the namespace and account label instead of checking them (Phase 6). |
+| Write snapshots        | Updates re-read, re-validate, and write the read snapshot on every conflict retry. DNSReservation delete checks and deletes the same snapshot.                                                                                                                                                                                          | Cluster, NodePool, and OidcConfig deletes re-read by name in the storage client, so a handler can't delete the snapshot it checked (Phase 6).                                      |
+| Operator ownership     | NodePool and Placement carry an ownerReference and `cluster-uid`. NodePool resolves its parent by ownerReference and compares the UID. Cluster deletion deletes children listed by `cluster-uid` and waits for them.                                                                                                                    | No generic garbage collector (Phase 3).                                                                                                                                            |
+| DNS/OIDC claims        | Customer DNSReservation API; Index claims held by `owner-uid`; Clusters claim by `claimed-by-cluster-uid` after create; the operator creates a reservation when none is passed; `clusterDeletionPolicy` decides delete or release.                                                                                                      | The DNSReservation controller finds its claiming Cluster by listing the namespace instead of by UID (Phase 6).                                                                     |
+| Spot termination queue | The queue URL is claimed with an `Index` in `spot-termination-queue-reservations`.                                                                                                                                                                                                                                                      | The holder is the Cluster name, claimed before the Cluster exists; no finalizer releases it, and stale claims are reclaimed after a timeout (Phase 6).                             |
+| Clientset              | SigV4 signing; the account header comes from configuration; NodePool is not namespace-scoped; DNSReservation operations exist.                                                                                                                                                                                                          | Label selectors, the `<cluster>.<child>` helper, and UID-aware waiters (Phase 4).                                                                                                  |
+| Sharding/docs          | List/Watch sharding and unsharded GVKs are implemented.                                                                                                                                                                                                                                                                                 | Sharding hashes the namespace, so affinity is per account. `architecture.md` still claims fenced writes (Phase 5).                                                                 |
 
 ## 3. Cutover assumption: recreate the whole environment
 
@@ -161,7 +177,8 @@ constraints:
 - **DNS reservation identity and claim:** Cluster references the reservation by UID;
   the reservation's Index uses `owner-uid=<DNSReservation UID>`, and the mutable
   reservation claim uses `claimed-by-cluster-uid=<Cluster UID>`. On Cluster deletion,
-  delete the reservation; its finalizer releases only its own Indexes.
+  delete a reservation whose `clusterDeletionPolicy` is `Delete` and release the claim
+  on any other; the reservation's finalizer releases only its own Indexes.
 - **DNS retry behavior:** after creating an Index but before updating reservation
   status, a retry must find an Index already carrying the reservation UID and recover
   its prefix. Handle overlapping reconciles so one reservation does not retain
@@ -209,7 +226,7 @@ Tests:
   do not match missing, non-integer, or out-of-int64-range label values.
 - A stale UID cannot update, status-update, or delete a same-name replacement.
 
-### Phase 2 — Identity and customer DNS reservation switch (PR 2)
+### Phase 2 — Identity and customer DNS reservation switch (PR 2 — implemented)
 
 This phase is coordinated across `api`, `seaplane-api`, `seaplane-operator`, and
 `clientset`; do not deploy only part of it.
@@ -268,8 +285,10 @@ This phase is coordinated across `api`, `seaplane-api`, `seaplane-operator`, and
   `claimed-by-cluster-uid=<Cluster UID>`, and copy the domain to
   `Cluster.status.baseDomain` for management-cluster rendering.
 - Reject customer deletion of a claimed DNSReservation. On Cluster deletion, the
-  Cluster finalizer deletes the claimed reservation by its stored UID and waits for
-  it to become NotFound. The reservation finalizer releases only Indexes whose
+  Cluster finalizer deletes a claimed reservation whose `clusterDeletionPolicy` is
+  `Delete` (operator-created) and waits for it to become NotFound; for any other
+  reservation it releases the claim only. The reservation finalizer releases only
+  Indexes whose
   `owner-uid` matches its own database UID. An unclaimed reservation can be
   explicitly deleted by its customer.
 - Treat DNSReservation as a claim resource, not a Cluster-owned child: it remains
@@ -361,6 +380,8 @@ Tests:
 SDK helper tests.
 
 - Parse public `labelSelector` query parameters and pass them through to seaplane-db.
+  Selectors match platform labels only; customer metadata lives in annotations and
+  is not selectable.
 - Expose label selectors and explicit Cluster UID filtering in clientset list
   options. Push filters and pagination into the DB rather than fetching the full
   account list and filtering/paginating in memory.
@@ -398,6 +419,59 @@ SDK helper tests.
 - Add the target development rules to root `CLAUDE.md` and update the documented
   component/CRD list to describe the customer-facing DNSReservation workflow.
 
+### Phase 6 — Metadata ownership, request namespaces, and checked writes (PR 6)
+
+**Primary files:** `seaplane-api/pkg/clients/seaplanedb/convert.go` and `client.go`,
+`seaplane-api/pkg/validation/identity.go`, the Cluster, NodePool, and OidcConfig
+handlers, `seaplane-operator/internal/controller/dnsreservation_controller.go`, and
+`docs/authz.md`.
+
+**Labels and annotations**
+
+- Create conversion keeps no customer-supplied labels; labels come only from the
+  server.
+- Validate annotations: key syntax, value size, number of keys, and total size.
+  `seaplane.io/` is reserved.
+- Cedar resource attributes and any customer label endpoints read and write
+  annotations. Update `docs/authz.md` to match.
+
+**Request namespace and storage checks**
+
+- `ValidateAccountNamespace` rejects an empty namespace with the existing
+  `*-CREATE-*` / `*-UPDATE-*` namespace errors (400). The SDK already sends it.
+- The storage client's `Create*` functions check that the namespace is
+  `account-<accountID>` and that the account label matches, and return an error
+  otherwise. They no longer set either; conversion sets them once.
+
+**Checked-snapshot deletes**
+
+- Cluster, NodePool, and OidcConfig deletes take the object the handler loaded and
+  checked, like `DeleteDNSReservationObject`. A conflict retry re-reads and re-checks.
+
+**Spot termination queue claim**
+
+- Claim the queue after the Cluster is created, with `owner-uid=<Cluster UID>`, using
+  the same create-then-claim and rollback flow as DNS and OIDC claims.
+- The Cluster finalizer releases Indexes carrying its UID. Remove the name-based owner
+  key and the time-based reclaim.
+
+**DNSReservation**
+
+- Find the claiming Cluster with a `metadata.uid` field selector instead of listing
+  the namespace.
+
+Tests:
+
+- Create with customer labels stores none of them; invalid or oversized annotations
+  return 400; `seaplane.io/` annotations are rejected.
+- Create with an empty or different namespace returns 400.
+- The storage client returns an error for a mismatched namespace or account label
+  and doesn't modify the object.
+- A delete whose checked snapshot changed before the write returns a conflict and
+  doesn't delete the newer object.
+- A recreated same-name Cluster doesn't inherit or release the old Cluster's Spot
+  queue claim; deleting a Cluster releases its claim.
+
 ## 6. End-to-end acceptance criteria
 
 The identity switch is ready when integration tests can:
@@ -419,6 +493,10 @@ The identity switch is ready when integration tests can:
 9. Exercise the late-child/GC race and same-name/different-UID owner case.
 10. Verify reservation retry after Index creation recovers the same domain, and
     deleting an unclaimed reservation releases only its own Index.
+11. Create resources with customer metadata and verify it is stored only as
+    validated annotations; stored labels are all server-set.
+12. Recreate a Cluster that used a Spot termination queue under the same name and
+    verify the new Cluster must claim the queue itself.
 
 ## 7. Verification commands
 
