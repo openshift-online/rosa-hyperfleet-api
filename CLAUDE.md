@@ -70,3 +70,14 @@ Cross-module refs use permanent `replace` directives to sibling dirs.
 - OpenAPI-first API design
 - CRD types in standalone `api/` module, imported by seaplane-operator and seaplane-api
 - golangci-lint v2 with custom logcheck plugin
+
+## seaplane-db Guidelines
+
+Changes to `seaplane-api/`, `seaplane-operator/`, or `seaplane-db/` must follow
+[docs/seaplane-db-guidelines.md](docs/seaplane-db-guidelines.md).
+
+- Read the guidelines before changing how resources are stored, read, written, owned,
+  claimed, or cleaned up.
+- Before finishing, check the change against the guidelines' review checklist.
+- If a change has to break a rule, say which rule and why. Don't work around it
+  silently.
