@@ -56,7 +56,8 @@ type OverridesConfig struct {
 
 // OverrideResource holds override aliases for a resource.
 type OverrideResource struct {
-	Aliases []OverrideAlias `yaml:"aliases"`
+	Aliases       []OverrideAlias `yaml:"aliases"`
+	PartialUpdate *bool           `yaml:"partialUpdate,omitempty"`
 }
 
 // OverrideAlias is a single override entry.
@@ -160,19 +161,24 @@ type CobraTemplateData struct {
 
 // TFTemplateData is passed to tf templates.
 type TFTemplateData struct {
-	Package        string
-	ResourceName   string
-	SDKType        string
-	SDKShortType   string
-	AllFields      []MergedAlias
-	TopFields      []MergedAlias
-	Bundles        []AliasBundle
-	CreateFields   []MergedAlias
-	UpdateFields   []MergedAlias
-	ImmutableList  []string
-	ComputedList   []string
-	NameField      string // Go field resolved from metadata.name for Platform API routing
-	HandlerFactory string // e.g., "NewClusterHandlerImpl" for template to call
+	Package       string
+	ResourceName  string
+	SDKType       string
+	SDKShortType  string
+	AllFields     []MergedAlias
+	TopFields     []MergedAlias
+	Bundles       []AliasBundle
+	CreateFields  []MergedAlias
+	UpdateFields  []MergedAlias
+	ImmutableList []string
+	ComputedList  []string
+	NameField     string // Go field resolved from metadata.name for Platform API routing
+	PartialUpdate bool
+	// PartialUpdatePaths contains mutable API paths included in a partial update.
+	PartialUpdatePaths []string
+	// ClearablePartialUpdatePaths contains mutable API paths that accept JSON null.
+	ClearablePartialUpdatePaths []string
+	HandlerFactory              string // e.g., "NewClusterHandlerImpl" for template to call
 }
 
 // AliasBundle describes a nested Terraform object made from leaf aliases.

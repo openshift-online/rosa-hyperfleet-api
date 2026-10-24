@@ -18,7 +18,7 @@ This document outlines the design for implementing TF mode in pathbind-gen to ge
 
 - Generated Input struct with both `hfsdk:` and `tfsdk:` tags
 - Generated Resource struct with auto-scaffolded CRUD methods
-- Handler interface for consumer-specific logic (PreExpand, PostExpand, PostResponse)
+- Handler interface for consumer-specific logic (PreExpand, PostExpand, PostResponse, and PostPartialExpand for partial updates)
 - Auto-generated Schema() from draft + overrides with plan modifiers
 - Uses pathbind.Expand/Flatten for type mapping
 
@@ -40,7 +40,7 @@ pathbind-gen --mode=tf \
 │  └─ XxxInput struct with hfsdk/tfsdk tags
 │
 ├─ {resource}_resource_gen.go
-│  ├─ XxxHandler interface (PreExpand, PostExpand, PostResponse)
+│  ├─ XxxHandler interface (PreExpand, PostExpand, PostResponse, PostPartialExpand when partial updates are enabled)
 │  ├─ XxxResource struct with Schema(), Create(), Read(), Update(), Delete(), ImportState()
 │  └─ CRUD scaffolding with handler hooks
 │
@@ -121,6 +121,10 @@ type ClusterHandler interface {
     // Called after pathbind.Expand(), before API call
     // Example: set enum constants, computed structs (RolesRef with 7 ARNs), platform type
     PostExpand(ctx context.Context, input *ClusterInput, obj *v1alpha1.Cluster) diag.Diagnostics
+
+    // PostPartialExpand: set raw-document fields that pathbind cannot express
+    // Generated only for resources configured with partialUpdate; called before the document is marshalled
+    PostPartialExpand(ctx context.Context, input *ClusterInput, document map[string]any) diag.Diagnostics
 
     // PostResponse: output formatting + side effects after API response
     // Called after Create/Read/Update/Delete API calls
@@ -237,6 +241,8 @@ func (r *ClusterResource) ImportState(ctx context.Context, req resource.ImportSt
     ...
 }
 ```
+
+When a resource is configured with `partialUpdate`, `Update()` builds a raw JSON document from planned changes, calls `PostPartialExpand()` so handlers can add unmappable SDK fields, and then issues a partial PUT. Top-level and bundled API-mapped fields are compared by leaf path. Computed and create-only fields are excluded from the partial paths, and JSON-encoded fields are rejected because their Terraform string representation cannot be safely embedded as a structured JSON value. Bundle members with no API path (for example, a Terraform convenience field) are not added to the wire document; handlers can translate them in `PostPartialExpand()` when needed.
 
 #### 5. Schema Generation from Overrides
 

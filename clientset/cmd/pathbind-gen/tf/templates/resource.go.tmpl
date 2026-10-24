@@ -75,7 +75,13 @@ package {{.Package}}
 {{- end}}
 import (
 	"context"
+{{- if .PartialUpdate}}
+	"encoding/json"
+{{- end}}
 	"fmt"
+{{- if .PartialUpdate}}
+	"reflect"
+{{- end}}
 
 {{- if $hasInt32}}
 	"math"
@@ -138,6 +144,12 @@ type {{.ResourceName}}Handler interface {
 	// PostExpand is called after pathbind.Expand and before the API call.
 	// Use this to set SDK fields that pathbind cannot express (enum constants, computed structs).
 	PostExpand(ctx context.Context, input *{{.ResourceName}}State, obj *v1alpha1.{{.SDKShortType}}) diag.Diagnostics
+{{- if .PartialUpdate}}
+
+	// PostPartialExpand is called after the partial update document is built and before it is marshalled.
+	// Use this to add or change SDK fields that pathbind cannot express in the raw update document.
+	PostPartialExpand(ctx context.Context, input *{{.ResourceName}}State, document map[string]any) diag.Diagnostics
+{{- end}}
 
 	// PostResponse is called after API calls (Create, Read, Update, Delete).
 	// Use this for output formatting, side effects, and post-processing.
@@ -540,6 +552,114 @@ func (r *{{.ResourceName}}Resource) Update(
 	if resp.Diagnostics.HasError() {
 		return
 	}
+{{- if .PartialUpdate}}
+var {{.ResourceName}}PartialUpdatePaths = map[string]bool{
+{{- range .PartialUpdatePaths}}
+	{{printf "%q" .}}: true,
+{{- end}}
+}
+
+var {{.ResourceName}}ClearablePartialUpdatePaths = map[string]bool{
+{{- range .ClearablePartialUpdatePaths}}
+	{{printf "%q" .}}: true,
+{{- end}}
+}
+{{- range .Bundles}}
+
+var {{$.ResourceName}}{{.GoName}}PartialUpdateAttributes = map[string]string{
+{{- range .Fields}}
+	"{{.GoName}}": "{{attrName .}}",
+{{- end}}
+}
+{{- end}}
+{{- end}}
+
+{{- if .PartialUpdate}}
+
+	var priorState {{.ResourceName}}State
+	resp.Diagnostics.Append(req.State.Get(ctx, &priorState)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	updateDocument, updateDiags := partialUpdateDocument(
+		ctx,
+		&plan,
+		&priorState,
+		reflect.TypeOf({{.ResourceName}}StateNative{}),
+		{{.ResourceName}}PartialUpdatePaths,
+		{{.ResourceName}}ClearablePartialUpdatePaths,
+	)
+{{- range .Bundles}}
+
+		appendPartialUpdateBundle(
+			ctx,
+			plan.{{.GoName}},
+			priorState.{{.GoName}},
+			reflect.TypeOf({{$.ResourceName}}{{.GoName}}Native{}),
+			{{$.ResourceName}}{{.GoName}}PartialUpdateAttributes,
+			{{$.ResourceName}}PartialUpdatePaths,
+			{{$.ResourceName}}ClearablePartialUpdatePaths,
+			updateDocument,
+			&updateDiags,
+		)
+{{- end}}
+
+		resp.Diagnostics.Append(updateDiags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+
+	mergeResponse{{.ResourceName}}(&plan, &priorState)
+
+	diags = r.Handler.PostPartialExpand(ctx, &plan, updateDocument)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	updated := &v1alpha1.{{.SDKShortType}}{}
+	if len(updateDocument) != 0 {
+		body, err := json.Marshal(updateDocument)
+		if err != nil {
+			resp.Diagnostics.AddError("Failed to encode {{.ResourceName}} update", err.Error())
+			return
+		}
+
+		err = r.Client.SeaplaneV1alpha1().RESTClient().
+			Put().
+			Resource("{{lower (pluralize .ResourceName)}}").
+			Name(plan.{{.NameField}}.ValueString()).
+			Body(body).
+			Do(ctx).
+			Into(updated)
+		if err != nil {
+			resp.Diagnostics.AddError("Failed to update {{.ResourceName}}", err.Error())
+			return
+		}
+
+		var nativeState {{.ResourceName}}StateNative
+		if err := pathbind.Flatten(ctx, updated, &nativeState); err != nil {
+			resp.Diagnostics.AddError("Failed to flatten API response to state", err.Error())
+			return
+		}
+
+		resp.Diagnostics.Append(r.Handler.PostResponse(ctx, updated)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+
+		responseState, responseDiags := native{{.ResourceName}}ToTerraform(&nativeState)
+		resp.Diagnostics.Append(responseDiags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		mergeResponse{{.ResourceName}}(&plan, responseState)
+		r.Handler.PostFlatten(ctx, &plan, updated)
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+{{- else}}
 
 	// Convert Terraform state to native Go struct for pathbind
 	native, conversionDiags := terraform{{.ResourceName}}ToNative(&plan)
@@ -604,6 +724,7 @@ func (r *{{.ResourceName}}Resource) Update(
 	r.Handler.PostFlatten(ctx, &plan, updated)
 	
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+{{- end}}
 }
 
 func (r *{{.ResourceName}}Resource) Delete(
