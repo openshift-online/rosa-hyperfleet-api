@@ -12,7 +12,7 @@ reconciles resources whose namespace hashes to its shard.
 > the same shard (cluster-scoped resources like ManagementCluster are unsharded).
 > A future migration to `cluster-uid`-based sharding (using
 > `COALESCE(labels->>'seaplane.io/cluster-uid', uid::text)`) is planned to
-> restore cluster-level affinity — see `seaplane-db/docs/RESOURCE_IDENTITY_PLAN.md`
+> restore cluster-level affinity — see `seaplane-db/docs/RESOURCE_IDENTITY_IMPLEMENTATION_PLAN.md`
 > Phase 5 for details.
 
 ## How It Works
